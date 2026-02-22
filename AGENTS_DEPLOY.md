@@ -208,11 +208,23 @@ bash deploy.sh \
 ### From the server directly
 
 ```bash
+# Tunnel mode (default — recommended)
 sudo bash setup.sh \
   --server-ip <ip> \
   --admin-user <user> \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
+  --domain <fqdn> \
+  --cf-api-token <token> \
+  --yes
+
+# Standard mode (if user explicitly requests open 80/443)
+sudo bash setup.sh \
+  --server-ip <ip> \
+  --admin-user <user> \
+  --pubkey-file <path> \
+  --tailscale-auth-key <key> \
+  --mode standard \
   --domain <fqdn> \
   --cf-api-token <token> \
   --yes
@@ -268,7 +280,7 @@ If the user asks about origin wildcard certs (Traefik DNS-01 with Cloudflare tok
   - Coolify install is skipped if `/data/coolify/source/.env` already exists
   - Tunnel creation stops cloudflared, deletes any existing same-named tunnel, waits for CF to release the name, then creates fresh
   - Companion scripts (`bootstrap_hardening.sh`, `validate_hardening.sh`, `configure_coolify_binding.sh`) are re-synced to the server via admin SCP at the start of phase 2, so the latest local versions are always used even when `--ts-ip` skips the phase 1 upload
-- **Resuming after partial harden**: if `bootstrap_hardening.sh` succeeded but subsequent phases failed (e.g., the server already has Tailscale at `100.x.x.x`), use `--ts-ip <ip>` to skip phase 1 and resume from phase 2 (Docker + Coolify):
+- **Resuming after partial harden**: if `bootstrap_hardening.sh` succeeded but subsequent phases failed (e.g., the server already has Tailscale at `100.x.x.x`), use `--ts-ip <ip>` to skip phase 1 (Harden) and resume from phase `[2/5]` (Gates A–C, then Docker + Coolify + DNS):
   ```bash
   bash deploy.sh ... --ts-ip 100.x.x.x --yes
   ```
