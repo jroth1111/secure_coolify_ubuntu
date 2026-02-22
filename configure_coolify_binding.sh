@@ -79,55 +79,31 @@ log "Using Tailscale IP: ${TAILSCALE_IP}"
 [[ -f "${COOLIFY_ENV}" ]] || die "Coolify .env file not found at ${COOLIFY_ENV}. Is Coolify installed?"
 
 if [[ "${DRY_RUN}" == "true" ]]; then
-  log "DRY-RUN: would backup ${COOLIFY_ENV}"
-  log "DRY-RUN: would set APP_PORT=${TAILSCALE_IP}:8000"
-  log "DRY-RUN: would set SOKETI_PORT=${TAILSCALE_IP}:6001"
-  log "DRY-RUN: would restart Coolify"
+  log "DRY-RUN: would add UFW rules for ports 8000 and 6001 on tailscale0"
+  log "DRY-RUN: would verify Coolify is listening on port 8000"
+  log "DRY-RUN: would verify port 8000 is not reachable on public IP"
   exit 0
 fi
 
-# Backup current .env
-BACKUP="${COOLIFY_ENV}.bak.$(date +%s)"
-cp -a "${COOLIFY_ENV}" "${BACKUP}"
-log "Backed up ${COOLIFY_ENV} to ${BACKUP}"
+# Dashboard security is enforced via UFW, not APP_PORT socket binding.
+# Coolify's docker-compose.prod.yml uses APP_PORT in both ports: and expose: directives;
+# expose: requires a plain port number, so IP:port format is incompatible.
+# UFW default-deny incoming + explicit allow rules on tailscale0 provides the same
+# defense-in-depth: dashboard reachable via Tailscale, blocked from public interfaces.
 
-# Helper: set or update a key=value in the .env file
-set_env_var() {
-  local key="$1"
-  local value="$2"
-  local file="$3"
+log "Ensuring UFW rules allow dashboard on Tailscale interface..."
+if command -v ufw >/dev/null 2>&1; then
+  # Idempotent — ufw silently skips duplicate rules
+  ufw allow in on tailscale0 proto tcp to any port 8000 comment "coolify-hardening-dashboard-tailscale" 2>/dev/null || true
+  ufw allow in on tailscale0 proto tcp to any port 6001 comment "coolify-hardening-soketi-tailscale" 2>/dev/null || true
+  log "UFW rules applied for ports 8000 and 6001 on tailscale0."
+else
+  warn "ufw not found — skipping UFW rule check."
+fi
 
-  if grep -q "^${key}=" "${file}"; then
-    sed -i "s|^${key}=.*|${key}=${value}|" "${file}"
-    log "Updated ${key}=${value}"
-  else
-    echo "${key}=${value}" >> "${file}"
-    log "Added ${key}=${value}"
-  fi
-}
-
-set_env_var "APP_PORT" "${TAILSCALE_IP}:8000" "${COOLIFY_ENV}"
-set_env_var "SOKETI_PORT" "${TAILSCALE_IP}:6001" "${COOLIFY_ENV}"
-
-# Restart Coolify to apply changes — must specify both compose files;
-# docker-compose.prod.yml carries images, port mappings, and volumes.
-log "Restarting Coolify..."
-(
-  cd /data/coolify/source
-  docker compose \
-    --env-file .env \
-    -f docker-compose.yml \
-    -f docker-compose.prod.yml \
-    down --remove-orphans 2>/dev/null || true
-  docker compose \
-    --env-file .env \
-    -f docker-compose.yml \
-    -f docker-compose.prod.yml \
-    up -d --wait --wait-timeout 60
-)
-
-log "Waiting for Coolify to bind port 8000 (up to 30s)..."
-for (( _i = 1; _i <= 6; _i++ )); do
+# Wait for Coolify to start (up to 60s)
+log "Waiting for Coolify to bind port 8000 (up to 60s)..."
+for (( _i = 1; _i <= 12; _i++ )); do
   if ss -tlnp 2>/dev/null | grep -q ':8000 '; then
     break
   fi
@@ -135,29 +111,29 @@ for (( _i = 1; _i <= 6; _i++ )); do
 done
 unset _i
 
-# Verify binding
+# Verify security posture
 log "Verifying bindings..."
 
 BOUND_8000="$(ss -tlnp 2>/dev/null | grep ':8000 ' || true)"
-if echo "${BOUND_8000}" | grep -q "${TAILSCALE_IP}:8000"; then
-  log "PASS: Port 8000 bound to ${TAILSCALE_IP}"
+if [[ -n "${BOUND_8000}" ]]; then
+  log "PASS: Port 8000 is listening"
 else
-  warn "Port 8000 may not be bound to ${TAILSCALE_IP} yet. Check: ss -tlnp | grep 8000"
+  warn "Port 8000 not yet listening. Check: ss -tlnp | grep 8000"
 fi
 
 BOUND_6001="$(ss -tlnp 2>/dev/null | grep ':6001 ' || true)"
-if echo "${BOUND_6001}" | grep -q "${TAILSCALE_IP}:6001"; then
-  log "PASS: Port 6001 bound to ${TAILSCALE_IP}"
+if [[ -n "${BOUND_6001}" ]]; then
+  log "PASS: Port 6001 is listening"
 else
-  warn "Port 6001 may not be bound to ${TAILSCALE_IP} yet. Check: ss -tlnp | grep 6001"
+  warn "Port 6001 not yet listening (may start later). Check: ss -tlnp | grep 6001"
 fi
 
-# Test that public IP is NOT serving the dashboard
+# Test that public IP is NOT serving the dashboard (UFW should block it)
 if command -v nc >/dev/null 2>&1; then
   PUBLIC_IP="$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')"
   if [[ -n "${PUBLIC_IP}" && "${PUBLIC_IP}" != "${TAILSCALE_IP}" ]]; then
     if nc -z -w2 "${PUBLIC_IP}" 8000 2>/dev/null; then
-      warn "Port 8000 still appears reachable on public IP ${PUBLIC_IP}."
+      warn "Port 8000 still appears reachable on public IP ${PUBLIC_IP}. Check UFW rules."
     else
       log "PASS: Port 8000 not reachable on public IP ${PUBLIC_IP}"
     fi
@@ -165,4 +141,4 @@ if command -v nc >/dev/null 2>&1; then
 fi
 
 log "Coolify binding configuration complete."
-log "Dashboard: http://${TAILSCALE_IP}:8000"
+log "Dashboard accessible at: http://${TAILSCALE_IP}:8000 (via Tailscale)"

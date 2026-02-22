@@ -81,6 +81,11 @@ pause_for_operator() {
 prompt_value() {
   local var_name="$1" prompt="$2" default="${3:-}" regex="${4:-}"
   local val
+  # When --yes is set and a default exists, accept it without prompting
+  if is_true "${AUTO_YES}" && [[ -n "${default}" ]]; then
+    eval "${var_name}=\${default}"
+    return 0
+  fi
   printf '%s' "${prompt}"
   [[ -n "${default}" ]] && printf ' [%s]' "${default}"
   printf ': '
@@ -105,6 +110,11 @@ prompt_choice() {
   local var_name="$1" prompt="$2" default="$3"
   shift 3
   local options=("$@")
+  # When --yes is set, accept the default without prompting
+  if is_true "${AUTO_YES}"; then
+    eval "${var_name}=\${default}"
+    return 0
+  fi
   printf '%s [%s] (%s): ' "${prompt}" "${default}" "$(IFS=/; echo "${options[*]}")"
   read -r val
   val="${val:-$default}"
@@ -221,8 +231,10 @@ cf_api() {
 }
 
 cf_verify_token() {
+  # Use zones endpoint rather than /user/tokens/verify — the latter requires
+  # User:User Tokens:Read which is not part of our required token permissions.
   local resp
-  resp="$(cf_api GET /user/tokens/verify)"
+  resp="$(cf_api GET /zones?per_page=1)"
   local status
   status="$(printf '%s' "${resp}" | jq -r '.success // false')"
   [[ "${status}" == "true" ]] || die "Cloudflare API token verification failed: $(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"')"
@@ -230,20 +242,33 @@ cf_verify_token() {
 }
 
 cf_get_zone_id() {
-  local zone_name="${CF_ZONE:-${DOMAIN#*.}}"
-  local dot_count
-  dot_count="$(printf '%s' "${DOMAIN}" | tr -cd '.' | wc -c)"
-  if [[ "${dot_count}" -le 1 ]]; then
-    zone_name="${DOMAIN}"
+  # If --cf-zone was specified, use it directly
+  if [[ -n "${CF_ZONE}" ]]; then
+    local resp
+    resp="$(cf_api GET "/zones?name=${CF_ZONE}&status=active")"
+    CF_ZONE_ID="$(printf '%s' "${resp}" | jq -r '.result[0].id // empty')"
+    [[ -n "${CF_ZONE_ID}" ]] || die "Cloudflare zone not found for '${CF_ZONE}'. Check --cf-zone value."
+    CF_ZONE_NAME="${CF_ZONE}"
+    log "Cloudflare zone ID: ${CF_ZONE_ID} (${CF_ZONE_NAME})"
+    return 0
   fi
-  [[ -n "${CF_ZONE}" ]] && zone_name="${CF_ZONE}"
 
-  local resp
-  resp="$(cf_api GET "/zones?name=${zone_name}&status=active")"
-  CF_ZONE_ID="$(printf '%s' "${resp}" | jq -r '.result[0].id // empty')"
-  [[ -n "${CF_ZONE_ID}" ]] || die "Cloudflare zone not found for '${zone_name}'. Check domain or use --cf-zone."
-  CF_ZONE_NAME="${zone_name}"
-  log "Cloudflare zone ID: ${CF_ZONE_ID} (${zone_name})"
+  # Auto-detect zone by trying progressively shorter suffixes of DOMAIN.
+  # This correctly handles multi-part TLDs (e.g. .com.au, .co.uk) where
+  # stripping only the first label would give a non-existent zone.
+  local candidate="${DOMAIN}"
+  while [[ "${candidate}" == *.* ]]; do
+    local resp
+    resp="$(cf_api GET "/zones?name=${candidate}&status=active")"
+    CF_ZONE_ID="$(printf '%s' "${resp}" | jq -r '.result[0].id // empty')"
+    if [[ -n "${CF_ZONE_ID}" ]]; then
+      CF_ZONE_NAME="${candidate}"
+      log "Cloudflare zone ID: ${CF_ZONE_ID} (${CF_ZONE_NAME})"
+      return 0
+    fi
+    candidate="${candidate#*.}"  # strip leftmost label and retry
+  done
+  die "Cloudflare zone not found for any suffix of '${DOMAIN}'. Check domain or use --cf-zone."
 }
 
 cf_get_account_id() {
@@ -275,6 +300,21 @@ cf_upsert_a_record() {
 
 cf_create_tunnel() {
   local tunnel_name="${DOMAIN%%.*}-coolify"
+
+  # Delete any existing inactive tunnel with the same name (idempotent re-run support)
+  local existing_id
+  existing_id="$(cf_api GET "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel?name=${tunnel_name}&is_deleted=false" \
+    | jq -r '.result[0].id // empty')"
+  if [[ -n "${existing_id}" ]]; then
+    log "Stopping cloudflared to release tunnel connections before delete..."
+    systemctl stop cloudflared 2>/dev/null || true
+    sleep 3  # Allow connections to close
+    log "Deleting stale tunnel ${tunnel_name} (${existing_id}) before recreating..."
+    cf_api DELETE "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel/${existing_id}" >/dev/null \
+      || warn "Could not delete stale tunnel ${existing_id}; proceeding anyway."
+    sleep 2  # Allow CF to release the name
+  fi
+
   TUNNEL_SECRET="$(openssl rand -base64 32)"
   local body
   body="$(jq -n --arg name "${tunnel_name}" --arg secret "${TUNNEL_SECRET}" \
@@ -484,11 +524,16 @@ phase2_gates() {
 phase3_docker_coolify() {
   step "3/5" "Install Docker & Coolify"
 
-  # Install Docker
-  log "Installing Docker..."
-  curl -fsSL https://get.docker.com | sh \
-    || die "Docker installation failed."
-  pass "Docker installed"
+  # Install Docker (skip if already present — the install script is not idempotent on network errors)
+  if docker version >/dev/null 2>&1; then
+    log "Docker already installed — skipping install."
+  else
+    log "Installing Docker..."
+    curl -fsSL https://get.docker.com | sh \
+      || die "Docker installation failed."
+    pass "Docker installed"
+  fi
+  pass "Docker present"
 
   # Start DOCKER-USER hardening service
   systemctl start docker-user-hardening.service \
@@ -497,11 +542,16 @@ phase3_docker_coolify() {
   # Gate D: Verify DOCKER-USER rules
   verify_docker_user_gate_local "Gate D"
 
-  # Install Coolify
-  log "Installing Coolify (this may take a few minutes)..."
-  curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash \
-    || die "Coolify installation failed."
-  pass "Coolify installed"
+  # Install Coolify (skip if already installed)
+  if [[ -f /data/coolify/source/.env ]]; then
+    log "Coolify .env found — skipping install (already installed)."
+    pass "Coolify already installed"
+  else
+    log "Installing Coolify (this may take a few minutes)..."
+    curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash \
+      || die "Coolify installation failed."
+    pass "Coolify installed"
+  fi
 
   # Coolify installer manages daemon.json; re-apply hardening settings while preserving its keys.
   reconcile_docker_daemon_local
@@ -516,6 +566,18 @@ phase3_docker_coolify() {
 
 phase4_binding_dns() {
   step "4/5" "Configure dashboard binding & DNS"
+
+  # Wait for Coolify to write its .env file before binding (installer is async)
+  log "Waiting for Coolify to initialize /data/coolify/source/.env..."
+  local coolify_wait=0 coolify_max=120
+  until [[ -f /data/coolify/source/.env ]]; do
+    (( coolify_wait += 5 ))
+    if (( coolify_wait >= coolify_max )); then
+      warn "Coolify .env not found after ${coolify_max}s — binding may fail; continuing."
+      break
+    fi
+    sleep 5
+  done
 
   # Run configure_coolify_binding.sh directly
   log "Binding Coolify dashboard to Tailscale IP..."

@@ -231,10 +231,10 @@ Omitting `--mode` defaults to `tunnel`. Only pass `--mode standard` if the user 
 ## Phases
 
 1. **Pre-flight** — validates tools, SSH pubkey, Cloudflare token + zone + account, SSH connectivity
-2. **Harden** — uploads scripts, runs `bootstrap_hardening.sh` with `--tunnel-mode`, captures Tailscale IP
-3. **Gates** — verifies SSH transition to admin@tailscale-IP (Gate A-B), runs `validate_hardening.sh --json` for hardening verification (Gate C)
-4. **Docker + Coolify** — installs Docker, starts DOCKER-USER rules, installs Coolify
-5. **DNS + Verify** — configures dashboard binding, creates Cloudflare Tunnel + CNAME + wildcard DNS (or A + wildcard A in standard mode), final checks
+2. **Harden** — uploads scripts, runs `bootstrap_hardening.sh` with `--tunnel-mode`, captures Tailscale IP. Skipped when `--ts-ip` is provided.
+3. **Gates** — verifies SSH transition to admin@tailscale-IP (Gate A-B), re-syncs companion scripts via admin SCP so the latest versions are always used (Gate B+), runs `validate_hardening.sh --json` (Gate C)
+4. **Docker + Coolify** — installs Docker (skips if already installed), starts DOCKER-USER rules (Gate D), installs Coolify (skips if already installed)
+5. **DNS + Verify** — configures dashboard UFW rules, creates/replaces Cloudflare Tunnel + CNAME + wildcard DNS (or A + wildcard A in standard mode), runs Gate E curl check (Tailscale reachable, public IP blocked)
 
 ## Post-Deploy Steps (Required — Inform the User)
 
@@ -263,7 +263,16 @@ If the user asks about origin wildcard certs (Traefik DNS-01 with Cloudflare tok
 
 - **Timeout**: the script takes 10–20 minutes end-to-end (hardening + Docker + Coolify install are the slow phases). Set Bash tool timeout to at least 1200000ms (20 min). Running in background is recommended so you can monitor progress.
 - **Output**: the script prints a summary box at the end with Tailscale IP, dashboard URL, DNS records, admin user, and SSH command. Relay this to the user.
-- **Re-runs**: all scripts are idempotent. If a run fails partway, fix the issue and re-run the same command. One caveat: if a Cloudflare Tunnel was already created (name collision), the API will return an error. The tunnel name is derived from the domain (`<domain-prefix>-coolify`). If this happens, delete the stale tunnel in Cloudflare dashboard (Zero Trust > Networks > Tunnels) and re-run.
+- **Re-runs**: all scripts are idempotent. If a run fails partway, fix the issue and re-run the same command:
+  - Docker install is skipped if Docker is already present
+  - Coolify install is skipped if `/data/coolify/source/.env` already exists
+  - Tunnel creation stops cloudflared, deletes any existing same-named tunnel, waits for CF to release the name, then creates fresh
+  - Companion scripts (`bootstrap_hardening.sh`, `validate_hardening.sh`, `configure_coolify_binding.sh`) are re-synced to the server via admin SCP at the start of phase 2, so the latest local versions are always used even when `--ts-ip` skips the phase 1 upload
+- **Resuming after partial harden**: if `bootstrap_hardening.sh` succeeded but subsequent phases failed (e.g., the server already has Tailscale at `100.x.x.x`), use `--ts-ip <ip>` to skip phase 1 and resume from phase 2 (Docker + Coolify):
+  ```bash
+  bash deploy.sh ... --ts-ip 100.x.x.x --yes
+  ```
+  The `--root-pass` flag is not required when `--ts-ip` is supplied.
 - **Secrets in process list**: `--root-pass` and `--cf-api-token` will briefly appear in `ps` output during invocation. The script uses `SSHPASS` env var internally (not CLI args) for SSH operations. This is acceptable for single-operator laptops but the user should be aware.
 
 ## Error Handling
@@ -311,9 +320,9 @@ Follow the Collection Sequence above. This tree handles branching decisions:
 | Gate A fails (SSH timeout) | Tailscale not running on operator laptop, or not on same tailnet | Run `tailscale status` on laptop; ensure both machines are on same Tailnet |
 | Gate C fails (validation) | Hardening step partially failed | Check `/var/log/bootstrap-hardening.log` on server; run `sudo /root/validate_hardening.sh --json` to see which checks failed |
 | Gate D fails (no DOCKER-USER rules) | Docker not fully started | Run `sudo systemctl restart docker` then `sudo systemctl start docker-user-hardening.service` |
-| Cloudflare zone not found | Domain not on Cloudflare or wrong zone | Use `--cf-zone` to specify the root zone explicitly |
+| Cloudflare zone not found | Domain not on Cloudflare or wrong zone | Zone is auto-detected via iterative suffix search (works for `.com.au`, `.co.uk`, etc.). Use `--cf-zone <zone>` to override if the domain is delegated to a sub-zone |
 | Tunnel creation fails (permissions) | API token lacks Account:Tunnels:Edit | Regenerate token with correct permissions |
-| Tunnel creation fails (name exists) | Previous partial run created a tunnel | Delete stale tunnel in Cloudflare dashboard (Zero Trust > Networks > Tunnels), re-run |
+| Tunnel creation fails (name already exists) | Rare CF API race | The script auto-deletes stale tunnels before creating — if this still occurs, check for tunnels with non-zero connections in CF dashboard (Zero Trust > Networks > Tunnels) |
 | `cloudflared` won't start | Credentials file mismatch | Check `/etc/cloudflared/config.yml` and credentials JSON |
 | `TOO_MANY_REDIRECTS` on app | Resource domain using `https://` in Coolify | Change to `http://` — Cloudflare handles TLS at edge |
 | Apps unreachable after deploy | SSL/TLS mode set to Flexible | Change to Full in Cloudflare dashboard |

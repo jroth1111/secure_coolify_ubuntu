@@ -600,88 +600,65 @@ tailscale_check() {
 # ── Coolify split-horizon binding ──
 
 coolify_binding_check() {
-  # Skip if binding was not configured
+  # Skip if binding restriction was not configured
   if ! is_true "${BIND_DASHBOARD_TO_TAILSCALE}"; then
-    record "INFO" "coolify: split-horizon" "not configured (use --bind-dashboard-to-tailscale)"
+    record "INFO" "coolify: dashboard UFW restriction" "not configured (use --bind-dashboard-to-tailscale)"
     return 0
   fi
 
-  # Check if Coolify is installed
-  if [[ ! -f "${COOLIFY_ENV_FILE}" ]]; then
-    record "FAIL" "coolify: .env file" "not found at ${COOLIFY_ENV_FILE}"
+  # Dashboard Tailscale restriction is enforced via UFW rules on tailscale0, not by
+  # socket binding (APP_PORT=IP:port breaks Coolify's expose: directive). Check UFW rules.
+
+  if ! command -v ufw >/dev/null 2>&1; then
+    record "FAIL" "coolify: ufw" "ufw command not found"
     return 0
   fi
 
-  # Check if Tailscale IP was detected
-  if [[ -z "${TAILSCALE_IP}" ]]; then
-    # Try to detect it now
-    if command -v tailscale >/dev/null 2>&1; then
-      TAILSCALE_IP="$(tailscale ip -4 2>/dev/null)" || true
-      [[ -n "${TAILSCALE_IP}" ]] && record "INFO" "coolify: Tailscale IP" "live fallback: ${TAILSCALE_IP} (state file stale)"
-    fi
-    if [[ -z "${TAILSCALE_IP}" ]]; then
-      record "FAIL" "coolify: Tailscale IP" "not detected"
-      return 0
-    fi
-  fi
+  local ufw_out
+  ufw_out="$(ufw status 2>/dev/null)" || true
 
-  # Check APP_PORT in .env
-  local app_port
-  app_port="$(grep "^APP_PORT=" "${COOLIFY_ENV_FILE}" 2>/dev/null | cut -d= -f2)" || true
-  if [[ "${app_port}" == "${TAILSCALE_IP}:8000" ]]; then
-    record "PASS" "coolify: APP_PORT bound to Tailscale"
-  elif [[ -n "${app_port}" ]]; then
-    record "FAIL" "coolify: APP_PORT" "expected ${TAILSCALE_IP}:8000, got ${app_port}"
+  # Check UFW rule for port 8000 on tailscale0
+  if echo "${ufw_out}" | grep -q "8000.*on ${TAILSCALE_IFACE}"; then
+    record "PASS" "coolify: UFW rule port 8000 on ${TAILSCALE_IFACE}"
   else
-    record "FAIL" "coolify: APP_PORT" "not set in .env"
+    record "FAIL" "coolify: UFW rule port 8000" "rule for port 8000 on ${TAILSCALE_IFACE} missing"
   fi
 
-  # Check SOKETI_PORT in .env
-  local soketi_port
-  soketi_port="$(grep "^SOKETI_PORT=" "${COOLIFY_ENV_FILE}" 2>/dev/null | cut -d= -f2)" || true
-  if [[ "${soketi_port}" == "${TAILSCALE_IP}:6001" ]]; then
-    record "PASS" "coolify: SOKETI_PORT bound to Tailscale"
-  elif [[ -n "${soketi_port}" ]]; then
-    record "FAIL" "coolify: SOKETI_PORT" "expected ${TAILSCALE_IP}:6001, got ${soketi_port}"
+  # Check UFW rule for port 6001 on tailscale0
+  if echo "${ufw_out}" | grep -q "6001.*on ${TAILSCALE_IFACE}"; then
+    record "PASS" "coolify: UFW rule port 6001 on ${TAILSCALE_IFACE}"
   else
-    record "FAIL" "coolify: SOKETI_PORT" "not set in .env"
+    record "INFO" "coolify: UFW rule port 6001" "rule for port 6001 on ${TAILSCALE_IFACE} missing (Soketi may not be in use)"
   fi
 
-  # Check actual listening ports
-  local bound_8000 bound_6001
+  # Check port 8000 is listening (any address — UFW restricts which interfaces can reach it)
+  local bound_8000
   bound_8000="$(ss -tlnp 2>/dev/null | grep ':8000 ' || true)"
-  bound_6001="$(ss -tlnp 2>/dev/null | grep ':6001 ' || true)"
-
-  if echo "${bound_8000}" | grep -q "${TAILSCALE_IP}:8000"; then
-    record "PASS" "coolify: port 8000 listening on Tailscale IP"
+  if [[ -n "${bound_8000}" ]]; then
+    record "PASS" "coolify: port 8000 listening"
   else
-    record "FAIL" "coolify: port 8000" "not bound to ${TAILSCALE_IP}:8000"
+    record "INFO" "coolify: port 8000" "not yet listening (Coolify may still be starting)"
   fi
 
-  if echo "${bound_6001}" | grep -q "${TAILSCALE_IP}:6001"; then
-    record "PASS" "coolify: port 6001 listening on Tailscale IP"
-  else
-    record "INFO" "coolify: port 6001" "not bound to ${TAILSCALE_IP}:6001 (may not be in use)"
-  fi
-
-  # Verify public IP is NOT serving the dashboard
+  # Verify public IP is NOT serving the dashboard (UFW should block it)
   if command -v nc >/dev/null 2>&1; then
-    local public_ip
+    local public_ip tailscale_ip
     public_ip="$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')"
-    if [[ -n "${public_ip}" && "${public_ip}" != "${TAILSCALE_IP}" ]]; then
+    tailscale_ip="$(tailscale ip -4 2>/dev/null || true)"
+    if [[ -n "${public_ip}" && "${public_ip}" != "${tailscale_ip}" ]]; then
       if nc -z -w2 "${public_ip}" 8000 2>/dev/null; then
-        record "FAIL" "coolify: public exposure" "port 8000 reachable on public IP ${public_ip}"
+        record "FAIL" "coolify: public exposure" "port 8000 reachable on public IP ${public_ip} — check UFW rules"
       else
         record "PASS" "coolify: not exposed on public IP"
       fi
     fi
   fi
 
-  # Verify binding guard timer is active to detect drift after Coolify self-updates
+  # Verify UFW binding-guard timer is active (periodically re-applies UFW rules if removed)
   if systemctl is-active --quiet coolify-binding-guard.timer 2>/dev/null; then
-    record "PASS" "coolify: binding-guard timer active"
+    record "PASS" "coolify: UFW binding-guard timer active"
   else
-    record "FAIL" "coolify: binding-guard timer" "not active — binding drift after Coolify updates undetected"
+    record "FAIL" "coolify: UFW binding-guard timer" "not active — UFW rule drift may go undetected"
   fi
 }
 
