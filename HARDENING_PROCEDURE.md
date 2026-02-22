@@ -5,23 +5,22 @@ This procedure targets a dedicated Coolify host on Ubuntu `24.04.4 LTS` with:
 - Public web ingress on `80/443` (or no inbound web when using `--tunnel-mode`)
 - Automatic security updates with scheduled reboots
 
-The script `bootstrap_hardening.sh` (v1.2.1) applies safe host-level baseline controls in this order:
-1. Preflight checks and dependency install (including fail2ban)
+The script `bootstrap_hardening.sh` (v1.2.1) applies 15 baseline controls in this order. (Note: These are logical control groups; the script's `main()` implements them via 31 function calls.)
+1. Preflight checks and readiness verification (OS/root/session safety/interface detection/package prerequisites)
 2. NTP time synchronization verification
 3. Swap file creation (configurable size, default 2G, OOM protection)
 4. Disable unused network services (rpcbind, avahi-daemon, cups)
-5. Admin account + SSH key enforcement
-6. OpenSSH hardening drop-in + cipher/MAC/KexAlgorithm restrictions + Coolify localhost Match block + config validation
-7. UFW baseline policy (tunnel-mode aware, Tailscale direct UDP)
+5. Login banner (`/etc/issue.net`)
+6. Admin account + SSH hardening (SSH key enforcement, OpenSSH drop-in, cipher/MAC/KexAlgorithm restrictions, Coolify localhost Match block, config validation)
+7. Auditd baseline rules (identity, sudoers, Docker socket/config)
 8. Sysctl kernel hardening (BBR congestion control, SYN flood protection with backlog tuning, ICMP hardening, rp_filter, symlink/hardlink protection, ptrace restrictions, BPF restriction, kexec disable, SysRq restriction, full ASLR, suid_dumpable, swap tuning)
-9. fail2ban SSH jail (banaction = ufw, ignoreip for localhost/::1)
-10. DOCKER-USER chain hardening assets (IPv4 + IPv6, bridge rules, tunnel-mode aware)
-11. Docker daemon log rotation (`daemon.json` with `local` driver, `live-restore`)
-12. Journald persistence and configurable retention
-13. Auditd baseline rules (identity, sudoers, Docker socket/config)
+9. UFW baseline policy (tunnel-mode aware, Tailscale direct UDP)
+10. Docker daemon log rotation (`daemon.json` with `json-file` driver, `live-restore`; matches Coolify's expectation)
+11. DOCKER-USER chain hardening assets (IPv4 + IPv6, bridge rules, tunnel-mode aware)
+12. fail2ban SSH jail (banaction = ufw, ignoreip for localhost/::1)
+13. Journald persistence and configurable retention
 14. Unattended-upgrades policy
-15. Login banner (`/etc/issue.net`)
-16. Post-check verification (including AppArmor status warning) + report output
+15. Post-check verification (including AppArmor status warning) + state/report output
 
 ## Inputs
 
@@ -38,8 +37,13 @@ Optional:
 - `ENABLE_AUTO_REBOOT` (default `true`)
 - `AUTO_REBOOT_TIME` (default `03:30`)
 - `JOURNAL_RETENTION` (default `3month`, any valid systemd time span)
+- `JOURNAL_MAX_USE` (default `1G`) — journald SystemMaxUse limit
+- `UPGRADE_MAIL` (default empty) — email for unattended-upgrade failure notifications (`--upgrade-mail`)
 - `DRY_RUN` (default `false`)
 - `FORCE` (default `false`, required when overriding SSH-session safety gate)
+- `INSTALL_TAILSCALE` (default `false`) — install Tailscale during hardening
+- `TAILSCALE_AUTH_KEY` — Tailscale auth key (required when `INSTALL_TAILSCALE=true`)
+- `BIND_DASHBOARD_TO_TAILSCALE` (default `false`) — bind Coolify dashboard to Tailscale IP only
 
 ## Run
 
@@ -110,7 +114,7 @@ This eliminates the "direct-to-origin bypass" attack surface entirely.
 - State marker: `/var/lib/bootstrap-hardening/state`
 - Sysctl drop-in: `/etc/sysctl.d/60-coolify-hardening.conf`
 - fail2ban jail: `/etc/fail2ban/jail.d/coolify-hardening.local`
-- Docker daemon config: `/etc/docker/daemon.json` (write-if-absent only)
+- Docker daemon config: `/etc/docker/daemon.json` (creates or merges with existing; hardening owns: `log-driver`, `log-opts`, `live-restore`)
 - Login banner: `/etc/issue.net`
 
 ## Post-Run Verification
@@ -200,17 +204,26 @@ Standard mode:
 - Tailscale UDP `41641` allowed on WAN interface
 - DOCKER-USER contains managed `coolify-hardening-*` rules (IPv4 + IPv6)
 - DOCKER-USER includes bridge rules for container-to-container traffic
-- Docker daemon configured with `local` log driver (10m x 3 rotation) and `live-restore` (write-if-absent; existing `daemon.json` preserved)
+- `docker-user-hardening.service` configured with `PartOf=docker.service` + `WantedBy=docker.service` — rules automatically re-applied after any Docker daemon restart or security update
+- Docker daemon configured with `json-file` log driver (10m x 3 rotation) and `live-restore` (creates or merges with existing `daemon.json`; hardening owns: `log-driver`, `log-opts`, `live-restore`; Coolify may add: `default-address-pools`)
 - Sysctl: `tcp_syncookies=1`, `ip_forward=1`, `rp_filter=2`, `protected_hardlinks=1`, `protected_symlinks=1`, `suid_dumpable=0`, `unprivileged_bpf_disabled=1`, `kexec_load_disabled=1`, `sysrq=4`, `randomize_va_space=2`, ICMP redirects disabled, `tcp_max_syn_backlog=2048`, `tcp_synack_retries=2`, `swappiness=10`
 - BBR TCP congestion control active (if kernel supports `tcp_bbr` module), with `fq` qdisc
 - Swap file active at `/swapfile` with `0600` permissions (default 2G, configurable via `--swap-size`)
-- NTP time synchronization verified active
-- fail2ban active with SSH jail enabled, bans visible in `ufw status`
+- NTP enabled and synchronized verified at hardening time
+- fail2ban active with SSH jail enabled, bans visible in `ufw status`; `ignoreip` includes `100.64.0.0/10` (Tailscale CIDR) — prevents admin lockout from brute-force ban
 - Audit rules loaded: identity, sudoers, sshd-config, Docker
 - Journald persistent with configurable retention (default 3 months)
 - AppArmor verified enabled (warning if disabled)
 - Login banner present at `/etc/issue.net`
+- Unattended-upgrades covers both Ubuntu security/updates **and** Docker CE packages (`origin=Docker,label=Docker CE`) — `docker-ce`, `containerd.io`, etc. receive security patches automatically
+- `MinimalSteps` enabled — partial upgrade on power loss leaves packages in a consistent state
 - Unused services (rpcbind, avahi, cups) masked
+- UFW: ICMP allowed globally (`coolify-hardening-icmp`)
+- `hardening-validate.timer` active — runs daily `validate_hardening.sh` to detect configuration drift
+
+Split-horizon binding mode (additional, when `--bind-dashboard-to-tailscale`):
+- `coolify-binding-guard.timer` active — runs `/usr/local/sbin/coolify-binding-guard.sh` every 5 minutes
+- Guard detects if Coolify self-update reverted `APP_PORT`/`SOKETI_PORT` to `0.0.0.0` and re-applies the Tailscale IP binding, restarting Coolify automatically
 
 Tunnel mode (additional):
 - No WAN `80/443` UFW rules present

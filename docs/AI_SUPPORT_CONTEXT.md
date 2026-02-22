@@ -109,6 +109,7 @@ If the state file shows `tunnel_mode=true`, the server uses **Cloudflare Tunnel*
 ## Coolify-Specific Notes
 
 - Coolify connects to its own host as root via `localhost` / Docker bridge networks (`172.16.0.0/12`). The SSH `Match Address` block allows key-only root login from these addresses only.
-- Docker's `local` log driver is used (not `json-file`) — it's faster and compressed.
+- Docker's `json-file` log driver is used (matches Coolify's expectation for compatibility) with rotation (10m x 3).
 - The `live-restore` Docker option keeps containers running during Docker daemon restarts.
 - The `docker-user-hardening.service` runs at boot to reapply DOCKER-USER rules after Docker starts.
+- **daemon.json ownership:** Hardening owns `log-driver`, `log-opts`, `live-restore`; Coolify may add `default-address-pools`.

@@ -14,6 +14,7 @@ SHELL := /bin/bash
 	test-full-tunnel \
 	test-validate \
 	test-idempotency \
+	test-workflow-consistency \
 	test-integration \
 	test-ci-pr \
 	test-ci-main \
@@ -116,6 +117,10 @@ test-validate: docker-build-tier2
 test-idempotency: docker-build-tier2
 	$(call run_bats_tier2,idempotency,/workspace/tests/integration/test_idempotency.bats)
 
+# Workflow contract and documentation consistency checks
+test-workflow-consistency:
+	bash scripts/check_workflow_consistency.sh
+
 # ==============================================================================
 # Combined Targets
 # ==============================================================================
@@ -125,9 +130,9 @@ test-integration: test-dry-run test-full-standard test-full-tunnel test-validate
 test-all: test-unit test-integration
 
 # CI targets: use Docker for consistency
-test-ci-pr: test-unit test-dry-run test-validate
+test-ci-pr: test-unit test-dry-run test-validate test-workflow-consistency
 
-test-ci-main: test-all
+test-ci-main: test-all test-workflow-consistency
 
 test: test-all
 

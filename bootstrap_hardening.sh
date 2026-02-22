@@ -19,6 +19,9 @@ APT_AUTO_FILE="/etc/apt/apt.conf.d/20auto-upgrades"
 APT_LOCAL_FILE="/etc/apt/apt.conf.d/52unattended-upgrades-local"
 SYSCTL_DROPIN_FILE="/etc/sysctl.d/60-coolify-hardening.conf"
 FAIL2BAN_JAIL_FILE="/etc/fail2ban/jail.d/coolify-hardening.local"
+COOLIFY_BINDING_GUARD_SCRIPT="/usr/local/sbin/coolify-binding-guard.sh"
+COOLIFY_BINDING_GUARD_SERVICE="/etc/systemd/system/coolify-binding-guard.service"
+COOLIFY_BINDING_GUARD_TIMER="/etc/systemd/system/coolify-binding-guard.timer"
 
 TAILSCALE_IFACE="tailscale0"
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
@@ -31,10 +34,12 @@ WAN_IFACE="${WAN_IFACE:-}"
 ENABLE_AUTO_REBOOT="${ENABLE_AUTO_REBOOT:-true}"
 AUTO_REBOOT_TIME="${AUTO_REBOOT_TIME:-03:30}"
 JOURNAL_RETENTION="${JOURNAL_RETENTION:-3month}"
+JOURNAL_MAX_USE="${JOURNAL_MAX_USE:-1G}"
 TUNNEL_MODE="${TUNNEL_MODE:-false}"
 SWAP_SIZE="${SWAP_SIZE:-2G}"
 DRY_RUN="${DRY_RUN:-false}"
 FORCE="${FORCE:-false}"
+UPGRADE_MAIL="${UPGRADE_MAIL:-}"
 BIND_DASHBOARD_TO_TAILSCALE="${BIND_DASHBOARD_TO_TAILSCALE:-false}"
 INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-false}"
 TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
@@ -42,6 +47,7 @@ TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
 OS_VERSION=""
 DOCKER_PRESENT="false"
 DOCKER_RULES_APPLIED="false"
+DOCKER_DAEMON_NEEDS_RESTART="false"
 
 log() {
   printf '[%s] %s\n' "$(date -Iseconds)" "$*"
@@ -100,6 +106,7 @@ Optional:
   --bind-dashboard-to-tailscale Bind Coolify dashboard to Tailscale IP only (split-horizon)
   --install-tailscale           Install Tailscale if not present (requires --tailscale-auth-key or interactive)
   --tailscale-auth-key <key>    Tailscale auth key for non-interactive setup (use with --install-tailscale)
+  --upgrade-mail <address>      Email for unattended-upgrade failure reports (optional)
   --env-file <path>             Source variables from file before parsing flags
   --dry-run                     Print actions without changing system
   --force                       Override non-Tailscale SSH-session safety gate
@@ -256,6 +263,11 @@ parse_args() {
         FORCE="true"
         shift
         ;;
+      --upgrade-mail)
+        require_value "$1" "${2:-}"
+        UPGRADE_MAIL="$2"
+        shift 2
+        ;;
       -h|--help)
         usage
         exit 0
@@ -299,8 +311,10 @@ validate_inputs() {
   (( SSH_PORT >= 1 && SSH_PORT <= 65535 )) || die "SSH_PORT must be in range 1..65535."
   [[ "${AUTO_REBOOT_TIME}" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] || die "AUTO_REBOOT_TIME must be HH:MM (24h)."
 
-  if ! is_true "${ENABLE_AUTO_REBOOT}" && [[ "${ENABLE_AUTO_REBOOT,,}" != "false" ]]; then
-    die "ENABLE_AUTO_REBOOT must be true/false."
+  # Validate ENABLE_AUTO_REBOOT is either true or false (or recognized variant)
+  local reboot_lower="${ENABLE_AUTO_REBOOT,,}"
+  if [[ "${reboot_lower}" != "true" && "${reboot_lower}" != "false" && "${reboot_lower}" != "1" && "${reboot_lower}" != "0" && "${reboot_lower}" != "yes" && "${reboot_lower}" != "no" ]]; then
+    die "ENABLE_AUTO_REBOOT must be true/false (got: ${ENABLE_AUTO_REBOOT})."
   fi
 
   [[ "${JOURNAL_RETENTION}" =~ ^[0-9]+(us(ec)?|ms(ec)?|s(ec(ond)?s?)?|m(in(ute)?s?)?|h(our)?s?|d(ay)?s?|w(eek)?s?|month?s?|y(ear)?s?)$ ]] \
@@ -311,10 +325,15 @@ validate_inputs() {
   fi
 
   # Validate split-horizon binding options
-  if is_true "${BIND_DASHBOARD_TO_TAILSCALE}"; then
-    if [[ ! -f "${COOLIFY_ENV_FILE}" ]] && ! is_true "${DRY_RUN}"; then
-      die "Coolify .env not found at ${COOLIFY_ENV_FILE}. Is Coolify installed?"
-    fi
+  if is_true "${BIND_DASHBOARD_TO_TAILSCALE}" && ! is_true "${DRY_RUN}"; then
+    [[ -f "${COOLIFY_ENV_FILE}" ]] \
+      || die "Coolify .env not found at ${COOLIFY_ENV_FILE}. Is Coolify installed?"
+    command -v docker >/dev/null 2>&1 \
+      || die "--bind-dashboard-to-tailscale requires Docker."
+    docker compose version >/dev/null 2>&1 \
+      || die "--bind-dashboard-to-tailscale requires the Docker Compose plugin."
+    [[ -d "/data/coolify/source" ]] \
+      || die "--bind-dashboard-to-tailscale requires /data/coolify/source to exist."
   fi
 
   # Validate Tailscale install options
@@ -338,6 +357,33 @@ detect_os() {
   if [[ "${OS_VERSION}" != "24.04" ]] && ! is_true "${FORCE}"; then
     die "Expected Ubuntu 24.04.x (found ${OS_VERSION}). Use --force to override."
   fi
+}
+
+check_disk_space() {
+  local swap_size="${SWAP_SIZE:-2G}"
+  local required_mb=512
+  if [[ "${swap_size}" != "0" ]]; then
+    local swap_num="${swap_size%[GgMm]}"
+    local swap_unit="${swap_size: -1}"
+    case "${swap_unit,,}" in
+      g) required_mb=$(( required_mb + swap_num * 1024 )) ;;
+      m) required_mb=$(( required_mb + swap_num )) ;;
+    esac
+  fi
+  if is_true "${DRY_RUN}"; then
+    log "DRY-RUN: would check disk space (required: ${required_mb}M)."
+    return 0
+  fi
+  local avail_mb
+  avail_mb="$(df -m / 2>/dev/null | awk 'NR==2 {print $4}')"
+  if [[ -z "${avail_mb}" || ! "${avail_mb}" =~ ^[0-9]+$ ]]; then
+    warn "Cannot determine available disk space; skipping pre-flight check."
+    return 0
+  fi
+  if (( avail_mb < required_mb )); then
+    die "Insufficient disk space: ${avail_mb}M available, ${required_mb}M required (swap: ${swap_size} + 512M base)."
+  fi
+  log "Disk pre-flight: ${avail_mb}M available, ${required_mb}M required. OK."
 }
 
 detect_wan_iface() {
@@ -365,6 +411,7 @@ ensure_packages() {
   local packages
   local missing=()
   packages=(
+    curl
     ufw
     auditd
     audispd-plugins
@@ -383,7 +430,7 @@ ensure_packages() {
 
   if ((${#missing[@]} > 0)); then
     log "Installing required packages: ${missing[*]}"
-    run apt-get update
+    retry_apt_update
     run env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
   fi
 }
@@ -399,6 +446,20 @@ require_commands() {
   for cmd in "${commands[@]}"; do
     command -v "${cmd}" >/dev/null 2>&1 || die "Missing command: ${cmd}"
   done
+}
+
+retry_apt_update() {
+  local attempts=3 delay=5 i
+  for (( i = 1; i <= attempts; i++ )); do
+    if run apt-get update; then
+      return 0
+    fi
+    if (( i < attempts )); then
+      log "apt-get update failed (attempt ${i}/${attempts}); retrying in ${delay}s..."
+      sleep "${delay}"
+    fi
+  done
+  die "apt-get update failed after ${attempts} attempts."
 }
 
 verify_tailscale_iface() {
@@ -457,6 +518,118 @@ install_tailscale() {
   log "Tailscale installed and configured."
 }
 
+configure_coolify_binding_watchdog() {
+  if ! is_true "${BIND_DASHBOARD_TO_TAILSCALE}"; then
+    return 0
+  fi
+
+  write_file "${COOLIFY_BINDING_GUARD_SCRIPT}" "0750" "root" "root" <<'GUARD_EOF'
+#!/usr/bin/env bash
+# Coolify split-horizon binding guard.
+# Detects and corrects APP_PORT/SOKETI_PORT drift back to 0.0.0.0 after Coolify self-updates.
+set -Euo pipefail
+
+STATE_FILE="/var/lib/bootstrap-hardening/state"
+COOLIFY_ENV="/data/coolify/source/.env"
+LOG_TAG="coolify-binding-guard"
+
+log() { logger -t "${LOG_TAG}" -- "$*"; }
+
+# Load Tailscale IP recorded at hardening time
+tailscale_ip=""
+if [[ -f "${STATE_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${STATE_FILE}"
+  tailscale_ip="${tailscale_ip:-}"
+fi
+
+# Fall back to live detection
+if [[ -z "${tailscale_ip}" ]] && command -v tailscale >/dev/null 2>&1; then
+  tailscale_ip="$(tailscale ip -4 2>/dev/null)" || true
+fi
+
+[[ -n "${tailscale_ip}" ]] || { log "No Tailscale IP available; skipping."; exit 0; }
+[[ -f "${COOLIFY_ENV}" ]] || { log "Coolify .env not found; skipping."; exit 0; }
+
+# Read current binding values
+env_app_port="$(grep -m1 "^APP_PORT=" "${COOLIFY_ENV}" | cut -d= -f2-)" || true
+env_soketi_port="$(grep -m1 "^SOKETI_PORT=" "${COOLIFY_ENV}" | cut -d= -f2-)" || true
+
+if [[ "${env_app_port}" == "${tailscale_ip}:8000" && "${env_soketi_port}" == "${tailscale_ip}:6001" ]]; then
+  exit 0
+fi
+
+log "Binding drift detected (APP_PORT='${env_app_port}', expected '${tailscale_ip}:8000'). Re-applying."
+cp -a "${COOLIFY_ENV}" "${COOLIFY_ENV}.bak.$(date +%s)"
+mapfile -t _old_baks < <(ls -t "${COOLIFY_ENV}".bak.* 2>/dev/null)
+if (( ${#_old_baks[@]} > 5 )); then
+  rm -f "${_old_baks[@]:5}"
+fi
+unset _old_baks
+
+if grep -q "^APP_PORT=" "${COOLIFY_ENV}"; then
+  sed -i "s|^APP_PORT=.*|APP_PORT=${tailscale_ip}:8000|" "${COOLIFY_ENV}"
+else
+  printf 'APP_PORT=%s:8000\n' "${tailscale_ip}" >> "${COOLIFY_ENV}"
+fi
+
+if grep -q "^SOKETI_PORT=" "${COOLIFY_ENV}"; then
+  sed -i "s|^SOKETI_PORT=.*|SOKETI_PORT=${tailscale_ip}:6001|" "${COOLIFY_ENV}"
+else
+  printf 'SOKETI_PORT=%s:6001\n' "${tailscale_ip}" >> "${COOLIFY_ENV}"
+fi
+
+if command -v docker >/dev/null 2>&1 && [[ -d "/data/coolify/source" ]]; then
+  log "Restarting Coolify to apply corrected binding (${tailscale_ip}:8000)..."
+  (
+    cd /data/coolify/source
+    docker compose --env-file .env -f docker-compose.yml -f docker-compose.prod.yml \
+      down --remove-orphans 2>/dev/null || true
+    docker compose --env-file .env -f docker-compose.yml -f docker-compose.prod.yml \
+      up -d --wait --wait-timeout 60
+  )
+  log "Coolify restarted with binding ${tailscale_ip}:8000."
+  sleep 10
+  coolify_status="$(docker inspect coolify --format '{{.State.Status}}' 2>/dev/null || echo "unknown")"
+  if [[ "${coolify_status}" == "running" ]]; then
+    log "Coolify container status: running."
+  else
+    log "Coolify container status: ${coolify_status} (may still be starting)."
+  fi
+else
+  log ".env corrected but Coolify not restarted (Docker not available)."
+fi
+GUARD_EOF
+
+  write_file "${COOLIFY_BINDING_GUARD_SERVICE}" "0644" "root" "root" <<'UNIT_EOF'
+[Unit]
+Description=Re-apply Coolify split-horizon dashboard binding if drifted
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/coolify-binding-guard.sh
+UNIT_EOF
+
+  write_file "${COOLIFY_BINDING_GUARD_TIMER}" "0644" "root" "root" <<'TIMER_EOF'
+[Unit]
+Description=Periodically verify Coolify dashboard Tailscale binding
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
+TIMER_EOF
+
+  run systemctl daemon-reload
+  run systemctl enable --now coolify-binding-guard.timer
+  log "Coolify binding watchdog enabled (checks every 5 minutes)."
+}
+
 configure_coolify_binding() {
   if ! is_true "${BIND_DASHBOARD_TO_TAILSCALE}"; then
     return 0
@@ -508,16 +681,27 @@ configure_coolify_binding() {
     log "Added SOKETI_PORT=${tailscale_ip}:6001"
   fi
 
-  # Restart Coolify to apply changes
+  # Restart Coolify to apply changes — must specify both compose files;
+  # docker-compose.prod.yml carries images, port mappings, and volumes.
   if command -v docker >/dev/null 2>&1 && [[ -d "/data/coolify/source" ]]; then
     log "Restarting Coolify..."
-    cd /data/coolify/source
-    docker compose down --remove-orphans 2>/dev/null || true
-    docker compose up -d
+    (
+      cd /data/coolify/source
+      docker compose --env-file .env -f docker-compose.yml -f docker-compose.prod.yml \
+        down --remove-orphans 2>/dev/null || true
+      docker compose --env-file .env -f docker-compose.yml -f docker-compose.prod.yml \
+        up -d --wait --wait-timeout 60
+    )
     log "Coolify restarted."
 
-    # Wait for Coolify to start
-    sleep 5
+    log "Waiting for Coolify to bind port 8000 (up to 30s)..."
+    local i
+    for (( i = 1; i <= 6; i++ )); do
+      if ss -tlnp 2>/dev/null | grep -q ':8000 '; then
+        break
+      fi
+      sleep 5
+    done
 
     # Verify binding
     log "Verifying Coolify binding..."
@@ -569,6 +753,18 @@ ensure_timesync() {
     else
       log "NTP synchronization already active."
     fi
+    local i
+    for (( i = 1; i <= 6; i++ )); do
+      local synced
+      synced="$(timedatectl show --property=NTPSynchronized --value 2>/dev/null || echo "n/a")"
+      if [[ "${synced}" == "yes" ]]; then
+        log "NTP synchronized."
+        return 0
+      fi
+      log "Waiting for NTP synchronization (${i}/6)..."
+      sleep 5
+    done
+    warn "NTP not synchronized after 30s; continuing. Verify with: timedatectl status"
   else
     log "DRY-RUN: would verify NTP synchronization."
   fi
@@ -589,6 +785,10 @@ configure_swap() {
   fi
 
   local swap_file="/swapfile"
+  if [[ -f "${swap_file}" ]]; then
+    log "Stale ${swap_file} found (not active in swapon); removing."
+    run rm -f "${swap_file}"
+  fi
   run fallocate -l "${swap_size}" "${swap_file}"
   run chmod 600 "${swap_file}"
   run mkswap "${swap_file}"
@@ -704,7 +904,7 @@ bantime = 1h
 findtime = 10m
 maxretry = 5
 banaction = ufw
-ignoreip = 127.0.0.1/8 ::1
+ignoreip = 127.0.0.1/8 ::1 ${TAILSCALE_CIDR}
 
 [sshd]
 enabled = true
@@ -746,6 +946,23 @@ ensure_admin_access() {
 
   if [[ "${user_exists}" == "true" ]] && ! id -nG "${ADMIN_USER}" | tr ' ' '\n' | grep -qx "sudo"; then
     run usermod -aG sudo "${ADMIN_USER}"
+  fi
+
+  # Configure passwordless sudo for admin user
+  # This is required because the admin user has no password set,
+  # but sudo requires password by default, blocking all admin operations.
+  local sudoers_file="/etc/sudoers.d/${ADMIN_USER}"
+  if is_true "${DRY_RUN}"; then
+    log "DRY-RUN: would create ${sudoers_file} with passwordless sudo for ${ADMIN_USER}"
+  else
+    echo "${ADMIN_USER} ALL=(ALL) NOPASSWD: ALL" > "${sudoers_file}"
+    chmod 440 "${sudoers_file}"
+    # Validate sudoers syntax before committing
+    if ! visudo -c -f "${sudoers_file}" >/dev/null 2>&1; then
+      rm -f "${sudoers_file}"
+      die "Failed to create valid sudoers file for ${ADMIN_USER}"
+    fi
+    log "Configured passwordless sudo for ${ADMIN_USER}"
   fi
 
   if is_true "${DRY_RUN}" && [[ "${user_exists}" == "false" ]]; then
@@ -933,6 +1150,8 @@ configure_ufw() {
 
   run ufw allow in on "${WAN_IFACE}" proto udp to any port 41641 comment "coolify-hardening-tailscale-direct"
 
+  run ufw allow proto icmp comment "coolify-hardening-icmp"
+
   run ufw --force enable
 }
 
@@ -1028,8 +1247,9 @@ EOF
   write_file "${DOCKER_USER_UNIT_FILE}" "0644" "root" "root" <<EOF
 [Unit]
 Description=Apply managed DOCKER-USER hardening rules
-After=docker.service network-online.target
-Wants=network-online.target
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
 
 [Service]
 Type=oneshot
@@ -1038,23 +1258,39 @@ ExecStart=${DOCKER_USER_SCRIPT}
 RemainAfterExit=yes
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=docker.service
 EOF
+}
+
+detect_docker() {
+  if command -v docker >/dev/null 2>&1; then
+    DOCKER_PRESENT="true"
+    log "Docker detected."
+  else
+    log "Docker not detected."
+  fi
 }
 
 configure_docker_user() {
   install_docker_user_assets
 
-  if command -v docker >/dev/null 2>&1; then
-    DOCKER_PRESENT="true"
+  # Remove stale WantedBy=multi-user.target symlinks from prior script versions
+  if ! is_true "${DRY_RUN}"; then
+    systemctl disable docker-user-hardening.service 2>/dev/null || true
   fi
-
   run systemctl daemon-reload
   run systemctl enable docker-user-hardening.service
 
   if [[ "${DOCKER_PRESENT}" == "true" ]]; then
-    run systemctl start docker-user-hardening.service
-    DOCKER_RULES_APPLIED="true"
+    # Docker CLI may exist while docker.service is not yet installed/available.
+    if systemctl list-unit-files --type=service 2>/dev/null | awk '{print $1}' | grep -qx 'docker.service'; then
+      run systemctl start docker-user-hardening.service || warn "docker-user-hardening.service could not be started; start after Docker is ready."
+      if systemctl is-active --quiet docker-user-hardening.service 2>/dev/null; then
+        DOCKER_RULES_APPLIED="true"
+      fi
+    else
+      warn "Docker CLI detected but docker.service is not present; DOCKER-USER start is deferred."
+    fi
   else
     warn "Docker not detected; DOCKER-USER unit installed and enabled, but start is deferred."
   fi
@@ -1063,19 +1299,63 @@ configure_docker_user() {
 DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
 
 configure_docker_daemon() {
-  if [[ -f "${DOCKER_DAEMON_JSON}" ]]; then
-    warn "Docker daemon.json already exists at ${DOCKER_DAEMON_JSON}; skipping to avoid overwriting customizations."
-    return 0
-  fi
+  # Required settings for hardening
+  # Note: log-driver uses json-file (same as Coolify) for compatibility.
+  # Hardening owns: log-driver, log-opts, live-restore. Coolify may add: default-address-pools.
+  local required_settings='{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"},"live-restore":true}'
 
   if [[ "${DOCKER_PRESENT}" != "true" ]]; then
     log "Docker not present; skipping daemon.json creation (will be needed post-install)."
     return 0
   fi
 
+  if [[ -f "${DOCKER_DAEMON_JSON}" ]]; then
+    # File exists - merge our required settings with existing config
+    log "Merging hardening settings into existing ${DOCKER_DAEMON_JSON}"
+
+    if is_true "${DRY_RUN}"; then
+      log "DRY-RUN: would merge hardening settings into ${DOCKER_DAEMON_JSON}"
+      return 0
+    fi
+
+    # Check if jq is available for proper JSON merging
+    if ! command -v jq >/dev/null 2>&1; then
+      warn "jq not installed; installing for JSON merge..."
+      retry_apt_update
+      run env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends jq
+    fi
+
+    # Backup existing config
+    local backup="${DOCKER_DAEMON_JSON}.bak.$(date +%s)"
+    cp -a "${DOCKER_DAEMON_JSON}" "${backup}"
+    log "Backed up ${DOCKER_DAEMON_JSON} to ${backup}"
+
+    # Merge: our settings take precedence but preserve other existing settings
+    local merged
+    merged="$(jq -s '.[0] * .[1]' "${DOCKER_DAEMON_JSON}" <(echo "${required_settings}") 2>/dev/null)"
+
+    if [[ -z "${merged}" ]]; then
+      die "Failed to merge ${DOCKER_DAEMON_JSON} with jq; cannot safely apply hardening settings."
+    else
+      echo "${merged}" > "${DOCKER_DAEMON_JSON}"
+      chmod 0644 "${DOCKER_DAEMON_JSON}"
+    fi
+
+    if systemctl is-active --quiet docker; then
+      DOCKER_DAEMON_NEEDS_RESTART="true"
+      log "Docker daemon.json updated; restart deferred until after DOCKER-USER rules are applied."
+    fi
+
+    log "Docker daemon.json updated with hardening settings."
+    return 0
+  fi
+
+  # File doesn't exist - create it
+  # Note: log-driver uses json-file (same as Coolify) for compatibility.
+  # Hardening owns: log-driver, log-opts, live-restore. Coolify may add: default-address-pools.
   write_file "${DOCKER_DAEMON_JSON}" "0644" "root" "root" <<'EOF'
 {
-  "log-driver": "local",
+  "log-driver": "json-file",
   "log-opts": {
     "max-size": "10m",
     "max-file": "3"
@@ -1084,7 +1364,7 @@ configure_docker_daemon() {
 }
 EOF
 
-  log "Docker daemon.json written with log rotation (local driver, 10m x 3) and live-restore."
+  log "Docker daemon.json written with log rotation (json-file driver, 10m x 3) and live-restore."
 }
 
 configure_journald() {
@@ -1092,7 +1372,7 @@ configure_journald() {
 [Journal]
 Storage=persistent
 Compress=yes
-SystemMaxUse=1G
+SystemMaxUse=${JOURNAL_MAX_USE}
 MaxRetentionSec=${JOURNAL_RETENTION}
 EOF
   run systemctl restart systemd-journald
@@ -1145,7 +1425,7 @@ configure_auditd() {
     rm -f "${tmp}"
   fi
 
-  run systemctl enable --now auditd
+  run systemctl enable --now auditd || warn "auditd could not be started (container/kernel limitation); rules file written."
   run augenrules --load
 }
 
@@ -1167,11 +1447,17 @@ EOF
 Unattended-Upgrade::Origins-Pattern {
     "origin=Ubuntu,codename=\${distro_codename}-security,label=Ubuntu";
     "origin=Ubuntu,codename=\${distro_codename}-updates,label=Ubuntu";
+    "origin=Docker,label=Docker CE";
 };
+Unattended-Upgrade::MinimalSteps "true";
 Unattended-Upgrade::Automatic-Reboot "${reboot_bool}";
 Unattended-Upgrade::Automatic-Reboot-Time "${AUTO_REBOOT_TIME}";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 Unattended-Upgrade::Remove-New-Unused-Dependencies "true";
+$(if [[ -n "${UPGRADE_MAIL}" ]]; then
+  printf 'Unattended-Upgrade::Mail "%s";\n' "${UPGRADE_MAIL}"
+  printf 'Unattended-Upgrade::MailReport "only-on-error";\n'
+fi)
 EOF
 
   run systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
@@ -1242,8 +1528,10 @@ run_post_checks() {
   fi
 
   grep -q "^Storage=persistent$" "${JOURNALD_DROPIN_FILE}" || die "Post-check failed: journald persistence drop-in missing."
-  auditctl -l | grep -q "identity" || die "Post-check failed: audit rules not loaded."
-  auditctl -l | grep -q "sudoers-change" || die "Post-check failed: sudoers audit rules not loaded."
+  { auditctl -l 2>/dev/null || cat "${AUDIT_RULES_FILE}"; } | grep -q "identity" \
+    || die "Post-check failed: audit rules not loaded."
+  { auditctl -l 2>/dev/null || cat "${AUDIT_RULES_FILE}"; } | grep -q "sudoers-change" \
+    || die "Post-check failed: sudoers audit rules not loaded."
   grep -q 'APT::Periodic::Unattended-Upgrade "1";' "${APT_AUTO_FILE}" || die "Post-check failed: unattended-upgrades periodic config missing."
 
   local syncookies ip_forward
@@ -1424,6 +1712,53 @@ EOF
   chmod 0600 "${REPORT_FILE}"
 }
 
+configure_hardening_validation_timer() {
+  if is_true "${DRY_RUN}"; then
+    log "DRY-RUN: would install hardening-validate.timer (daily validate_hardening.sh run)."
+    return 0
+  fi
+
+  # Locate validate_hardening.sh relative to this script, with realpath fallback
+  local script_dir validate_src validate_dest
+  script_dir="$(cd "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)" || script_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+  validate_src="${script_dir}/validate_hardening.sh"
+  validate_dest="/usr/local/sbin/validate-hardening"
+
+  if [[ -f "${validate_src}" ]]; then
+    install -m 0750 -o root -g root "${validate_src}" "${validate_dest}"
+    log "Installed ${validate_src} → ${validate_dest}"
+  else
+    warn "validate_hardening.sh not found at ${validate_src}; skipping timer install."
+    return 0
+  fi
+
+  cat > /etc/systemd/system/hardening-validate.service <<'SVCEOF'
+[Unit]
+Description=Run hardening validation checks
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/validate-hardening
+SVCEOF
+
+  cat > /etc/systemd/system/hardening-validate.timer <<'TIMEREOF'
+[Unit]
+Description=Daily hardening validation
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+TIMEREOF
+
+  run systemctl daemon-reload
+  run systemctl enable --now hardening-validate.timer
+  log "hardening-validate.timer enabled (runs validate_hardening.sh daily)."
+}
+
 main() {
   parse_args "$@"
   require_root
@@ -1432,6 +1767,7 @@ main() {
   log "Starting ${SCRIPT_NAME} v${SCRIPT_VERSION}"
   validate_inputs
   detect_os
+  check_disk_space
 
   log "Verifying NTP time synchronization."
   ensure_timesync
@@ -1448,6 +1784,7 @@ main() {
 
   require_commands
   verify_tailscale_iface
+  detect_docker
 
   log "Configuring swap."
   configure_swap
@@ -1455,47 +1792,60 @@ main() {
   log "Disabling unused network services."
   disable_unused_services
 
+  log "Applying login banner."
+  configure_banner
+
   log "Applying account and SSH hardening."
   ensure_admin_access
   configure_ssh
 
-  log "Applying UFW baseline."
-  configure_ufw
+  log "Applying auditd baseline."
+  configure_auditd
 
   log "Applying sysctl kernel hardening."
   configure_sysctl
 
-  log "Applying fail2ban."
-  configure_fail2ban
-
-  log "Applying DOCKER-USER hardening assets."
-  configure_docker_user
+  log "Applying UFW baseline."
+  configure_ufw
 
   log "Applying Docker daemon log rotation."
   configure_docker_daemon
 
+  log "Applying DOCKER-USER hardening assets."
+  configure_docker_user
+
+  if is_true "${DOCKER_DAEMON_NEEDS_RESTART}"; then
+    log "Restarting Docker (deferred from daemon.json update, DOCKER-USER rules already applied)."
+    run systemctl restart docker
+    if [[ "${DOCKER_PRESENT}" == "true" ]]; then
+      run systemctl start docker-user-hardening.service
+    fi
+  fi
+
+  log "Applying fail2ban."
+  configure_fail2ban
+
   log "Applying journald persistence."
   configure_journald
 
-  log "Applying auditd baseline."
-  configure_auditd
-
   log "Applying unattended-upgrades policy."
   configure_unattended_upgrades
-
-  log "Applying login banner."
-  configure_banner
+  log "Installing hardening validation timer."
+  configure_hardening_validation_timer
 
   # Configure Coolify split-horizon binding if requested
   if is_true "${BIND_DASHBOARD_TO_TAILSCALE}"; then
     log "Configuring Coolify split-horizon binding."
     configure_coolify_binding
+    log "Installing Coolify binding watchdog."
+    configure_coolify_binding_watchdog
   fi
+
+  write_state
 
   log "Running post-apply checks."
   run_post_checks
 
-  write_state
   generate_report
   log "Completed hardening bootstrap successfully."
 }

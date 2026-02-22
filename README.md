@@ -1,146 +1,208 @@
 # Secure Coolify Ubuntu
 
-**Production-ready security hardening for Ubuntu 24.04 servers running Coolify.**
+Production-ready security hardening for Ubuntu 24.04 servers running [Coolify](https://coolify.io/).
 
-[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com/yourusername/secure_coolify_ubuntu)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu)](https://ubuntu.com/)
 
 ---
 
-## TL;DR
+## Overview
 
-**What it does:** Automatically hardens a fresh Ubuntu 24.04 server for running [Coolify](https://coolify.io/) (self-hosted PaaS) with best-practice security controls.
+Go from a fresh Ubuntu 24.04 VPS to a hardened, production Coolify instance with automatic SSL and wildcard subdomains. One script handles everything: server hardening, Tailscale VPN, Docker, Coolify, Cloudflare DNS, and dashboard lockdown.
 
-**Who it's for:** DevOps engineers, sysadmins, and developers deploying Coolify who want production-grade server security without manually configuring firewalls, SSH hardening, and audit logging.
+```
+                  Internet
+                     │
+              ┌──────┴──────┐
+              │  Cloudflare  │  ← Universal SSL (*.example.com)
+              │    Edge      │
+              └──────┬──────┘
+                     │
+          ┌──────────┼──────────┐
+          │ Tunnel   │ Standard │
+          │ (default)│          │
+          ▼          │          ▼
+     outbound-only   │    ports 80/443
+     connection      │    (firewalled)
+          │          │          │
+          └──────────┼──────────┘
+                     │
+              ┌──────┴──────┐
+              │   Server    │
+              │ ┌─────────┐ │
+              │ │ Traefik  │ │  ← Host-header routing
+              │ │ (Coolify)│ │
+              │ └─────────┘ │
+              │              │
+              │ Tailscale ◄──┼── Admin SSH + Dashboard (100.x.x.x)
+              │ (VPN)        │
+              └──────────────┘
+                No public SSH
+                No public dashboard
+```
 
-**Key features:**
+**Two deployment paths:**
 
-- 16 automated hardening steps in a single script
-- SSH key-only authentication with modern cipher suites
-- UFW firewall with Docker-aware rules
-- Fail2ban integration for SSH brute-force protection
-- Kernel hardening (SYN flood protection, BBR, ASLR)
-- Auditd rules for security monitoring
-- Unattended security updates with scheduled reboots
-- Supports Cloudflare Tunnel mode (no inbound web ports)
-- Tailscale integration for secure admin access
-- Comprehensive BATS test suite
+| Path | Script | Run from | Use case |
+|------|--------|----------|----------|
+| **Full deploy** | `deploy.sh` | Your laptop | Fresh VPS to working Coolify in ~15 min |
+| **Hardening only** | `bootstrap_hardening.sh` | The server | Just the security controls, no Coolify orchestration |
 
 ---
 
-## What It Does
+## Prerequisites
 
-The `bootstrap_hardening.sh` script applies security hardening in this order:
-
-| Step | Description |
-|------|-------------|
-| 1 | **Preflight checks** — OS validation, root requirement, SSH session safety |
-| 2 | **Dependencies** — Installs UFW, auditd, fail2ban, unattended-upgrades |
-| 3 | **Time sync** — Ensures NTP is active |
-| 4 | **Swap** — Creates swap file (default 2G, configurable) |
-| 5 | **Service cleanup** — Disables rpcbind, avahi-daemon, cups |
-| 6 | **Admin account** — Creates user with SSH key access |
-| 7 | **SSH hardening** — Key-only auth, modern ciphers, root disabled |
-| 8 | **UFW firewall** — Baseline rules with tunnel-mode support |
-| 9 | **Kernel hardening** — sysctl configs (SYN flood, BBR, ASLR, ptrace) |
-| 10 | **Fail2ban** — SSH jail with UFW integration |
-| 11 | **Docker rules** — DOCKER-USER chain hardening |
-| 12 | **Docker daemon** — Log rotation and live-restore |
-| 13 | **Journald** — Persistent logging with retention |
-| 14 | **Auditd** — Rules for identity, sudoers, Docker monitoring |
-| 15 | **Auto-updates** — Security patches with configurable reboots |
-| 16 | **Login banner** — Authorized access warning |
-
-### Deployment Modes
-
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| **Standard** | Opens WAN ports 80/443 for web traffic | Traditional VPS with public ingress |
-| **Tunnel** (`--tunnel-mode`) | No inbound web ports | Cloudflare Tunnel, Tailscale Funnel |
+| Requirement | Details |
+|-------------|---------|
+| **Server** | Ubuntu 24.04 LTS, 2GB+ RAM (4GB+ recommended), 40GB+ SSD |
+| **Tailscale** | Account + auth key ([tailscale.com](https://tailscale.com)) |
+| **Cloudflare** | Domain on Cloudflare DNS + API token with `Zone:DNS:Edit` and `Account:Cloudflare Tunnel:Edit` |
+| **SSH key** | Ed25519 recommended: `ssh-keygen -t ed25519` |
+| **Local tools** | `ssh`, `curl`, `jq`, `sshpass` (for `deploy.sh` only) |
 
 ---
 
 ## Quick Start
 
-### Prerequisites
+### Full Automated Deploy
 
-- Ubuntu 24.04 LTS server
-- Root or sudo access
-- SSH public key for admin user
-
-### Run Hardening
+From your laptop — hardening, Tailscale, Docker, Coolify, Cloudflare Tunnel, DNS, and dashboard lockdown:
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/secure_coolify_ubuntu.git
-cd secure_coolify_ubuntu
-
-# Run with required options
-sudo ./bootstrap_hardening.sh \
-  --admin-user coolifyadmin \
-  --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host"
+bash deploy.sh \
+  --server-ip <vps-ip> \
+  --root-pass <root-password> \
+  --tailscale-auth-key tskey-auth-... \
+  --domain app.example.com \
+  --cf-api-token <cloudflare-token> \
+  --yes
 ```
 
-### Verify Hardening
+Or run interactively (prompts for each value):
 
 ```bash
-sudo ./validate_hardening.sh
+bash deploy.sh
 ```
 
----
+Already SSH'd into the server? Use `setup.sh` instead — same flags, runs locally (no `--root-pass` needed).
 
-## Usage Examples
+See [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md) for the manual step-by-step procedure.
 
-### Standard Deployment
+### Hardening Only
 
-For a VPS with public web ingress on ports 80/443:
-
-```bash
-sudo ./bootstrap_hardening.sh \
-  --admin-user coolifyadmin \
-  --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host" \
-  --enable-auto-reboot true \
-  --auto-reboot-time 03:30
-```
-
-### Cloudflare Tunnel Mode
-
-No inbound web ports — all traffic via outbound tunnel:
+If you just want the security controls without the full Coolify orchestration:
 
 ```bash
 sudo ./bootstrap_hardening.sh \
   --admin-user coolifyadmin \
   --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host" \
   --tunnel-mode
+
+# Verify
+sudo ./validate_hardening.sh
 ```
 
-### Using an Env File
+---
 
-For automation and keeping secrets out of shell history:
+## Post-Deploy Setup
+
+After `deploy.sh` or `setup.sh` completes, three manual steps enable automatic SSL + subdomains for every app you deploy:
+
+1. **Cloudflare: SSL/TLS > Overview** — set encryption mode to **Full** (not Flexible, not Full Strict)
+2. **Coolify: Servers > your server > Wildcard Domain** — set to your zone root (e.g., `example.com`)
+3. **Coolify: resource domains** — use `http://` protocol, not `https://`
+
+After this, every new app gets: auto-assigned subdomain > wildcard DNS > Cloudflare edge SSL > tunnel/proxy > Traefik > container. Zero per-app configuration.
+
+---
+
+## Deployment Modes
+
+| | Tunnel (default) | Standard |
+|---|---|---|
+| **Flag** | `--tunnel-mode` / `--mode tunnel` | `--mode standard` |
+| **Inbound ports** | None | 80, 443 |
+| **Traffic path** | Outbound tunnel to Cloudflare edge | Direct to origin (Cloudflare-proxied) |
+| **Attack surface** | Zero public HTTP/S | Origin IP exposed behind Cloudflare |
+| **Per-subdomain bypass** | Not possible | DNS-only ("grey cloud") available |
+
+**Tunnel is the default** because it eliminates direct-to-origin bypass entirely. The server has no publicly reachable HTTP/S ports.
+
+### Tunnel Mode Limitations
+
+Evaluate these before choosing:
+
+- **100MB upload limit** — Cloudflare Free/Pro plans cap request bodies. Apps with large uploads (Nextcloud, Immich) need chunked upload support or standard mode.
+- **Nested subdomain TLS** — Universal SSL covers `*.example.com` but not `*.app.example.com`. Use single-level subdomains.
+- **Media streaming** — Heavy video streaming (Jellyfin, Plex) may violate Cloudflare CDN terms. Use standard mode with DNS-only for media subdomains.
+- **Cloudflare Access + webhooks** — If you add Zero Trust auth later, create IP-based bypass policies for CI/CD webhook paths.
+
+If these apply, use `--mode standard`.
+
+### TLS Architecture
+
+Both modes use Cloudflare's edge for user-facing TLS. No wildcard certificate is needed on the origin.
+
+| Mode | Edge TLS | Edge > Origin | Origin cert needed? |
+|------|----------|---------------|---------------------|
+| Tunnel | Universal SSL | Encrypted tunnel (no TLS check) | No |
+| Standard (Full SSL) | Universal SSL | HTTPS, any cert accepted | Any (self-signed OK) |
+
+Wildcard DNS (`*.example.com`) and tunnel ingress rules are created automatically by the scripts. Coolify's Traefik handles Host-header routing to containers.
+
+**Optional:** For Full (Strict) SSL or DNS-only subdomains where Traefik terminates TLS, configure Traefik's DNS-01 challenge in the Coolify UI (Servers > Proxy). See [Coolify wildcard cert docs](https://coolify.io/docs/knowledge-base/proxy/traefik/wildcard-certs).
+
+---
+
+## What Gets Hardened
+
+`bootstrap_hardening.sh` applies 15 security controls. See [HARDENING_PROCEDURE.md](HARDENING_PROCEDURE.md) for full technical detail.
+
+| # | Control | Key details |
+|---|---------|-------------|
+| 1 | **Preflight** | OS validation, SSH session safety, interface detection |
+| 2 | **NTP** | Time synchronization |
+| 3 | **Swap** | Configurable (default 2G), OOM protection |
+| 4 | **Service cleanup** | Disables rpcbind, avahi-daemon, cups |
+| 5 | **Login banner** | Authorized access warning |
+| 6 | **SSH hardening** | Key-only, modern ciphers (`chacha20-poly1305`, `aes256-gcm`), root login disabled |
+| 7 | **Auditd** | Tracks identity changes, sudoers, Docker socket |
+| 8 | **Kernel hardening** | SYN cookies, BBR, ASLR, ICMP hardening, kexec disabled, ptrace restricted |
+| 9 | **UFW firewall** | Default deny, Tailscale CIDR, tunnel-mode aware |
+| 10 | **Docker daemon** | `json-file` log driver with rotation, `live-restore` |
+| 11 | **DOCKER-USER rules** | IPv4/IPv6 chain hardening, bridge rules |
+| 12 | **Fail2ban** | SSH jail with UFW ban action |
+| 13 | **Journald** | Persistent logging with configurable retention |
+| 14 | **Auto-updates** | Unattended security patches with scheduled reboots |
+| 15 | **Post-checks** | Verification + JSON report |
+
+---
+
+## Usage Examples
+
+### Env File (recommended for automation)
+
+Keeps secrets out of shell history:
 
 ```bash
-# Create env file (chmod 0600 to protect)
 cat > /etc/bootstrap-hardening.env << 'EOF'
 ADMIN_USER=coolifyadmin
 ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host"
 TUNNEL_MODE=true
-SSH_PORT=22
 SWAP_SIZE=4G
 ENABLE_AUTO_REBOOT=true
 AUTO_REBOOT_TIME=04:00
 JOURNAL_RETENTION=3month
 EOF
-
 chmod 0600 /etc/bootstrap-hardening.env
 
-# Run with env file
 sudo ./bootstrap_hardening.sh --env-file /etc/bootstrap-hardening.env
 ```
 
-### Tailscale Integration
+### Tailscale + Dashboard Binding
 
-Install Tailscale and bind Coolify dashboard to Tailscale IP only:
+Install Tailscale and restrict Coolify dashboard to VPN only:
 
 ```bash
 sudo ./bootstrap_hardening.sh \
@@ -151,9 +213,9 @@ sudo ./bootstrap_hardening.sh \
   --bind-dashboard-to-tailscale
 ```
 
-### Dry Run (Preview Changes)
+### Dry Run
 
-See what would be changed without applying:
+Preview what would change without applying:
 
 ```bash
 sudo ./bootstrap_hardening.sh \
@@ -164,95 +226,80 @@ sudo ./bootstrap_hardening.sh \
 
 ---
 
-## What Gets Secured
-
-### SSH Hardening
-
-- Password authentication disabled
-- Root login disabled (except Coolify's localhost/Docker bridge Match block)
-- Modern ciphers only: `chacha20-poly1305@openssh.com`, `aes256-gcm@openssh.com`
-- Strong MACs and KEX algorithms
-- Key-only authentication enforced
-
-### Firewall Configuration
-
-- Default deny incoming, allow outgoing
-- SSH allowed from Tailscale CIDR (configurable)
-- WAN 80/443 allowed (standard mode only)
-- Tailscale direct UDP allowed
-- Docker-aware DOCKER-USER chain rules
-
-### Kernel Hardening
-
-| Setting | Purpose |
-|---------|---------|
-| `net.ipv4.tcp_syncookies` | SYN flood protection |
-| `net.core.default_qdisc=fq` + `net.ipv4.tcp_congestion_control=bbr` | BBR congestion control |
-| `net.ipv4.icmp_*` | ICMP hardening |
-| `net.ipv4.conf.all.rp_filter=1` | Strict reverse path filtering |
-| `fs.protected_hardlinks`, `fs.protected_symlinks` | Link attack prevention |
-| `kernel.kexec_load=0` | Kexec disabled |
-| `kernel.kptr_restrict=2` | Kernel pointer restriction |
-| `kernel.dmesg_restrict=1` | Dmesg access restricted |
-| `kernel.randomize_va_space=2` | Full ASLR |
-
-### Docker Security
-
-- DOCKER-USER chain rules for IPv4/IPv6
-- Bridge network rules
-- Daemon log rotation with `local` driver
-- Live-restore enabled for container survival during daemon restart
-
-### Monitoring & Audit
-
-- **Fail2ban**: SSH jail with UFW ban action
-- **Auditd**: Rules tracking identity changes, sudoers modifications, Docker socket access
-- **Journald**: Persistent logging with configurable retention
-
----
-
 ## Validation & Testing
 
-### Validate Hardening
-
-After running the script, verify everything is configured correctly:
-
 ```bash
-# Text output
+# Validate hardening (text)
 sudo ./validate_hardening.sh
 
-# JSON output (for automation)
+# Validate hardening (JSON, for automation)
 sudo ./validate_hardening.sh --json
 ```
 
-### Run Tests
+### Test Suite
 
-The project uses [BATS](https://github.com/bats-core/bats-core) for automated testing:
+Uses [BATS](https://github.com/bats-core/bats-core):
 
 ```bash
-# Setup BATS locally
-make setup-bats
-
-# Run unit tests (fast, no Docker)
-make test-unit-local
-
-# Run all tests with Docker
-make test-all
-
-# Run specific test categories
-make test-dry-run        # Dry-run integration tests
-make test-full-standard  # Full hardening, standard mode
-make test-full-tunnel    # Full hardening, tunnel mode
-make test-validate       # Validation script tests
-make test-idempotency    # Re-run safety tests
+make setup-bats          # Install BATS locally
+make test-unit-local     # Unit tests (fast, no Docker)
+make test-all            # Full suite with Docker
 ```
 
-### CI Integration
+| Make Target | Purpose |
+|-------------|---------|
+| `test-ci-pr` | PR gate: unit + dry-run + validate + consistency |
+| `test-ci-main` | Main branch: full suite |
+| `test-dry-run` | Dry-run integration |
+| `test-full-standard` | Full hardening, standard mode |
+| `test-full-tunnel` | Full hardening, tunnel mode |
+| `test-validate` | Validation script |
+| `test-idempotency` | Re-run safety |
+| `test-workflow-consistency` | Workflow/doc contract checks |
 
-| Target | Purpose | Tests Included |
-|--------|---------|----------------|
-| `make test-ci-pr` | PR gate | unit + dry-run + validate |
-| `make test-ci-main` | Main branch gate | full suite |
+---
+
+## CLI Reference
+
+### deploy.sh
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--server-ip <ip>` | *(required)* | Server public IPv4 |
+| `--root-pass <pass>` | *(required)* | Root password for initial SSH |
+| `--tailscale-auth-key <key>` | *(required)* | Tailscale auth key (`tskey-auth-...`) |
+| `--domain <fqdn>` | *(required)* | Domain name for Coolify |
+| `--cf-api-token <token>` | *(required)* | Cloudflare API token |
+| `--admin-user <name>` | `coolifyadmin` | Admin username |
+| `--pubkey-file <path>` | `~/.ssh/id_ed25519.pub` | SSH public key file |
+| `--mode <tunnel\|standard>` | `tunnel` | Deployment mode |
+| `--cf-zone <zone>` | derived from domain | Cloudflare zone |
+| `--swap-size <size>` | `2G` | Swap file size |
+| `--yes` | `false` | Skip confirmation prompts |
+
+### bootstrap_hardening.sh
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--admin-user <name>` | *(required)* | Admin username to create |
+| `--admin-pubkey "<key>"` | *(required)* | SSH public key for admin |
+| `--tunnel-mode` | `false` | Skip WAN 80/443 (Cloudflare Tunnel) |
+| `--swap-size <size>` | `2G` | Swap size (`0` to skip) |
+| `--ssh-port <port>` | `22` | SSH port |
+| `--tailscale-cidr <cidr>` | `100.64.0.0/10` | Tailscale network CIDR |
+| `--wan-iface <iface>` | auto-detected | WAN interface |
+| `--install-tailscale` | `false` | Install Tailscale |
+| `--tailscale-auth-key <key>` | — | Tailscale auth key (with `--install-tailscale`) |
+| `--bind-dashboard-to-tailscale` | `false` | Bind Coolify dashboard to Tailscale IP |
+| `--enable-auto-reboot <bool>` | `true` | Auto-reboot after security updates |
+| `--auto-reboot-time <HH:MM>` | `03:30` | Reboot schedule |
+| `--journal-retention <span>` | `3month` | Journald retention period |
+| `--upgrade-mail <address>` | — | Email for upgrade failure reports |
+| `--env-file <path>` | — | Load options from file |
+| `--dry-run` | `false` | Preview without changes |
+| `--force` | `false` | Override safety gates |
+
+All flags have corresponding environment variables (e.g., `ADMIN_USER`, `TUNNEL_MODE`). CLI flags override env-file values.
 
 ---
 
@@ -260,92 +307,41 @@ make test-idempotency    # Re-run safety tests
 
 ```
 secure_coolify_ubuntu/
-├── bootstrap_hardening.sh    # Main hardening script
-├── validate_hardening.sh     # Post-hardening verification
-├── Makefile                  # Test automation
-├── HARDENING_PROCEDURE.md    # Detailed procedure docs
+├── deploy.sh                    # Laptop-side deployment orchestrator
+├── setup.sh                     # Server-side deployment orchestrator
+├── bootstrap_hardening.sh       # Security hardening script (15 controls)
+├── validate_hardening.sh        # Post-hardening verification
+├── configure_coolify_binding.sh # Split-horizon dashboard binding
+├── AGENTS_DEPLOY.md             # LLM agent deployment instructions
+├── HARDENING_PROCEDURE.md       # Detailed hardening technical reference
+├── Makefile                     # Test automation
+├── scripts/
+│   └── check_workflow_consistency.sh
 ├── docs/
-│   ├── testing.md            # Testing guide
-│   └── bootstrap_functionality_test_matrix.md
+│   ├── DEPLOYMENT_RUNBOOK.md    # Manual step-by-step deployment guide
+│   ├── testing.md
+│   ├── bootstrap_functionality_test_matrix.md
+│   ├── deploy_setup_functionality_test_matrix.md
+│   └── workflow_contract.yaml
 ├── tests/
-│   ├── unit/                 # Unit tests (fast)
-│   ├── integration/          # Integration tests (Docker)
-│   └── lib/                  # BATS support libraries
-├── Dockerfile.tier1          # Lightweight test container
-└── Dockerfile.test           # Full systemd test container
+│   ├── unit/                    # Fast unit tests
+│   ├── integration/             # Docker-based integration tests
+│   └── lib/                     # BATS support libraries
+├── Dockerfile.tier1             # Lightweight test container
+└── Dockerfile.test              # Full systemd test container
 ```
-
----
-
-## CLI Options Reference
-
-### Required
-
-| Option | Description |
-|--------|-------------|
-| `--admin-user <name>` | Admin username to create |
-| `--admin-pubkey "<key>"` | SSH public key for admin user |
-
-### Optional
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--tailscale-cidr <cidr>` | `100.64.0.0/10` | Tailscale network CIDR |
-| `--ssh-port <port>` | `22` | SSH port |
-| `--wan-iface <iface>` | auto | WAN interface |
-| `--tunnel-mode` | `false` | Skip WAN 80/443 (Cloudflare Tunnel) |
-| `--swap-size <size>` | `2G` | Swap size (`0` to skip) |
-| `--enable-auto-reboot <bool>` | `true` | Auto-reboot after updates |
-| `--auto-reboot-time <HH:MM>` | `03:30` | Reboot time |
-| `--journal-retention <span>` | `3month` | Journal retention period |
-| `--bind-dashboard-to-tailscale` | `false` | Bind Coolify to Tailscale IP |
-| `--install-tailscale` | `false` | Install Tailscale |
-| `--tailscale-auth-key <key>` | — | Tailscale auth key |
-| `--env-file <path>` | — | Load options from file |
-| `--dry-run` | `false` | Preview without changes |
-| `--force` | `false` | Override safety gates |
-
-All CLI options have corresponding environment variables (e.g., `ADMIN_USER`, `TUNNEL_MODE`).
-
----
-
-## Requirements & Compatibility
-
-| Requirement | Details |
-|-------------|---------|
-| **OS** | Ubuntu 24.04 LTS (use `--force` for other versions) |
-| **Access** | Root or sudo |
-| **Architecture** | amd64, arm64 |
-
-### Before Running
-
-1. Fresh Ubuntu 24.04 installation recommended
-2. Have your SSH public key ready
-3. (Optional) Tailscale auth key if using Tailscale integration
-4. (Optional) Cloudflare Tunnel already configured if using tunnel mode
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please:
-
 1. Fork the repository
 2. Create a feature branch
-3. Run tests: `make test-all`
+3. Run tests: `make test-ci-pr`
 4. Submit a pull request
-
-See [HARDENING_PROCEDURE.md](HARDENING_PROCEDURE.md) for technical details.
 
 ---
 
 ## License
 
 [MIT License](LICENSE)
-
----
-
-## Acknowledgments
-
-- [Coolify](https://coolify.io/) — Self-hosted PaaS
-- [BATS](https://github.com/bats-core/bats-core) — Bash Automated Testing System

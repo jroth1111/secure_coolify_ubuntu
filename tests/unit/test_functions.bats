@@ -1191,3 +1191,193 @@ allowusers testadmin"
   assert_success
   assert_output --partial "--admin-user"
 }
+
+# ── configure_unattended_upgrades: Docker CE and MinimalSteps ─────────────────
+
+@test "configure_unattended_upgrades: includes Docker CE origin in script" {
+  grep -q '"origin=Docker,label=Docker CE"' "${SCRIPT}"
+}
+
+@test "configure_unattended_upgrades: includes MinimalSteps in script" {
+  grep -q 'MinimalSteps' "${SCRIPT}"
+}
+
+# ── retry_apt_update ──────────────────────────────────────────────────────────
+
+@test "bootstrap script declares retry_apt_update function" {
+  grep -q "^retry_apt_update()" "${SCRIPT}"
+}
+
+@test "retry_apt_update: dies after exhausted retries" {
+  local stub_dir
+  stub_dir="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "${stub_dir}/apt-get"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${stub_dir}/sleep"
+  chmod +x "${stub_dir}/apt-get" "${stub_dir}/sleep"
+  run env PATH="${stub_dir}:${PATH}" bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="false"
+    retry_apt_update
+  '
+  assert_failure
+  assert_output --partial "failed after 3 attempts"
+  rm -rf "${stub_dir}"
+}
+
+# ── check_disk_space ──────────────────────────────────────────────────────────
+
+@test "bootstrap script declares check_disk_space function" {
+  grep -q "^check_disk_space()" "${SCRIPT}"
+}
+
+@test "check_disk_space: passes when ample space available" {
+  local stub_dir
+  stub_dir="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\nprintf "Filesystem 1M-blocks Used Available\n/ 100000 1000 90000\n"\n' > "${stub_dir}/df"
+  chmod +x "${stub_dir}/df"
+  run env PATH="${stub_dir}:${PATH}" bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="false"
+    SWAP_SIZE="2G"
+    check_disk_space
+  '
+  assert_success
+  rm -rf "${stub_dir}"
+}
+
+@test "check_disk_space: fails when disk space insufficient" {
+  local stub_dir
+  stub_dir="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\nprintf "Filesystem 1M-blocks Used Available\n/ 3000 2900 100\n"\n' > "${stub_dir}/df"
+  chmod +x "${stub_dir}/df"
+  run env PATH="${stub_dir}:${PATH}" bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="false"
+    SWAP_SIZE="2G"
+    check_disk_space
+  '
+  assert_failure
+  assert_output --partial "Insufficient disk space"
+  rm -rf "${stub_dir}"
+}
+
+@test "check_disk_space: skips swap when SWAP_SIZE=0" {
+  local stub_dir
+  stub_dir="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\nprintf "Filesystem 1M-blocks Used Available\n/ 2000 1450 550\n"\n' > "${stub_dir}/df"
+  chmod +x "${stub_dir}/df"
+  run env PATH="${stub_dir}:${PATH}" bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="false"
+    SWAP_SIZE="0"
+    check_disk_space
+  '
+  assert_success
+  rm -rf "${stub_dir}"
+}
+
+# ── configure_fail2ban ────────────────────────────────────────────────────────
+
+@test "configure_fail2ban: ignoreip includes TAILSCALE_CIDR" {
+  grep -qE "ignoreip.*TAILSCALE_CIDR|ignoreip.*100\.64" "${SCRIPT}"
+}
+
+# ── Docker deferred restart ───────────────────────────────────────────────────
+
+@test "bootstrap script declares DOCKER_DAEMON_NEEDS_RESTART global" {
+  grep -q 'DOCKER_DAEMON_NEEDS_RESTART="false"' "${SCRIPT}"
+}
+
+@test "configure_docker_daemon: defers restart via flag" {
+  grep -q 'DOCKER_DAEMON_NEEDS_RESTART="true"' "${SCRIPT}"
+}
+
+# ── daemon.json fallback removed ─────────────────────────────────────────────
+
+@test "configure_docker_daemon: sed fallback removed; uses die on merge failure" {
+  run bash -c 'grep -c "sed.*live-restore" "'"${SCRIPT}"'"'
+  assert_output "0"
+}
+
+# ── journald JOURNAL_MAX_USE ──────────────────────────────────────────────────
+
+@test "bootstrap script declares JOURNAL_MAX_USE global" {
+  grep -q 'JOURNAL_MAX_USE=' "${SCRIPT}"
+}
+
+@test "configure_journald: uses JOURNAL_MAX_USE variable" {
+  grep -q 'SystemMaxUse=${JOURNAL_MAX_USE}' "${SCRIPT}"
+}
+
+# ── upgrade mail ──────────────────────────────────────────────────────────────
+
+@test "parse_args: accepts --upgrade-mail flag" {
+  grep -q '"--upgrade-mail"\|--upgrade-mail)' "${SCRIPT}"
+}
+
+@test "configure_unattended_upgrades: conditionally includes Mail directive" {
+  grep -q "UPGRADE_MAIL" "${SCRIPT}"
+  grep -q "MailReport" "${SCRIPT}"
+}
+
+# ── UFW ICMP ─────────────────────────────────────────────────────────────────
+
+@test "configure_ufw: includes ICMP allow rule" {
+  grep -q "proto icmp" "${SCRIPT}"
+  grep -q "coolify-hardening-icmp" "${SCRIPT}"
+}
+
+# ── hardening validation timer ────────────────────────────────────────────────
+
+@test "bootstrap script declares configure_hardening_validation_timer function" {
+  grep -q "^configure_hardening_validation_timer()" "${SCRIPT}"
+}
+
+@test "configure_hardening_validation_timer: dry-run skips install" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="true"
+    configure_hardening_validation_timer
+  '
+  assert_success
+  assert_output --partial "DRY-RUN"
+}
+
+# ── swap stale cleanup ────────────────────────────────────────────────────────
+
+@test "configure_swap: removes stale swapfile before fallocate" {
+  grep -q "Stale.*swapfile\|rm -f.*swap_file" "${SCRIPT}"
+}
+
+# ── coolify binding retry loop ────────────────────────────────────────────────
+
+@test "configure_coolify_binding: uses retry loop not bare sleep 5" {
+  # No bare 'sleep 5' as the sole wait step
+  run bash -c 'awk "/^configure_coolify_binding\(\)/,/^\}/" "'"${SCRIPT}"'" | grep -c "^    sleep 5$"'
+  assert_output "0"
+}
+
+@test "configure_coolify_binding.sh: uses retry loop not bare sleep 5" {
+  local binding_script="${PROJECT_ROOT}/configure_coolify_binding.sh"
+  run grep -c "^sleep 5$" "${binding_script}"
+  assert_output "0"
+}
+
+# ── guard script improvements ─────────────────────────────────────────────────
+
+@test "guard script: prunes old backups" {
+  grep -q "_old_baks\|bak\.\*" "${SCRIPT}"
+}
+
+@test "guard script: health-checks Coolify after restart" {
+  grep -q "docker inspect coolify" "${SCRIPT}"
+}
+
+# ── write_state ordering ─────────────────────────────────────────────────────
+
+@test "main: write_state called before run_post_checks" {
+  local ws_line pc_line
+  ws_line="$(grep -n "write_state" "${SCRIPT}" | grep -v "write_state()\|#" | head -1 | cut -d: -f1)"
+  pc_line="$(grep -n "run_post_checks" "${SCRIPT}" | grep -v "run_post_checks()\|#" | head -1 | cut -d: -f1)"
+  (( ws_line < pc_line ))
+}

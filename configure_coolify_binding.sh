@@ -109,14 +109,31 @@ set_env_var() {
 set_env_var "APP_PORT" "${TAILSCALE_IP}:8000" "${COOLIFY_ENV}"
 set_env_var "SOKETI_PORT" "${TAILSCALE_IP}:6001" "${COOLIFY_ENV}"
 
-# Restart Coolify to apply changes
+# Restart Coolify to apply changes — must specify both compose files;
+# docker-compose.prod.yml carries images, port mappings, and volumes.
 log "Restarting Coolify..."
-cd /data/coolify/source
-docker compose down --remove-orphans 2>/dev/null || true
-docker compose up -d
+(
+  cd /data/coolify/source
+  docker compose \
+    --env-file .env \
+    -f docker-compose.yml \
+    -f docker-compose.prod.yml \
+    down --remove-orphans 2>/dev/null || true
+  docker compose \
+    --env-file .env \
+    -f docker-compose.yml \
+    -f docker-compose.prod.yml \
+    up -d --wait --wait-timeout 60
+)
 
-# Wait for Coolify to start
-sleep 5
+log "Waiting for Coolify to bind port 8000 (up to 30s)..."
+for (( _i = 1; _i <= 6; _i++ )); do
+  if ss -tlnp 2>/dev/null | grep -q ':8000 '; then
+    break
+  fi
+  sleep 5
+done
+unset _i
 
 # Verify binding
 log "Verifying bindings..."

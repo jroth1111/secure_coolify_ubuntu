@@ -24,6 +24,9 @@ jobs:
       - name: Run unit tests (local)
         run: make test-unit-local
 
+      - name: Run workflow consistency checks
+        run: make test-workflow-consistency
+
   # Tier 1: Dry-run tests (lightweight Docker, no systemd)
   tier1-dryrun:
     runs-on: ubuntu-latest

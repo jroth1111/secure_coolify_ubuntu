@@ -4,6 +4,8 @@
 PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 SCRIPT="${PROJECT_ROOT}/bootstrap_hardening.sh"
 VALIDATE_SCRIPT="${PROJECT_ROOT}/validate_hardening.sh"
+DEPLOY_SCRIPT="${PROJECT_ROOT}/deploy.sh"
+SETUP_SCRIPT="${PROJECT_ROOT}/setup.sh"
 
 # Load bats-support and bats-assert from the first available location
 _helpers_loaded=false
@@ -68,6 +70,32 @@ source_script() {
   # Rename the script's run() → script_run(), restore BATS's run
   if declare -f run >/dev/null 2>&1; then
     eval "$(declare -f run | sed '1s/^run /script_run /')"
+  fi
+  eval "$(declare -f bats_run | sed '1s/^bats_run /run /')"
+}
+
+# Source deploy.sh to import functions for unit testing.
+# Same guards as source_script() above.
+source_deploy_script() {
+  # Save BATS's run function before it gets overwritten
+  eval "$(declare -f run | sed '1s/^run /bats_run /')" 2>/dev/null || true
+
+  local _old_opts
+  _old_opts="$(set +o)"
+  local _old_traps
+  _old_traps="$(trap -p ERR)"
+
+  source "${DEPLOY_SCRIPT}"
+
+  eval "${_old_opts}"
+  trap - ERR
+  if [[ -n "${_old_traps}" ]]; then
+    eval "${_old_traps}"
+  fi
+
+  # Rename the script's run() → deploy_run(), restore BATS's run
+  if declare -f run >/dev/null 2>&1; then
+    eval "$(declare -f run | sed '1s/^run /deploy_run /')"
   fi
   eval "$(declare -f bats_run | sed '1s/^bats_run /run /')"
 }

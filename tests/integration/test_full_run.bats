@@ -305,7 +305,7 @@ teardown_file() {
   [ -f /etc/docker/daemon.json ]
 }
 
-@test "docker-daemon: log-driver is local" {
+@test "docker-daemon: log-driver is json-file" {
   if ! command -v docker >/dev/null 2>&1; then
     skip "Docker not installed"
   fi
@@ -313,7 +313,7 @@ teardown_file() {
   run cat /etc/docker/daemon.json
   assert_success
   assert_output --partial '"log-driver"'
-  assert_output --partial '"local"'
+  assert_output --partial '"json-file"'
 }
 
 @test "docker-daemon: live-restore enabled" {

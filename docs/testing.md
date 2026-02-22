@@ -25,16 +25,19 @@ make test-ci-pr
 | `make test-full-standard` | Full standard-mode integration | Privileged + systemd |
 | `make test-full-tunnel` | Full tunnel-mode integration | Privileged + systemd |
 | `make test-idempotency` | Re-run safety / duplicate-prevention checks | Privileged + systemd |
+| `make test-workflow-consistency` | Workflow contract and docs consistency checks | None |
 | `make test-integration` | All integration lanes | Mixed |
 | `make test-all` | Unit + integration lanes | Mixed |
-| `make test-ci-pr` | PR gate: unit + dry-run + validate | Mixed |
-| `make test-ci-main` | Mainline gate: full suite | Mixed |
+| `make test-ci-pr` | PR gate: unit + dry-run + validate + consistency | Mixed |
+| `make test-ci-main` | Mainline gate: full suite + consistency | Mixed |
 
 Logs and JSON snapshots are stored in `artifacts/`.
 
 ## Functionality Coverage Matrix
 
-The itemized script-to-test mapping lives in `docs/bootstrap_functionality_test_matrix.md`.
+- Hardening workflow matrix: `docs/bootstrap_functionality_test_matrix.md`
+- Deploy/setup workflow matrix: `docs/deploy_setup_functionality_test_matrix.md`
+- Canonical workflow contract (machine-checked): `docs/workflow_contract.yaml`
 
 ## CI Jobs
 

@@ -201,8 +201,14 @@ docker_user_check() {
     return
   fi
 
+  # Check if Docker is installed first
+  if ! command -v docker >/dev/null 2>&1; then
+    record "INFO" "docker-user: Docker" "Docker not installed; skipping DOCKER-USER checks"
+    return
+  fi
+
   local rules
-  rules="$(iptables -t filter -S DOCKER-USER 2>/dev/null)" || { record "INFO" "docker-user: IPv4" "DOCKER-USER chain absent"; return; }
+  rules="$(iptables -t filter -S DOCKER-USER 2>/dev/null)" || { record "FAIL" "docker-user: IPv4" "DOCKER-USER chain absent (Docker may need restart)"; return; }
 
   if grep -q "coolify-hardening-wan-drop" <<< "${rules}"; then
     record "PASS" "docker-user: IPv4 wan-drop"
@@ -236,6 +242,32 @@ docker_user_check() {
   fi
 }
 
+# ── docker-user-hardening service lifecycle ──
+
+docker_user_lifecycle_check() {
+  local unit_file="/etc/systemd/system/docker-user-hardening.service"
+  if [[ ! -f "${unit_file}" ]]; then
+    if command -v docker >/dev/null 2>&1; then
+      record "FAIL" "docker-user: unit file" "not found at ${unit_file}"
+    else
+      record "INFO" "docker-user: unit file" "Docker not installed; skipped"
+    fi
+    return
+  fi
+
+  if grep -q "PartOf=docker.service" "${unit_file}"; then
+    record "PASS" "docker-user: PartOf=docker.service"
+  else
+    record "FAIL" "docker-user: PartOf=docker.service" "missing — rules lost on Docker daemon restart"
+  fi
+
+  if grep -q "WantedBy=docker.service" "${unit_file}"; then
+    record "PASS" "docker-user: WantedBy=docker.service"
+  else
+    record "FAIL" "docker-user: WantedBy=docker.service" "missing — rules may not re-apply after Docker start"
+  fi
+}
+
 # ── Sysctl ──
 
 sysctl_check() {
@@ -253,6 +285,10 @@ sysctl_check() {
     [kernel.kexec_load_disabled]="1"
     [kernel.sysrq]="4"
     [kernel.randomize_va_space]="2"
+    [kernel.dmesg_restrict]="1"
+    [kernel.perf_event_paranoid]="3"
+    [kernel.yama.ptrace_scope]="1"
+    [vm.swappiness]="10"
   )
 
   for key in "${!sysctl_expects[@]}"; do
@@ -303,6 +339,15 @@ fail2ban_check() {
     record "PASS" "fail2ban: sshd jail enabled"
   else
     record "FAIL" "fail2ban: sshd jail" "jail not active"
+  fi
+
+  local _jail_file="/etc/fail2ban/jail.d/coolify-hardening.local"
+  if [[ -f "${_jail_file}" ]] && grep -q "100.64.0.0/10" "${_jail_file}"; then
+    record "PASS" "fail2ban: ignoreip includes Tailscale CIDR"
+  elif [[ ! -f "${_jail_file}" ]]; then
+    record "FAIL" "fail2ban: ignoreip" "jail file missing"
+  else
+    record "FAIL" "fail2ban: ignoreip" "100.64.0.0/10 not in ignoreip"
   fi
 }
 
@@ -362,6 +407,16 @@ timesync_check() {
   else
     record "FAIL" "timesync: NTP" "not active"
   fi
+
+  local synced_val
+  synced_val="$(timedatectl show --property=NTPSynchronized --value 2>/dev/null || echo "?")"
+  if [[ "${synced_val}" == "yes" ]]; then
+    record "PASS" "timesync: NTPSynchronized"
+  elif [[ "${IS_CONTAINER}" == "true" || "${ntp_val}" != "yes" ]]; then
+    record "INFO" "timesync: NTPSynchronized" "skipped (NTP not active or container)"
+  else
+    record "FAIL" "timesync: NTPSynchronized" "not yet synchronized"
+  fi
 }
 
 # ── Swap ──
@@ -415,7 +470,50 @@ banner_check() {
   fi
 }
 
+# ── Admin sudo access ──
+
+admin_sudo_check() {
+  # Skip if no admin user configured
+  if [[ -z "${ADMIN_USER}" ]]; then
+    record "INFO" "admin: sudo" "no admin user in state file"
+    return 0
+  fi
+
+  # Check if admin user exists
+  if ! id "${ADMIN_USER}" >/dev/null 2>&1; then
+    record "FAIL" "admin: user" "${ADMIN_USER} does not exist"
+    return 0
+  fi
+
+  # Check if admin user is in sudo group
+  if id -nG "${ADMIN_USER}" | tr ' ' '\n' | grep -qx "sudo"; then
+    record "PASS" "admin: in sudo group"
+  else
+    record "FAIL" "admin: sudo group" "${ADMIN_USER} not in sudo group"
+    return 0
+  fi
+
+  # Check if passwordless sudo is configured
+  local sudoers_file="/etc/sudoers.d/${ADMIN_USER}"
+  if [[ -f "${sudoers_file}" ]]; then
+    if grep -q "NOPASSWD" "${sudoers_file}" 2>/dev/null; then
+      record "PASS" "admin: passwordless sudo"
+    else
+      record "WARN" "admin: sudo" "sudoers file exists but NOPASSWD not set"
+    fi
+  else
+    # Check if sudo -l shows NOPASSWD for this user
+    if sudo -l -U "${ADMIN_USER}" 2>/dev/null | grep -q "NOPASSWD"; then
+      record "PASS" "admin: passwordless sudo (via other config)"
+    else
+      record "WARN" "admin: sudo" "may require password (NOPASSWD not configured)"
+    fi
+  fi
+}
+
 # ── Docker daemon.json ──
+# Hardening owns: log-driver, log-opts, live-restore. Coolify may add: default-address-pools.
+# Using json-file driver to match Coolify's expectation for compatibility.
 
 docker_daemon_check() {
   local daemon_json="/etc/docker/daemon.json"
@@ -428,10 +526,22 @@ docker_daemon_check() {
     return
   fi
 
-  if grep -q '"log-driver"' "${daemon_json}"; then
-    record "PASS" "docker-daemon: log-driver configured"
-  else
+  # Check log-driver is json-file (matches Coolify's expectation)
+  local log_driver
+  log_driver="$(jq -r '.["log-driver"] // ""' "${daemon_json}" 2>/dev/null || true)"
+  if [[ "${log_driver}" == "json-file" ]]; then
+    record "PASS" "docker-daemon: log-driver is json-file"
+  elif [[ "${log_driver}" == "" ]]; then
     record "FAIL" "docker-daemon: log-driver" "not set in daemon.json"
+  else
+    record "FAIL" "docker-daemon: log-driver" "expected 'json-file', got '${log_driver}'"
+  fi
+
+  # Check log-opts have rotation configured
+  if jq -e '.["log-opts"]["max-size"]' "${daemon_json}" >/dev/null 2>&1; then
+    record "PASS" "docker-daemon: log-opts.max-size configured"
+  else
+    record "FAIL" "docker-daemon: log-opts.max-size" "not set in daemon.json"
   fi
 
   if grep -q '"live-restore"' "${daemon_json}"; then
@@ -507,6 +617,7 @@ coolify_binding_check() {
     # Try to detect it now
     if command -v tailscale >/dev/null 2>&1; then
       TAILSCALE_IP="$(tailscale ip -4 2>/dev/null)" || true
+      [[ -n "${TAILSCALE_IP}" ]] && record "INFO" "coolify: Tailscale IP" "live fallback: ${TAILSCALE_IP} (state file stale)"
     fi
     if [[ -z "${TAILSCALE_IP}" ]]; then
       record "FAIL" "coolify: Tailscale IP" "not detected"
@@ -565,6 +676,41 @@ coolify_binding_check() {
       fi
     fi
   fi
+
+  # Verify binding guard timer is active to detect drift after Coolify self-updates
+  if systemctl is-active --quiet coolify-binding-guard.timer 2>/dev/null; then
+    record "PASS" "coolify: binding-guard timer active"
+  else
+    record "FAIL" "coolify: binding-guard timer" "not active — binding drift after Coolify updates undetected"
+  fi
+}
+
+# ── unattended-upgrades coverage ──
+
+unattended_upgrades_check() {
+  local apt_local="/etc/apt/apt.conf.d/52unattended-upgrades-local"
+  if [[ ! -f "${apt_local}" ]]; then
+    record "FAIL" "auto-updates: local config" "not found at ${apt_local}"
+    return
+  fi
+
+  if grep -q "Ubuntu" "${apt_local}"; then
+    record "PASS" "auto-updates: Ubuntu origin covered"
+  else
+    record "FAIL" "auto-updates: Ubuntu origin" "not in origins pattern"
+  fi
+
+  if grep -q "Docker" "${apt_local}"; then
+    record "PASS" "auto-updates: Docker CE origin covered"
+  else
+    record "FAIL" "auto-updates: Docker CE origin" "missing — Docker packages not auto-updated"
+  fi
+
+  if grep -q 'Unattended-Upgrade::Automatic-Reboot' "${apt_local}"; then
+    record "PASS" "auto-updates: reboot policy configured"
+  else
+    record "FAIL" "auto-updates: reboot policy" "not configured"
+  fi
 }
 
 # ── Listening ports (informational) ──
@@ -589,6 +735,18 @@ cloudflared_check() {
   fi
 }
 
+# ── Hardening validation timer ──
+
+validate_timer_check() {
+  if systemctl is-active --quiet hardening-validate.timer 2>/dev/null; then
+    record "PASS" "validate-timer: active"
+  elif systemctl list-unit-files --no-legend hardening-validate.timer 2>/dev/null | grep -q hardening-validate; then
+    record "FAIL" "validate-timer: active" "timer installed but not active"
+  else
+    record "INFO" "validate-timer: not installed" "run bootstrap to install"
+  fi
+}
+
 # ── Run all checks ──
 
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root." >&2; exit 1; }
@@ -601,18 +759,22 @@ fi
 ssh_check
 ufw_check
 docker_user_check
+docker_user_lifecycle_check
 docker_daemon_check
 sysctl_check
 fail2ban_check
 auditd_check
+unattended_upgrades_check
 journald_check
 timesync_check
 swap_check
 banner_check
+admin_sudo_check
 apparmor_check
 disabled_services_check
 tailscale_check
 coolify_binding_check
+validate_timer_check
 listening_ports_info
 cloudflared_check
 

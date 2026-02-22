@@ -2,6 +2,24 @@
 
 This guide walks through the complete journey from a fresh Ubuntu 24.04 VPS to a hardened, working Coolify deployment accessible only via Tailscale.
 
+## Automated Alternative
+
+For a fully automated deployment, use `deploy.sh` (from your laptop) or `setup.sh` (from the server). These scripts automate hardening, gate checks, Cloudflare Tunnel creation, and DNS configuration:
+
+```bash
+# Tunnel mode (default — recommended)
+bash deploy.sh --server-ip <ip> --root-pass <pass> --tailscale-auth-key <key> \
+  --domain <fqdn> --cf-api-token <token> --yes
+
+# Standard mode (open public 80/443)
+bash deploy.sh --server-ip <ip> --root-pass <pass> --tailscale-auth-key <key> \
+  --domain <fqdn> --cf-api-token <token> --mode standard --yes
+```
+
+See `deploy.sh --help` for all options. The manual procedure below remains the reference for understanding each step.
+
+---
+
 ## Safety Gates (Mandatory)
 
 Treat this runbook as a gated procedure. Do not proceed to the next phase until the current gate passes.
@@ -13,6 +31,14 @@ Treat this runbook as a gated procedure. Do not proceed to the next phase until 
 - **Gate E (after split-horizon binding):** Coolify dashboard is reachable on Tailscale IP and not reachable on public IP.
 
 If any gate fails: stop, fix the issue, and re-run the same gate.
+
+### Automated Gate Mapping
+
+Automated scripts (`deploy.sh`/`setup.sh`) use this gate mapping:
+
+- `deploy.sh` Gate A/B/C/D/E correspond to admin SSH over Tailscale, identity check, hardening validation, DOCKER-USER service+rules, and dashboard exposure boundary checks.
+- `setup.sh` Gate A and Gate E are operator-confirmed laptop checks (prompted), while Gate B/C/D are script-enforced checks.
+- Manual phase labels in this runbook remain authoritative for the manual procedure; automated scripts enforce equivalent control intent with script-specific checkpoints.
 
 ## Prerequisites
 
@@ -107,16 +133,7 @@ chmod +x /root/bootstrap_hardening.sh /root/validate_hardening.sh
 
 ### 2.2 Run Hardening
 
-**Standard mode** (direct web traffic on ports 80/443):
-
-```bash
-sudo ./bootstrap_hardening.sh \
-  --admin-user coolifyadmin \
-  --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key" \
-  --swap-size 2G
-```
-
-**Tunnel mode** (Cloudflare Tunnel — no inbound web ports):
+**Tunnel mode (recommended)** — no inbound web ports; public traffic via Cloudflare Tunnel:
 
 ```bash
 sudo ./bootstrap_hardening.sh \
@@ -126,13 +143,22 @@ sudo ./bootstrap_hardening.sh \
   --swap-size 2G
 ```
 
+**Standard mode** — direct web traffic on ports 80/443 (use only if Cloudflare Tunnel is not an option):
+
+```bash
+sudo ./bootstrap_hardening.sh \
+  --admin-user coolifyadmin \
+  --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key" \
+  --swap-size 2G
+```
+
 **With env file** (for automation):
 
 ```bash
 cat > /etc/bootstrap-hardening.env << 'EOF'
 ADMIN_USER=coolifyadmin
 ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key"
-TUNNEL_MODE=false
+TUNNEL_MODE=true
 SWAP_SIZE=2G
 EOF
 chmod 600 /etc/bootstrap-hardening.env
@@ -186,7 +212,12 @@ sudo systemctl enable --now docker
 sudo docker run hello-world
 ```
 
-The hardening script has already pre-installed Docker daemon configuration (`/etc/docker/daemon.json`) with log rotation and live-restore if Docker wasn't present at hardening time. If it was, your existing config was preserved.
+If Docker was absent during Phase 1, `bootstrap_hardening.sh` installs the policy but does not create `/etc/docker/daemon.json` yet. Coolify's installer may then create/update `daemon.json` (for Docker address pools). The automated `deploy.sh`/`setup.sh` workflows reconcile this file immediately after Coolify install to enforce hardening keys while preserving Coolify's settings.
+
+**daemon.json Ownership:**
+- **Hardening owns:** `log-driver` (set to `json-file` to match Coolify's expectation), `log-opts`, `live-restore`
+- **Coolify may add:** `default-address-pools` and other settings
+- **Drift detection:** The reconcile functions warn if hardening keys were changed (e.g., by a Coolify update)
 
 ### 3.2 Gate D: Restart and Verify DOCKER-USER Hardening
 
@@ -247,14 +278,46 @@ Gate E passes when the dashboard is reachable over Tailscale and not reachable o
 
 ### 4.3 DNS Configuration
 
-Point your domain to the server:
+- **Tunnel mode (default)**: `deploy.sh`/`setup.sh` automatically creates a CNAME for your domain **and** a wildcard CNAME (`*.example.com`) pointing to `<tunnel-id>.cfargotunnel.com`. The tunnel ingress config also includes a wildcard hostname rule. This means apps deployed on subdomains (`app1.example.com`, `app2.example.com`) work immediately — no manual DNS or tunnel configuration needed.
+- **Standard mode**: `deploy.sh`/`setup.sh` automatically creates an A record for your domain **and** a wildcard A record (`*.example.com`) pointing to the server's public IP (Cloudflare-proxied).
 
-- **Standard mode**: A record → server's public IP
-- **Tunnel mode**: CNAME → your Cloudflare Tunnel hostname
+### 4.4 Post-Deploy: Enable Automatic SSL + Subdomains
 
-### 4.4 Cloudflare Tunnel Setup (Tunnel Mode Only)
+After deployment, complete these three steps to enable fully automatic subdomain + SSL for every app:
 
-If using tunnel mode:
+1. **Cloudflare dashboard → SSL/TLS → Overview**: Set encryption mode to **Full**. Do not use Flexible (sends plaintext to origin) or Full Strict (tunnel does not present an origin certificate).
+
+2. **Coolify UI → Servers → your server → Wildcard Domain**: Set to your zone root (e.g., `example.com`). This tells Coolify to auto-assign subdomains like `myapp.example.com` to every new resource you deploy. Since the scripts already created wildcard DNS records and tunnel ingress rules, each subdomain gets SSL (via Cloudflare Universal SSL) and routing (via Traefik Host-header matching) automatically — zero per-app DNS or cert configuration.
+
+3. **Resource domains in Coolify**: Use `http://` protocol — not `https://`. Cloudflare terminates TLS at the edge and sends HTTP through the tunnel. Using `https://` causes `TOO_MANY_REDIRECTS`.
+
+After these steps, the end-to-end flow for every new app is: deploy in Coolify → auto-assigned `<name>.example.com` → DNS resolves via wildcard → Cloudflare edge SSL → tunnel/proxy → Traefik → container. Fully automatic.
+
+**Monitoring**: `cloudflared` runs as a systemd service with auto-restart. If it stops, all public web traffic stops (admin access via Tailscale is unaffected). Check status: `sudo systemctl status cloudflared`.
+
+### 4.5 TLS Architecture
+
+Both deployment modes use Cloudflare's edge for user-facing TLS via Universal SSL (`*.example.com`). No wildcard certificate is needed on the origin server:
+
+- **Tunnel mode**: Cloudflare terminates TLS at the edge. The tunnel delivers HTTP to `localhost:80` (Traefik). No origin cert required.
+- **Standard mode** (proxied + Full SSL): Cloudflare terminates edge TLS and connects to the origin via HTTPS, but Full mode accepts any cert — including self-signed or Traefik's default. No wildcard cert required.
+
+**Optional: origin wildcard certs.** If you need Full (Strict) SSL or DNS-only subdomains where Traefik terminates TLS, configure Traefik's DNS-01 challenge with your Cloudflare API token in the Coolify UI (Servers > Proxy). See [Coolify wildcard cert docs](https://coolify.io/docs/knowledge-base/proxy/traefik/wildcard-certs). Add `CF_DNS_API_TOKEN` as an environment variable in the Traefik container. This is a Coolify-level config change — our hardening scripts do not modify it.
+
+### 4.6 Tunnel Mode Limitations
+
+Be aware of these constraints when running in tunnel mode:
+
+- **100MB upload limit**: Cloudflare Free/Pro plans cap request bodies at 100MB. Apps with large uploads (Nextcloud, Immich) need chunked upload support, or use `--mode standard` and set the upload subdomain to DNS-only in Cloudflare.
+- **Nested subdomain TLS**: Universal SSL (free plan) covers `*.example.com` but not `*.app.example.com`. Avoid deeply nested subdomains for Coolify PR previews, or purchase Advanced Certificate Manager.
+- **Media streaming TOS**: Heavy video streaming (Jellyfin, Plex) through Cloudflare may violate CDN-specific terms. Use standard mode with DNS-only for media subdomains.
+- **Cloudflare Access + webhooks**: If you add Cloudflare Access later, create IP-based bypass policies for CI/CD webhook paths.
+
+If these constraints affect your workload, redeploy with `--mode standard`.
+
+### 4.7 Manual Cloudflare Tunnel Setup (if not using deploy.sh)
+
+If you ran hardening manually and need to set up the tunnel by hand:
 
 ```bash
 # Install cloudflared
@@ -263,11 +326,34 @@ sudo apt-get install -y cloudflared
 # Authenticate and create tunnel
 cloudflared tunnel login
 cloudflared tunnel create coolify-tunnel
-cloudflared tunnel route dns coolify-tunnel your-domain.com
 
-# Configure and run as service
-# See: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/tunnel-guide/
+# Route DNS: exact domain + wildcard for subdomains
+cloudflared tunnel route dns coolify-tunnel your-domain.com
+cloudflared tunnel route dns coolify-tunnel "*.your-domain.com"
 ```
+
+Then write `/etc/cloudflared/config.yml` with wildcard ingress:
+
+```yaml
+tunnel: <tunnel-id>
+credentials-file: /etc/cloudflared/<tunnel-id>.json
+
+ingress:
+  - hostname: your-domain.com
+    service: http://localhost:80
+  - hostname: "*.your-domain.com"
+    service: http://localhost:80
+  - service: http_status:404
+```
+
+Start the service:
+
+```bash
+sudo cloudflared service install
+sudo systemctl enable --now cloudflared
+```
+
+See [Cloudflare Tunnel docs](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started/) for details.
 
 ---
 
@@ -298,8 +384,13 @@ ssh coolifyadmin@<public-ip> 2>&1 || true # Should fail/timeout
 curl -s -o /dev/null -w '%{http_code}' http://<tailscale-ip>:8000  # Should return 200
 curl -s -o /dev/null -w '%{http_code}' http://<public-ip>:8000     # Should fail
 
-# Web traffic (standard mode):
-curl -s -o /dev/null -w '%{http_code}' http://<public-ip>          # Should return 200 (or redirect)
+# Tunnel mode: verify cloudflared is running and no public HTTP ports
+sudo systemctl status cloudflared        # Should be active
+sudo ufw status verbose                  # Should NOT show 80/443 ALLOW on WAN
+curl -s -o /dev/null -w '%{http_code}' https://<your-domain>  # Should return 200 (via tunnel)
+
+# Standard mode: verify public web access
+curl -s -o /dev/null -w '%{http_code}' http://<public-ip>     # Should return 200 (or redirect)
 
 # Firewall state
 sudo ufw status verbose

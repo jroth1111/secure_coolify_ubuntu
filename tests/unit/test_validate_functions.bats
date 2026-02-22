@@ -317,6 +317,108 @@ setup() {
   grep -q 'log-driver' "${VALIDATE_SCRIPT}"
 }
 
+@test "docker_daemon_check expects json-file driver (matches Coolify)" {
+  grep -q 'json-file' "${VALIDATE_SCRIPT}"
+}
+
 @test "docker_daemon_check looks for live-restore" {
   grep -q 'live-restore' "${VALIDATE_SCRIPT}"
+}
+
+# ── New kernel parameter checks (Priority 3.1) ───────────────────────────────────
+
+@test "sysctl_check expects kernel.dmesg_restrict=1" {
+  grep -q '\[kernel.dmesg_restrict\]="1"' "${VALIDATE_SCRIPT}"
+}
+
+@test "sysctl_check expects kernel.perf_event_paranoid=3" {
+  grep -q '\[kernel.perf_event_paranoid\]="3"' "${VALIDATE_SCRIPT}"
+}
+
+@test "sysctl_check expects kernel.yama.ptrace_scope=1" {
+  grep -q '\[kernel.yama.ptrace_scope\]="1"' "${VALIDATE_SCRIPT}"
+}
+
+# ── Swappiness check (Priority 3.2) ─────────────────────────────────────────────
+
+@test "sysctl_check expects vm.swappiness=10" {
+  grep -q '\[vm.swappiness\]="10"' "${VALIDATE_SCRIPT}"
+}
+
+# ── Admin sudo check function (Priority 3.4) ────────────────────────────────────
+
+@test "validate script contains admin_sudo_check function" {
+  grep -q "^admin_sudo_check()" "${VALIDATE_SCRIPT}"
+}
+
+@test "admin_sudo_check looks for NOPASSWD" {
+  grep -q 'NOPASSWD' "${VALIDATE_SCRIPT}"
+}
+
+@test "admin_sudo_check checks for sudoers.d file" {
+  grep -q 'sudoers.d' "${VALIDATE_SCRIPT}"
+}
+
+# ── Docker detection before DOCKER-USER check (Priority 3.3) ───────────────────
+
+@test "docker_user_check checks if docker command exists" {
+  grep -q 'command -v docker' "${VALIDATE_SCRIPT}"
+}
+
+# ── docker_user_lifecycle_check ──────────────────────────────────────────────
+
+@test "validate script contains docker_user_lifecycle_check function" {
+  grep -q "^docker_user_lifecycle_check()" "${VALIDATE_SCRIPT}"
+}
+
+@test "docker_user_lifecycle_check checks PartOf=docker.service" {
+  grep -q "PartOf=docker.service" "${VALIDATE_SCRIPT}"
+}
+
+@test "docker_user_lifecycle_check checks WantedBy=docker.service" {
+  grep -q "WantedBy=docker.service" "${VALIDATE_SCRIPT}"
+}
+
+# ── unattended_upgrades_check ─────────────────────────────────────────────────
+
+@test "validate script contains unattended_upgrades_check function" {
+  grep -q "^unattended_upgrades_check()" "${VALIDATE_SCRIPT}"
+}
+
+@test "unattended_upgrades_check verifies Docker CE origin" {
+  grep -q '"Docker"' "${VALIDATE_SCRIPT}"
+}
+
+# ── coolify binding guard timer check ────────────────────────────────────────
+
+@test "coolify_binding_check verifies binding-guard timer is active" {
+  grep -q "coolify-binding-guard.timer" "${VALIDATE_SCRIPT}"
+}
+
+# ── fail2ban ignoreip ─────────────────────────────────────────────────────────
+
+@test "fail2ban_check: checks for Tailscale CIDR in ignoreip" {
+  grep -q "100.64.0.0/10" "${VALIDATE_SCRIPT}"
+}
+
+# ── timesync NTPSynchronized ──────────────────────────────────────────────────
+
+@test "timesync_check: checks NTPSynchronized property" {
+  grep -q "NTPSynchronized" "${VALIDATE_SCRIPT}"
+}
+
+# ── validate timer check ──────────────────────────────────────────────────────
+
+@test "validate script contains validate_timer_check function" {
+  grep -q "^validate_timer_check()" "${VALIDATE_SCRIPT}"
+}
+
+@test "validate_timer_check: checks hardening-validate.timer" {
+  grep -q "hardening-validate.timer" "${VALIDATE_SCRIPT}"
+}
+
+# ── coolify binding Tailscale IP fallback ─────────────────────────────────────
+
+@test "coolify_binding_check: logs INFO when using live Tailscale IP fallback" {
+  grep -q "live fallback" "${VALIDATE_SCRIPT}"
 }

@@ -1,9 +1,167 @@
 1..8
-ok 1 validate: exits 0 after hardening bootstrap
-ok 2 validate: JSON output includes expected top-level fields
-ok 3 validate: JSON output has valid structure with check entries
-ok 4 validate: pass count is positive after hardening
-ok 5 validate: state file values are reflected in output
-ok 6 validate: stopping fail2ban causes failure
-ok 7 validate: exits non-zero when expected control is missing
-ok 8 validate: exits non-zero when journald persistence is disabled
+not ok 1 setup_file failed
+# (from function `setup_file' in test file /workspace/tests/integration/test_validate_script.bats, line 34)
+#   `bash "${SCRIPT}" \' failed
+# [2026-02-22T13:32:42+00:00] Starting bootstrap_hardening.sh v1.2.1
+# [2026-02-22T13:32:42+00:00] Verifying NTP time synchronization.
+# Failed to set ntp: NTP not supported
+# [2026-02-22T13:32:42+00:00] WARN: Could not enable NTP (timedatectl set-ntp failed). Verify manually.
+# [2026-02-22T13:32:42+00:00] Installing required packages: curl
+# Get:1 http://ports.ubuntu.com/ubuntu-ports noble InRelease [256 kB]
+# Get:2 http://ports.ubuntu.com/ubuntu-ports noble-updates InRelease [126 kB]
+# Get:3 http://ports.ubuntu.com/ubuntu-ports noble-backports InRelease [126 kB]
+# Get:4 http://ports.ubuntu.com/ubuntu-ports noble-security InRelease [126 kB]
+# Get:5 http://ports.ubuntu.com/ubuntu-ports noble/multiverse arm64 Packages [274 kB]
+# Get:6 http://ports.ubuntu.com/ubuntu-ports noble/universe arm64 Packages [19.0 MB]
+# Get:7 http://ports.ubuntu.com/ubuntu-ports noble/main arm64 Packages [1776 kB]
+# Get:8 http://ports.ubuntu.com/ubuntu-ports noble/restricted arm64 Packages [113 kB]
+# Get:9 http://ports.ubuntu.com/ubuntu-ports noble-updates/universe arm64 Packages [1963 kB]
+# Get:10 http://ports.ubuntu.com/ubuntu-ports noble-updates/multiverse arm64 Packages [41.7 kB]
+# Get:11 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 Packages [2349 kB]
+# Get:12 http://ports.ubuntu.com/ubuntu-ports noble-updates/restricted arm64 Packages [4717 kB]
+# Get:13 http://ports.ubuntu.com/ubuntu-ports noble-backports/universe arm64 Packages [34.7 kB]
+# Get:14 http://ports.ubuntu.com/ubuntu-ports noble-backports/main arm64 Packages [49.4 kB]
+# Get:15 http://ports.ubuntu.com/ubuntu-ports noble-security/main arm64 Packages [1985 kB]
+# Get:16 http://ports.ubuntu.com/ubuntu-ports noble-security/universe arm64 Packages [1216 kB]
+# Get:17 http://ports.ubuntu.com/ubuntu-ports noble-security/multiverse arm64 Packages [40.1 kB]
+# Get:18 http://ports.ubuntu.com/ubuntu-ports noble-security/restricted arm64 Packages [4526 kB]
+# Fetched 38.7 MB in 6s (6015 kB/s)
+# Reading package lists...
+# Reading package lists...
+# Building dependency tree...
+# Reading state information...
+# The following additional packages will be installed:
+#   libcurl4t64
+# The following NEW packages will be installed:
+#   curl libcurl4t64
+# 0 upgraded, 2 newly installed, 0 to remove and 4 not upgraded.
+# Need to get 555 kB of archives.
+# After this operation, 1526 kB of additional disk space will be used.
+# Get:1 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 libcurl4t64 arm64 8.5.0-2ubuntu10.6 [333 kB]
+# Get:2 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 curl arm64 8.5.0-2ubuntu10.6 [222 kB]
+# debconf: delaying package configuration, since apt-utils is not installed
+# Fetched 555 kB in 2s (261 kB/s)
+# Selecting previously unselected package libcurl4t64:arm64.
+# (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 12558 files and directories currently installed.)
+# Preparing to unpack .../libcurl4t64_8.5.0-2ubuntu10.6_arm64.deb ...
+# Unpacking libcurl4t64:arm64 (8.5.0-2ubuntu10.6) ...
+# Selecting previously unselected package curl.
+# Preparing to unpack .../curl_8.5.0-2ubuntu10.6_arm64.deb ...
+# Unpacking curl (8.5.0-2ubuntu10.6) ...
+# Setting up libcurl4t64:arm64 (8.5.0-2ubuntu10.6) ...
+# Setting up curl (8.5.0-2ubuntu10.6) ...
+# Processing triggers for libc-bin (2.39-0ubuntu8.7) ...
+# [2026-02-22T13:32:53+00:00] Docker detected.
+# [2026-02-22T13:32:53+00:00] Configuring swap.
+# [2026-02-22T13:32:53+00:00] Swap already active. Skipping.
+# [2026-02-22T13:32:53+00:00] Disabling unused network services.
+# [2026-02-22T13:32:53+00:00] Applying login banner.
+# [2026-02-22T13:32:53+00:00] Applying account and SSH hardening.
+# [2026-02-22T13:32:53+00:00] Configured passwordless sudo for validateadmin
+# [2026-02-22T13:32:54+00:00] Applying auditd baseline.
+# Synchronizing state of auditd.service with SysV service script with /usr/lib/systemd/systemd-sysv-install.
+# Executing: /usr/lib/systemd/systemd-sysv-install enable auditd
+# Created symlink /etc/systemd/system/multi-user.target.wants/auditd.service → /usr/lib/systemd/system/auditd.service.
+# Job for auditd.service failed because the control process exited with error code.
+# See "systemctl status auditd.service" and "journalctl -xeu auditd.service" for details.
+# [2026-02-22T13:32:54+00:00] Applying sysctl kernel hardening.
+# [2026-02-22T13:32:54+00:00] WARN: BBR not available: kernel module tcp_bbr not found. Using default congestion control.
+# * Applying /etc/sysctl.d/10-bufferbloat.conf ...
+# * Applying /etc/sysctl.d/10-console-messages.conf ...
+# * Applying /etc/sysctl.d/10-ipv6-privacy.conf ...
+# * Applying /etc/sysctl.d/10-kernel-hardening.conf ...
+# * Applying /etc/sysctl.d/10-magic-sysrq.conf ...
+# * Applying /etc/sysctl.d/10-map-count.conf ...
+# * Applying /etc/sysctl.d/10-network-security.conf ...
+# * Applying /etc/sysctl.d/10-ptrace.conf ...
+# * Applying /etc/sysctl.d/10-zeropage.conf ...
+# * Applying /usr/lib/sysctl.d/50-pid-max.conf ...
+# * Applying /etc/sysctl.d/60-coolify-hardening.conf ...
+# * Applying /usr/lib/sysctl.d/99-protect-links.conf ...
+# * Applying /etc/sysctl.d/99-sysctl.conf ...
+# * Applying /etc/sysctl.conf ...
+# kernel.printk = 4 4 1 7
+# net.ipv6.conf.all.use_tempaddr = 2
+# net.ipv6.conf.default.use_tempaddr = 2
+# kernel.kptr_restrict = 1
+# kernel.sysrq = 176
+# vm.max_map_count = 1048576
+# net.ipv4.conf.default.rp_filter = 2
+# net.ipv4.conf.all.rp_filter = 2
+# vm.mmap_min_addr = 32768
+# kernel.pid_max = 4194304
+# net.ipv4.ip_forward = 1
+# net.ipv4.tcp_syncookies = 1
+# net.ipv4.conf.all.accept_redirects = 0
+# net.ipv4.conf.default.accept_redirects = 0
+# net.ipv6.conf.all.accept_redirects = 0
+# net.ipv6.conf.default.accept_redirects = 0
+# net.ipv4.conf.all.send_redirects = 0
+# net.ipv4.conf.default.send_redirects = 0
+# net.ipv4.conf.all.accept_source_route = 0
+# net.ipv4.conf.default.accept_source_route = 0
+# net.ipv6.conf.all.accept_source_route = 0
+# net.ipv6.conf.default.accept_source_route = 0
+# net.ipv4.conf.all.log_martians = 1
+# net.ipv4.conf.default.log_martians = 1
+# net.ipv4.icmp_echo_ignore_broadcasts = 1
+# net.ipv4.icmp_ignore_bogus_error_responses = 1
+# net.ipv4.conf.all.rp_filter = 2
+# net.ipv4.conf.default.rp_filter = 2
+# net.ipv4.tcp_max_syn_backlog = 2048
+# net.ipv4.tcp_synack_retries = 2
+# fs.protected_hardlinks = 1
+# fs.protected_symlinks = 1
+# fs.suid_dumpable = 0
+# kernel.unprivileged_bpf_disabled = 1
+# kernel.sysrq = 4
+# kernel.randomize_va_space = 2
+# kernel.kptr_restrict = 2
+# kernel.dmesg_restrict = 1
+# kernel.perf_event_paranoid = 3
+# vm.swappiness = 10
+# fs.protected_fifos = 1
+# fs.protected_hardlinks = 1
+# fs.protected_regular = 2
+# fs.protected_symlinks = 1
+# [2026-02-22T13:32:54+00:00] Applying UFW baseline.
+# Backing up 'user.rules' to '/etc/ufw/user.rules.20260222_133254'
+# Backing up 'before.rules' to '/etc/ufw/before.rules.20260222_133254'
+# Backing up 'after.rules' to '/etc/ufw/after.rules.20260222_133254'
+# Backing up 'user6.rules' to '/etc/ufw/user6.rules.20260222_133254'
+# Backing up 'before6.rules' to '/etc/ufw/before6.rules.20260222_133254'
+# Backing up 'after6.rules' to '/etc/ufw/after6.rules.20260222_133254'
+#
+# Default incoming policy changed to 'deny'
+# (be sure to update your rules accordingly)
+# Default outgoing policy changed to 'allow'
+# (be sure to update your rules accordingly)
+# Default routed policy changed to 'deny'
+# (be sure to update your rules accordingly)
+# Rules updated
+# Rules updated (v6)
+# Rules updated
+# Rules updated (v6)
+# Rules updated
+# Rules updated (v6)
+# Rules updated
+# Rules updated (v6)
+# Firewall is active and enabled on system startup
+# [2026-02-22T13:32:55+00:00] Applying Docker daemon log rotation.
+# [2026-02-22T13:32:55+00:00] Docker daemon.json written with log rotation (local driver, 10m x 3) and live-restore.
+# [2026-02-22T13:32:55+00:00] Applying DOCKER-USER hardening assets.
+# Created symlink /etc/systemd/system/docker.service.wants/docker-user-hardening.service → /etc/systemd/system/docker-user-hardening.service.
+# Unit /etc/systemd/system/docker-user-hardening.service is added as a dependency to a non-existent unit docker.service.
+# [2026-02-22T13:32:55+00:00] WARN: Docker CLI detected but docker.service is not present; DOCKER-USER start is deferred.
+# [2026-02-22T13:32:55+00:00] Applying fail2ban.
+# Synchronizing state of fail2ban.service with SysV service script with /usr/lib/systemd/systemd-sysv-install.
+# Executing: /usr/lib/systemd/systemd-sysv-install enable fail2ban
+# Created symlink /etc/systemd/system/multi-user.target.wants/fail2ban.service → /usr/lib/systemd/system/fail2ban.service.
+# [2026-02-22T13:32:56+00:00] Applying journald persistence.
+# [2026-02-22T13:32:56+00:00] Applying unattended-upgrades policy.
+# Created symlink /etc/systemd/system/timers.target.wants/apt-daily.timer → /usr/lib/systemd/system/apt-daily.timer.
+# Created symlink /etc/systemd/system/timers.target.wants/apt-daily-upgrade.timer → /usr/lib/systemd/system/apt-daily-upgrade.timer.
+# [2026-02-22T13:33:02+00:00] Running post-apply checks.
+# iptables: Incompatible with this kernel.
+# [2026-02-22T13:33:02+00:00] ERROR: Post-check failed: DOCKER-USER IPv4 drop rule missing.
+# bats warning: Executed 1 instead of expected 8 tests
