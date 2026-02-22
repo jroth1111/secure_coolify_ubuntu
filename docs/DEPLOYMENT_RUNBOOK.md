@@ -2,12 +2,25 @@
 
 This guide walks through the complete journey from a fresh Ubuntu 24.04 VPS to a hardened, working Coolify deployment accessible only via Tailscale.
 
+## Safety Gates (Mandatory)
+
+Treat this runbook as a gated procedure. Do not proceed to the next phase until the current gate passes.
+
+- **Gate A (before hardening):** Root SSH over Tailscale works.
+- **Gate B (immediately after hardening):** Admin SSH over Tailscale works from a new terminal before closing the root session.
+- **Gate C (before Docker/Coolify):** `validate_hardening.sh` exits `0` with no FAIL checks.
+- **Gate D (after Docker install):** `docker-user-hardening.service` is active and managed DOCKER-USER rules exist.
+- **Gate E (after split-horizon binding):** Coolify dashboard is reachable on Tailscale IP and not reachable on public IP.
+
+If any gate fails: stop, fix the issue, and re-run the same gate.
+
 ## Prerequisites
 
 - A VPS provider account (Hetzner, DigitalOcean, Vultr, etc.)
 - A [Tailscale](https://tailscale.com) account
 - An SSH key pair (ed25519 recommended: `ssh-keygen -t ed25519`)
 - A domain name (for Coolify SSL/reverse proxy)
+- Two local terminals available (one can stay connected while validating new access paths)
 
 ---
 
@@ -69,7 +82,7 @@ tailscale ip -4
 # Note the 100.x.x.x IP — you'll use this for all future SSH access
 ```
 
-### 1.4 Verify Tailscale SSH Access
+### 1.4 Gate A: Verify Tailscale SSH Access
 
 From your local machine (which should also be on Tailscale):
 
@@ -77,7 +90,7 @@ From your local machine (which should also be on Tailscale):
 ssh root@<tailscale-ip>
 ```
 
-If this works, you're ready for hardening. **From this point forward, use the Tailscale IP for all SSH connections.**
+If this works, Gate A passes. **From this point forward, use the Tailscale IP for all SSH connections.**
 
 ---
 
@@ -127,7 +140,9 @@ chmod 600 /etc/bootstrap-hardening.env
 sudo ./bootstrap_hardening.sh --env-file /etc/bootstrap-hardening.env
 ```
 
-### 2.3 Verify SSH Access Post-Hardening
+Keep this root session open until Gate B and Gate C pass.
+
+### 2.3 Gate B: Verify SSH Access Post-Hardening
 
 **Important:** Before closing your current SSH session, verify you can connect via Tailscale as the admin user:
 
@@ -136,7 +151,18 @@ sudo ./bootstrap_hardening.sh --env-file /etc/bootstrap-hardening.env
 ssh coolifyadmin@<tailscale-ip>
 ```
 
-If this succeeds, your hardening is working correctly. The old root SSH access from public IPs is now blocked.
+If this succeeds, Gate B passes. The old root SSH access from public IPs is now blocked.
+
+### 2.4 Gate C: Validate Hardening Before Stack Install
+
+Run validation from the server and require a zero exit code:
+
+```bash
+sudo ./validate_hardening.sh
+echo $?
+```
+
+Expected: `0`. If the script reports FAIL items or exits non-zero, stop and remediate before Docker/Coolify installation.
 
 ---
 
@@ -162,7 +188,7 @@ sudo docker run hello-world
 
 The hardening script has already pre-installed Docker daemon configuration (`/etc/docker/daemon.json`) with log rotation and live-restore if Docker wasn't present at hardening time. If it was, your existing config was preserved.
 
-### 3.2 Restart DOCKER-USER Hardening
+### 3.2 Gate D: Restart and Verify DOCKER-USER Hardening
 
 After Docker is installed, activate the pre-installed DOCKER-USER rules:
 
@@ -173,6 +199,9 @@ sudo systemctl status docker-user-hardening.service
 # Verify rules are applied
 sudo iptables -t filter -S DOCKER-USER | grep coolify-hardening
 ```
+
+For standard mode, expect a `coolify-hardening-wan-web` rule.
+For tunnel mode, ensure `coolify-hardening-wan-web` is absent while `coolify-hardening-wan-drop` is present.
 
 ### 3.3 Install Coolify
 
@@ -204,14 +233,26 @@ sudo ss -tlnp | grep 8000
 # Should show 100.x.x.x:8000 instead of 0.0.0.0:8000
 ```
 
-### 4.2 DNS Configuration
+### 4.2 Gate E: Confirm Dashboard Exposure Boundaries
+
+```bash
+# Should succeed
+curl -s -o /dev/null -w '%{http_code}' http://<tailscale-ip>:8000
+
+# Should fail when split-horizon binding is enabled
+curl -s -o /dev/null -w '%{http_code}' http://<public-ip>:8000
+```
+
+Gate E passes when the dashboard is reachable over Tailscale and not reachable over public IP.
+
+### 4.3 DNS Configuration
 
 Point your domain to the server:
 
 - **Standard mode**: A record → server's public IP
 - **Tunnel mode**: CNAME → your Cloudflare Tunnel hostname
 
-### 4.3 Cloudflare Tunnel Setup (Tunnel Mode Only)
+### 4.4 Cloudflare Tunnel Setup (Tunnel Mode Only)
 
 If using tunnel mode:
 
@@ -273,6 +314,15 @@ timedatectl status
 
 # BBR (if available)
 sysctl net.ipv4.tcp_congestion_control
+```
+
+## Phase 6: Capture State Artifacts
+
+Capture current hardening state and report output for incident response and handoff:
+
+```bash
+cat /var/lib/bootstrap-hardening/state
+cat /var/log/bootstrap-hardening-report.json
 ```
 
 ---
