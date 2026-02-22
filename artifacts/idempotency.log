@@ -1,0 +1,2 @@
+1..1
+ok 1 idempotency: repeated run keeps single managed entries and healthy state

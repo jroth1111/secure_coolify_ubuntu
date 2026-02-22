@@ -1,0 +1,80 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV container=docker
+ARG BATS_CORE_VERSION=v1.13.0
+ARG BATS_ASSERT_VERSION=v2.2.4
+ARG BATS_SUPPORT_VERSION=v0.3.0
+
+# Install systemd + script dependencies + BATS tooling
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      systemd systemd-sysv dbus \
+      ufw openssh-server iptables fail2ban \
+      unattended-upgrades apt-listchanges \
+      auditd audispd-plugins \
+      iproute2 sudo git ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && (cd /lib/systemd/system/sysinit.target.wants/ && \
+        ls | grep -v systemd-tmpfiles-setup | xargs rm -f) \
+    && rm -f /lib/systemd/system/multi-user.target.wants/* \
+    && rm -f /etc/systemd/system/*.wants/* \
+    && rm -f /lib/systemd/system/local-fs.target.wants/* \
+    && rm -f /lib/systemd/system/sockets.target.wants/*udev* \
+    && rm -f /lib/systemd/system/sockets.target.wants/*initctl* \
+    && rm -f /lib/systemd/system/basic.target.wants/* \
+    && rm -f /lib/systemd/system/anaconda.target.wants/*
+
+# BATS + helpers (pinned for reproducibility)
+RUN git clone --depth 1 --branch ${BATS_CORE_VERSION} https://github.com/bats-core/bats-core.git /opt/bats-core && \
+    /opt/bats-core/install.sh /usr/local && \
+    git clone --depth 1 --branch ${BATS_ASSERT_VERSION} https://github.com/bats-core/bats-assert.git /opt/bats-assert && \
+    git clone --depth 1 --branch ${BATS_SUPPORT_VERSION} https://github.com/bats-core/bats-support.git /opt/bats-support
+
+# Stubs for auditd (kernel audit subsystem unavailable in containers)
+RUN printf '#!/bin/bash\nexit 0\n' > /usr/local/bin/augenrules && chmod +x /usr/local/bin/augenrules
+RUN cat > /usr/local/bin/auditctl << 'SCRIPT'
+#!/bin/bash
+if [[ "$1" == "--load" ]]; then
+  exit 0
+fi
+echo "-w /etc/passwd -p wa -k identity"
+echo "-w /etc/shadow -p wa -k identity"
+echo "-w /etc/group -p wa -k identity"
+echo "-w /etc/gshadow -p wa -k identity"
+echo "-w /etc/ssh/sshd_config -p wa -k sshd-config"
+echo "-w /etc/ssh/sshd_config.d/ -p wa -k sshd-config"
+echo "-w /etc/localtime -p wa -k time-change"
+echo "-w /etc/sudoers -p wa -k sudoers-change"
+echo "-w /etc/sudoers.d/ -p wa -k sudoers-change"
+echo "-w /usr/bin/docker -p x -k container-runtime"
+echo "-w /usr/bin/dockerd -p x -k container-runtime"
+echo "-w /usr/bin/containerd -p x -k container-runtime"
+exit 0
+SCRIPT
+RUN chmod +x /usr/local/bin/auditctl
+
+# Docker CLI stub: enables DOCKER-USER rule application path in tests.
+RUN printf '#!/bin/bash\nexit 0\n' > /usr/local/bin/docker && chmod +x /usr/local/bin/docker
+
+# Symlink so audit rules detect Docker binaries at /usr/bin/ paths
+RUN ln -sf /usr/local/bin/docker /usr/bin/docker && \
+    ln -sf /usr/local/bin/docker /usr/bin/dockerd && \
+    ln -sf /usr/local/bin/docker /usr/bin/containerd
+
+# Sysctl wrapper: filter kernel.* errors (not namespace-aware in containers)
+RUN mv /usr/sbin/sysctl /usr/sbin/sysctl.real
+RUN cat > /usr/sbin/sysctl << 'SCRIPT'
+#!/bin/bash
+if [[ "$1" == "--system" ]]; then
+  /usr/sbin/sysctl.real --system 2>&1 | grep -v "^sysctl: setting key .kernel\." || true
+  exit 0
+fi
+exec /usr/sbin/sysctl.real "$@"
+SCRIPT
+RUN chmod +x /usr/sbin/sysctl
+
+# SSH host keys + runtime dir
+RUN ssh-keygen -A && mkdir -p /run/sshd
+
+VOLUME ["/sys/fs/cgroup"]
+CMD ["/lib/systemd/systemd"]

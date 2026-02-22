@@ -1,0 +1,9 @@
+1..8
+ok 1 validate: exits 0 after hardening bootstrap
+ok 2 validate: JSON output includes expected top-level fields
+ok 3 validate: JSON output has valid structure with check entries
+ok 4 validate: pass count is positive after hardening
+ok 5 validate: state file values are reflected in output
+ok 6 validate: stopping fail2ban causes failure
+ok 7 validate: exits non-zero when expected control is missing
+ok 8 validate: exits non-zero when journald persistence is disabled

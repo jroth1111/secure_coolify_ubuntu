@@ -1,0 +1,161 @@
+1..160
+ok 1 is_true: '1' returns 0
+ok 2 is_true: 'true' returns 0
+ok 3 is_true: 'yes' returns 0
+ok 4 is_true: 'y' returns 0
+ok 5 is_true: 'on' returns 0
+ok 6 is_true: 'TRUE' (uppercase) returns 0
+ok 7 is_true: 'false' returns 1
+ok 8 is_true: '0' returns 1
+ok 9 is_true: empty string returns 1
+ok 10 is_true: 'no' returns 1
+ok 11 require_value: non-empty value passes
+ok 12 require_value: empty value dies with 'requires a value'
+ok 13 usage: prints required and optional flag sections
+ok 14 script_run: dry-run logs command and skips execution
+ok 15 script_run: executes command when dry-run is disabled
+ok 16 setup_logging: dry-run does not touch log file
+ok 17 validate_pubkey: accepts ed25519 key
+ok 18 validate_pubkey: accepts rsa key
+ok 19 validate_pubkey: accepts ecdsa key
+ok 20 validate_pubkey: accepts sk-ssh-ed25519 key
+ok 21 validate_pubkey: rejects garbage
+ok 22 validate_pubkey: rejects empty string
+ok 23 validate_pubkey: rejects type-only (no key data)
+ok 24 validate_inputs: valid inputs pass
+ok 25 validate_inputs: missing ADMIN_USER fails
+ok 26 validate_inputs: ADMIN_USER=root fails
+ok 27 validate_inputs: invalid username fails
+ok 28 validate_inputs: non-numeric SSH_PORT fails
+ok 29 validate_inputs: SSH_PORT=0 fails
+ok 30 validate_inputs: SSH_PORT=70000 fails
+ok 31 validate_inputs: bad time format fails
+ok 32 validate_inputs: bad retention format fails
+ok 33 validate_inputs: ENABLE_AUTO_REBOOT=maybe fails
+ok 34 validate_inputs: missing ADMIN_PUBKEY fails
+ok 35 detect_wan_iface: keeps explicitly provided WAN_IFACE
+ok 36 detect_wan_iface: fails when auto-detect returns no interface
+ok 37 ensure_packages: skips apt-get when all packages are installed
+ok 38 ensure_packages: installs only missing packages via apt-get
+ok 39 require_commands: dry-run only requires base command set
+ok 40 require_commands: fails when a required command is missing
+ok 41 configure_unattended_upgrades: writes disabled reboot policy when requested
+ok 42 parse_args: --admin-user sets ADMIN_USER
+ok 43 parse_args: --tunnel-mode sets TUNNEL_MODE=true
+ok 44 parse_args: --dry-run sets DRY_RUN=true
+ok 45 parse_args: unknown flag fails
+ok 46 parse_args: --env-file loads variables
+ok 47 parse_args: CLI flag overrides env-file
+ok 48 parse_args: missing env-file fails
+ok 49 parse_args: warns for env-file permissions looser than 0600
+ok 50 assert_sshd_effective: correct config passes
+ok 51 assert_sshd_effective: wrong permitrootlogin fails
+ok 52 assert_sshd_effective: wrong kex fails
+ok 53 assert_sshd_match_localhost: correct Match config passes (prohibit-password)
+ok 54 assert_sshd_match_localhost: correct Match config passes (without-password synonym)
+ok 55 assert_sshd_match_localhost: permitrootlogin no fails
+ok 56 assert_sshd_match_localhost: missing root in allowusers fails
+ok 57 ssh_session_safety_gate: no SSH_CONNECTION passes
+ok 58 ssh_session_safety_gate: Tailscale IP passes
+ok 59 ssh_session_safety_gate: non-Tailscale IP blocked
+ok 60 ssh_session_safety_gate: --force overrides non-Tailscale IP
+ok 61 build_audit_rules: includes identity watch
+ok 62 build_audit_rules: includes sudoers watch
+ok 63 run: in dry-run mode logs without executing
+ok 64 run: in non-dry-run mode executes command
+ok 65 write_file: creates file with correct permissions
+ok 66 write_file: in dry-run mode does not create file
+ok 67 bool_cmd: returns true for successful command
+ok 68 bool_cmd: returns false for failed command
+ok 69 on_err: logs error with line number and command
+ok 70 parse_args: --env-file=PATH syntax works (equals sign)
+ok 71 parse_args: --tailscale-cidr sets value
+ok 72 parse_args: --wan-iface sets value
+ok 73 parse_args: --enable-auto-reboot accepts '1'
+ok 74 parse_args: --enable-auto-reboot accepts 'yes'
+ok 75 parse_args: --ssh-port sets value
+ok 76 parse_args: --journal-retention sets value
+ok 77 parse_args: multiple flags work together
+ok 78 detect_os: fails when /etc/os-release missing
+ok 79 detect_os: fails for non-Ubuntu (simulated)
+ok 80 detect_os: FORCE=true allows non-24.04 versions
+ok 81 detect_wan_iface: uses WAN_IFACE when already set
+ok 82 detect_wan_iface: dies when auto-detect returns empty (simulated)
+ok 83 restore_ssh_dropin: restores from backup
+ok 84 restore_ssh_dropin: removes file when no backup
+ok 85 restore_ssh_dropin: no-op in dry-run mode
+ok 86 reload_ssh_service: returns failure when systemctl unavailable
+ok 87 usage: outputs help text with required options
+ok 88 validate_inputs: SWAP_SIZE=2G passes
+ok 89 validate_inputs: SWAP_SIZE=512M passes
+ok 90 validate_inputs: SWAP_SIZE=0 passes (skip swap)
+ok 91 validate_inputs: SWAP_SIZE=2T fails
+ok 92 validate_inputs: SWAP_SIZE=abc fails
+ok 93 parse_args: --swap-size sets SWAP_SIZE
+ok 94 parse_args: --swap-size 0 sets SWAP_SIZE=0
+ok 95 write_file: content is written correctly
+ok 96 write_file: creates parent directories
+ok 97 write_file: overwrites existing file
+ok 98 ssh_session_safety_gate: Tailscale IPv6 (fd7a:*) passes
+ok 99 ssh_session_safety_gate: non-Tailscale IPv6 blocked
+ok 100 build_audit_rules: includes sshd_config watch
+ok 101 build_audit_rules: includes sshd_config.d watch
+ok 102 build_audit_rules: includes time-change syscalls (b64)
+ok 103 build_audit_rules: includes hostname syscalls
+ok 104 log: outputs timestamped message
+ok 105 warn: outputs WARN-prefixed message
+ok 106 die: exits 1 with ERROR message
+ok 107 parse_args: --force sets FORCE=true
+ok 108 parse_args: --auto-reboot-time sets value
+ok 109 parse_args: --help exits 0 and prints usage
+ok 110 validate is_true: '1' returns 0
+ok 111 validate is_true: 'true' returns 0
+ok 112 validate is_true: 'false' returns 1
+ok 113 validate is_true: empty returns 1
+ok 114 validate is_true: 'yes' returns 0
+ok 115 validate is_true: 'on' returns 0
+ok 116 validate is_true: 'no' returns 1
+ok 117 record: increments PASS_COUNT on PASS
+ok 118 record: increments FAIL_COUNT on FAIL
+ok 119 record: increments INFO_COUNT on INFO
+ok 120 record: outputs formatted line in non-JSON mode
+ok 121 record: adds to RESULTS array in JSON mode
+ok 122 record: formats JSON entry correctly
+ok 123 check: records PASS when command succeeds
+ok 124 check: records FAIL when command fails
+ok 125 check: records multiple passes correctly
+ok 126 check: records mixed results correctly
+ok 127 validate script contains is_true function
+ok 128 validate script contains record function
+ok 129 validate script contains check function
+ok 130 validate script contains ssh_check function
+ok 131 validate script contains ufw_check function
+ok 132 validate script contains docker_user_check function
+ok 133 validate script contains sysctl_check function
+ok 134 validate script contains fail2ban_check function
+ok 135 validate script contains auditd_check function
+ok 136 validate script contains journald_check function
+ok 137 validate script contains banner_check function
+ok 138 validate script contains docker_daemon_check function
+ok 139 validate script contains apparmor_check function
+ok 140 validate script contains disabled_services_check function
+ok 141 validate script contains tailscale_check function
+ok 142 ssh_check expects permitrootlogin no
+ok 143 ssh_check expects passwordauthentication no
+ok 144 ssh_check expects pubkeyauthentication yes
+ok 145 sysctl_check expects tcp_syncookies=1
+ok 146 sysctl_check expects ip_forward=1
+ok 147 sysctl_check expects protected_hardlinks=1
+ok 148 JSON_MODE flag is respected
+ok 149 IS_CONTAINER can be set for container tests
+ok 150 validate script sets default SSH_PORT=22
+ok 151 validate script sets default TUNNEL_MODE=false
+ok 152 validate script sets default TAILSCALE_IFACE=tailscale0
+ok 153 journald_check looks for Storage=persistent
+ok 154 banner_check looks for AUTHORIZED in /etc/issue.net
+ok 155 disabled_services_check checks rpcbind
+ok 156 disabled_services_check checks avahi-daemon
+ok 157 disabled_services_check checks cups
+ok 158 docker_user_check looks for wan-drop rule
+ok 159 docker_daemon_check looks for log-driver
+ok 160 docker_daemon_check looks for live-restore

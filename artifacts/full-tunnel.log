@@ -1,0 +1,9 @@
+1..8
+ok 1 tunnel: no WAN port 80 UFW rule
+ok 2 tunnel: no WAN port 443 UFW rule
+ok 3 tunnel: SSH remains allowed on tailscale0
+ok 4 tunnel: state file shows tunnel_mode=true
+ok 5 tunnel: report JSON shows tunnel_mode=true
+ok 6 tunnel: DOCKER-USER chain has no wan-web ACCEPT rule
+ok 7 tunnel: DOCKER-USER IPv6 chain has no wan-web6 ACCEPT rule
+ok 8 tunnel: tailscale direct UDP 41641 still present on WAN

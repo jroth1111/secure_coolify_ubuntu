@@ -1,0 +1,28 @@
+# Tier 1 Test Image: Lightweight environment for dry-run tests
+# No systemd, no services - just bash and BATS for fast iteration
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ARG BATS_CORE_VERSION=v1.13.0
+ARG BATS_ASSERT_VERSION=v2.2.4
+ARG BATS_SUPPORT_VERSION=v0.3.0
+
+# Minimal dependencies for dry-run tests only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      iproute2 sudo bash git ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install BATS from source (pinned for reproducibility)
+RUN git clone --depth 1 --branch ${BATS_CORE_VERSION} https://github.com/bats-core/bats-core.git /opt/bats-core && \
+    /opt/bats-core/install.sh /usr/local && \
+    git clone --depth 1 --branch ${BATS_ASSERT_VERSION} https://github.com/bats-core/bats-assert.git /opt/bats-assert && \
+    git clone --depth 1 --branch ${BATS_SUPPORT_VERSION} https://github.com/bats-core/bats-support.git /opt/bats-support
+
+# Create necessary directories that the script expects (even in dry-run)
+RUN mkdir -p /etc/ssh/sshd_config.d /run/sshd /etc/audit/rules.d
+
+# Create minimal sudoers directory
+RUN mkdir -p /etc/sudoers.d
+
+WORKDIR /workspace

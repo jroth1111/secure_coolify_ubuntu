@@ -1,0 +1,124 @@
+name: hardening-tests
+
+on:
+  pull_request:
+  push:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Manual suite selection"
+        required: true
+        default: all
+        type: choice
+        options:
+          - full-standard
+          - full-tunnel
+          - all
+
+permissions:
+  contents: read
+
+jobs:
+  lint-shell:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Bash syntax check
+        run: |
+          bash -n bootstrap_hardening.sh
+          bash -n validate_hardening.sh
+
+      - name: Shellcheck
+        run: |
+          shellcheck bootstrap_hardening.sh
+          shellcheck validate_hardening.sh
+
+  tests-pr-fast:
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main')
+    needs: lint-shell
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run PR test lane
+        run: make test-ci-pr
+
+      - name: Upload PR artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-fast-artifacts
+          path: artifacts/
+          if-no-files-found: ignore
+
+  tests-main-full:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: lint-shell
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run mainline full suite
+        run: make test-ci-main
+
+      - name: Upload mainline artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-full-artifacts
+          path: artifacts/
+          if-no-files-found: ignore
+
+  tests-nightly:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run nightly full suite
+        run: make test-ci-main
+
+      - name: Upload nightly artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-full-artifacts
+          path: artifacts/
+          if-no-files-found: ignore
+
+  tests-manual-full:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run selected manual suite
+        run: |
+          case "${{ inputs.suite }}" in
+            full-standard) make test-full-standard ;;
+            full-tunnel) make test-full-tunnel ;;
+            all) make test-ci-main ;;
+            *) echo "Unknown suite: ${{ inputs.suite }}" >&2; exit 1 ;;
+          esac
+
+      - name: Upload manual artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: manual-artifacts
+          path: artifacts/
+          if-no-files-found: ignore

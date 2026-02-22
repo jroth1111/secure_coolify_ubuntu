@@ -1,0 +1,72 @@
+1..71
+ok 1 ssh: drop-in config file exists
+ok 2 ssh: sshd -T shows correct port
+ok 3 ssh: sshd -T shows permitrootlogin no (default context)
+ok 4 ssh: sshd -T -C localhost shows permitrootlogin prohibit-password (or synonym)
+ok 5 ssh: sshd -T -C localhost shows allowusers includes root
+ok 6 ssh: sshd -T -C external address shows permitrootlogin no
+ok 7 ssh: sshd -T shows passwordauthentication no
+ok 8 ssh: sshd -T shows allowusers includes test user
+ok 9 ssh: sshd -T shows chacha20 cipher
+ok 10 ssh: sshd -T shows hardened MAC list
+ok 11 ssh: sshd -T shows hardened KEX list
+ok 12 ssh: sshd -T shows hardened host key algorithms
+ok 13 admin: user exists
+ok 14 admin: user is in sudo group
+ok 15 admin: authorized_keys contains test key
+ok 16 admin: authorized_keys has 0600 permissions
+ok 17 admin: .ssh directory has 0700 permissions
+ok 18 admin: home directory exists
+ok 19 admin: shell is /bin/bash
+ok 20 ufw: is active
+ok 21 ufw: SSH allowed on tailscale0
+ok 22 ufw: HTTP (80) allowed on WAN
+ok 23 ufw: HTTPS (443) allowed on WAN
+ok 24 ufw: SSH not allowed on WAN interface
+ok 25 ufw: tailscale direct UDP rule is present on WAN
+ok 26 sysctl: tcp_syncookies is 1
+ok 27 sysctl: ip_forward is 1
+ok 28 sysctl: drop-in file exists
+ok 29 fail2ban: service is active
+ok 30 fail2ban: jail config exists
+ok 31 fail2ban: jail config has correct port
+ok 32 iptables: DOCKER-USER chain exists
+ok 33 iptables: DOCKER-USER includes managed comments
+ok 34 iptables: DOCKER-USER managed rule order is correct
+ok 35 docker-daemon: daemon.json exists if Docker present
+ok 36 docker-daemon: log-driver is local
+ok 37 docker-daemon: live-restore enabled
+ok 38 journald: drop-in has Storage=persistent
+ok 39 upgrades: auto-upgrade config present
+ok 40 upgrades: local policy has reboot and cleanup settings
+ok 41 banner: /etc/issue.net contains AUTHORIZED
+ok 42 state: state file written with correct values
+ok 43 state: JSON report written
+ok 44 services: rpcbind masked or not found
+ok 45 services: avahi-daemon masked or not found
+ok 46 services: avahi-daemon.socket masked or not found
+ok 47 services: cups masked or not found
+ok 48 audit: rules file exists
+ok 49 audit: rules include identity watch
+ok 50 audit: rules include sudoers watch
+ok 51 docker-user: service is enabled
+ok 52 sysctl: tcp_max_syn_backlog is 2048
+ok 53 sysctl: tcp_synack_retries is 2
+ok 54 sysctl: BBR congestion control active (if kernel supports) # skip tcp_bbr kernel module not available
+ok 55 sysctl: default_qdisc is fq (if BBR active) # skip tcp_bbr kernel module not available
+ok 56 sysctl: drop-in contains SYN backlog parameters
+ok 57 swap: swap is active
+ok 58 swap: /swapfile exists with 0600 permissions when /swapfile backend is used # skip Swap backend is not /swapfile in this environment
+ok 59 swap: single fstab entry for swapfile when /swapfile backend is used # skip Swap backend is not /swapfile in this environment
+ok 60 swap: vm.swappiness is 10
+ok 61 state: state file includes swap_size
+ok 62 timesync: NTP is active when supported by container runtime # skip NTP control is unavailable in this container runtime
+ok 63 report: JSON includes new check fields
+ok 64 sysctl: rp_filter is 2 (loose mode for Docker)
+ok 65 sysctl: accept_redirects is 0
+ok 66 sysctl: protected_hardlinks is 1
+ok 67 sysctl: icmp_echo_ignore_broadcasts is 1
+ok 68 sysctl: suid_dumpable is 0
+ok 69 docker-daemon: pre-existing daemon.json is not overwritten on re-run
+ok 70 iptables: DOCKER-USER IPv6 chain has wan-drop6 rule
+ok 71 audit: rules include container-runtime watch

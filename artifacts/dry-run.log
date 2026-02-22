@@ -1,0 +1,13 @@
+1..12
+ok 1 dry-run: exits 0 with valid args
+ok 2 dry-run: logs DRY-RUN prefix
+ok 3 dry-run: does not create SSH drop-in
+ok 4 dry-run: does not create sysctl drop-in
+ok 5 dry-run: does not create managed custom files
+ok 6 dry-run: logs every major phase
+ok 7 dry-run: does not create swap file
+ok 8 dry-run: --swap-size 0 logs skip message
+ok 9 dry-run: tunnel-mode logs skip message
+ok 10 dry-run: rejects missing admin-user
+ok 11 dry-run: rejects non-root execution
+ok 12 dry-run: fails when tailscale0 interface is missing
