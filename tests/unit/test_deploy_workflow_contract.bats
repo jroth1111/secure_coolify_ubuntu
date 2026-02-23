@@ -44,6 +44,18 @@ DEPLOY_MATRIX="${PROJECT_ROOT}/docs/deploy_setup_functionality_test_matrix.md"
   grep -Fq 'step "4/5" "Configure dashboard binding & DNS"' "${DEPLOY_SCRIPT}"
 }
 
+@test "deploy: binding failure is fatal" {
+  grep -Fq 'configure_coolify_binding.sh --tailscale-ip' "${DEPLOY_SCRIPT}"
+  grep -Fq 'die "configure_coolify_binding.sh failed. Fix binding errors before continuing."' "${DEPLOY_SCRIPT}"
+}
+
+@test "deploy: PUSHER env supports mode switch and expanded domain" {
+  grep -Fq 'mode="${DEPLOY_MODE}"' "${DEPLOY_SCRIPT}"
+  grep -Fq 'PUSHER_HOST=ws.${DOMAIN}' "${DEPLOY_SCRIPT}"
+  grep -Fq 'PUSHER env vars cleared for standard mode' "${DEPLOY_SCRIPT}"
+  ! grep -Fq "<<'INNER'" "${DEPLOY_SCRIPT}"
+}
+
 @test "deploy: gate E fails when exposure checks do not pass" {
   grep -Fq "Gate E: Checking dashboard accessibility..." "${DEPLOY_SCRIPT}"
   grep -Fq "Gate E failed: dashboard not reachable via Tailscale" "${DEPLOY_SCRIPT}"

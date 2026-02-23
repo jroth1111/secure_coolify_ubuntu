@@ -41,6 +41,17 @@ DEPLOY_MATRIX="${PROJECT_ROOT}/docs/deploy_setup_functionality_test_matrix.md"
   grep -Fq 'step "4/5" "Configure dashboard binding & DNS"' "${SETUP_SCRIPT}"
 }
 
+@test "setup: binding failure is fatal" {
+  grep -Fq 'configure_coolify_binding.sh" --tailscale-ip' "${SETUP_SCRIPT}"
+  grep -Fq 'die "configure_coolify_binding.sh failed. Fix binding errors before continuing."' "${SETUP_SCRIPT}"
+}
+
+@test "setup: PUSHER env supports mode switch and expanded domain" {
+  grep -Fq 'PUSHER_HOST=ws.${DOMAIN}' "${SETUP_SCRIPT}"
+  grep -Fq 'PUSHER env vars cleared for standard mode' "${SETUP_SCRIPT}"
+  grep -Fq "sed '/^PUSHER_HOST=/d; /^PUSHER_PORT=/d; /^PUSHER_SCHEME=/d'" "${SETUP_SCRIPT}"
+}
+
 @test "setup: gate E requires operator laptop verification" {
   grep -Fq 'Gate E: Operator verifies from laptop' "${SETUP_SCRIPT}"
 }

@@ -398,7 +398,13 @@ setup() {
 # ── fail2ban ignoreip ─────────────────────────────────────────────────────────
 
 @test "fail2ban_check: checks for Tailscale CIDR in ignoreip" {
-  grep -q "100.64.0.0/10" "${VALIDATE_SCRIPT}"
+  grep -q "TAILSCALE_CIDR" "${VALIDATE_SCRIPT}"
+  grep -q "tailscale_cidr" "${VALIDATE_SCRIPT}"
+}
+
+@test "admin_sudo_check: allows option-prefixed authorized_keys lines" {
+  grep -Fq "ssh-[^[:space:]]+" "${VALIDATE_SCRIPT}"
+  grep -Fq "ecdsa-sha2-[^[:space:]]+" "${VALIDATE_SCRIPT}"
 }
 
 # ── timesync NTPSynchronized ──────────────────────────────────────────────────
