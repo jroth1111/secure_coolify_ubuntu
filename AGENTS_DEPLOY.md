@@ -274,7 +274,7 @@ Steps are numbered `[0/5]`–`[5/5]` in the output; phase references in AGENTS.m
 - **[1/5] Harden** — uploads scripts via root password SSH, runs `bootstrap_hardening.sh` (installs Tailscale, hardens SSH/UFW). Bootstrap prints `HARDEN_RESULT_TAILSCALE_IP=<ip>` sentinel on stdout; deploy.sh captures it via `tee` — this is the only safe way to get the TS_IP since UFW blocks all public-IP SSH after hardening completes. Skipped when `--ts-ip` is provided.
 - **[2/5] Gates** — cleans up `deploy.env` from server (root SSH blocked post-hardening, so done here via admin key), verifies SSH transition to admin@tailscale-IP (Gate A–B), re-syncs companion scripts via admin SCP so the latest versions are always used (Gate B+), runs `validate_hardening.sh --json` (Gate C)
 - **[3/5] Docker + Coolify** — installs Docker (skips if already installed), starts DOCKER-USER rules (Gate D), installs Coolify (skips if already installed)
-- **[4/5] DNS + Verify** — configures dashboard UFW rules, sets PUSHER_HOST/PORT/SCHEME env vars for tunnel-mode WebSocket routing (ws.DOMAIN → Soketi via tunnel, terminal.DOMAIN → terminal via tunnel), creates/replaces Cloudflare Tunnel + CNAME + wildcard DNS (or A + wildcard A in standard mode)
+- **[4/5] DNS + Verify** — configures dashboard UFW rules, sets PUSHER_HOST/PORT/SCHEME env vars for tunnel-mode WebSocket routing (ws.DOMAIN → Soketi via tunnel, DOMAIN + `/terminal/ws` → terminal via tunnel), creates/replaces Cloudflare Tunnel + CNAME + wildcard DNS (or A + wildcard A in standard mode)
 - **[5/5] Final verification** — Gate E (curl: dashboard reachable on Tailscale IP, blocked on public IP), Gate F (curl from operator machine: external `https://DOMAIN` responds — proves tunnel+DNS+TLS end-to-end; non-fatal if DNS hasn't propagated yet), final `validate_hardening.sh --json` run, prints summary box
 
 ## Post-Deploy Steps (Required — Inform the User)
@@ -292,7 +292,7 @@ Inform the user of these steps after deployment completes.
 
 Both modes use Cloudflare's edge for user-facing TLS. No wildcard cert is needed on the origin:
 
-- **Tunnel mode**: Cloudflare terminates TLS. Tunnel routing: `DOMAIN → localhost:8000` (Coolify dashboard), `*.APP_DOMAIN → localhost:80` (Traefik/coolify-proxy — routes by hostname to app containers), `ws.DOMAIN → localhost:6001` (Soketi WebSocket), `terminal.DOMAIN → localhost:6002` (terminal). Dashboard gets its own port-8000 rule; wildcard app traffic goes through Traefik on port 80 so each app resolves to its container. No origin cert.
+- **Tunnel mode**: Cloudflare terminates TLS. Tunnel routing: `DOMAIN + /terminal/ws → localhost:6002` (terminal WebSocket path, must be listed before dashboard ingress), `DOMAIN → localhost:8000` (Coolify dashboard), `*.APP_DOMAIN → localhost:80` (Traefik/coolify-proxy — routes by hostname to app containers), `ws.DOMAIN → localhost:6001` (Soketi WebSocket). Dashboard gets its own port-8000 rule; wildcard app traffic goes through Traefik on port 80 so each app resolves to its container. No origin cert.
 - **Standard mode** (proxied + Full SSL): Cloudflare terminates edge TLS. Full mode accepts any origin cert (self-signed OK).
 
 The `--cf-api-token` is used for DNS record management via Cloudflare's REST API. Wrangler CLI is not applicable (it only manages Workers/R2/D1/Pages — no DNS commands).

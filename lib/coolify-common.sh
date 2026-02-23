@@ -324,7 +324,7 @@ print_deployment_summary() {
       && printf '│                   + CNAME *.%-32s│\n' "${CF_ZONE_NAME}"
     printf '│  Tunnel ID        : %-40s│\n' "${TUNNEL_ID}"
     printf '│  WebSocket (Soketi): ws.%-36s│\n' "${DOMAIN} → tunnel"
-    printf '│  Terminal         : terminal.%-31s│\n' "${DOMAIN} → tunnel"
+    printf '│  Terminal         : %-40s│\n' "${DOMAIN}/terminal/ws → tunnel"
   fi
   printf '└─────────────────────────────────────────────────────────────┘\n'
   printf '\n'
