@@ -11,6 +11,9 @@ set -Eeuo pipefail
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# shellcheck source=lib/coolify-common.sh
+source "${SCRIPT_DIR}/lib/coolify-common.sh"
+
 # ── Inputs (populated by flags or prompts) ──────────────────────────────────
 
 SERVER_IP="${SERVER_IP:-}"
@@ -21,6 +24,7 @@ DEPLOY_MODE="${DEPLOY_MODE:-}"
 DOMAIN="${DOMAIN:-}"
 CF_API_TOKEN="${CF_API_TOKEN:-}"
 CF_ZONE="${CF_ZONE:-}"
+APP_DOMAIN_MODE="${APP_DOMAIN_MODE:-}"
 SWAP_SIZE="${SWAP_SIZE:-}"
 AUTO_YES="${AUTO_YES:-false}"
 
@@ -30,43 +34,10 @@ ADMIN_PUBKEY=""
 TS_IP=""
 CF_ZONE_ID=""
 CF_ZONE_NAME=""
+APP_DOMAIN=""
 CF_ACCOUNT_ID=""
 TUNNEL_ID=""
 TUNNEL_SECRET=""
-
-# ── Regex patterns ──────────────────────────────────────────────────────────
-
-IPV4_RE='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
-LINUX_USER_RE='^[a-z_][a-z0-9_-]*$'
-FQDN_RE='^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$'
-SWAP_RE='^[0-9]+[GM]$'
-
-# ── Helpers ─────────────────────────────────────────────────────────────────
-
-log()  { printf '[%s] %s\n' "$(date -Iseconds)" "$*"; }
-warn() { log "WARN: $*"; }
-die()  { log "FATAL: $*" >&2; exit 1; }
-step() { printf '\n\033[1;36m[%s] %s\033[0m\n' "$1" "$2"; }
-pass() { printf '  \033[1;32mPASS\033[0m %s\n' "$*"; }
-fail() { printf '  \033[1;31mFAIL\033[0m %s\n' "$*"; }
-
-is_true() {
-  case "${1,,}" in
-    1|true|yes|y|on) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-confirm() {
-  if is_true "${AUTO_YES}"; then return 0; fi
-  local msg="${1:-Continue?}"
-  printf '\n%s [y/N] ' "${msg}"
-  read -r ans
-  case "${ans,,}" in
-    y|yes) return 0 ;;
-    *) die "Aborted by user." ;;
-  esac
-}
 
 pause_for_operator() {
   if is_true "${AUTO_YES}"; then return 0; fi
@@ -74,56 +45,6 @@ pause_for_operator() {
   printf '\n  \033[1;33m⏸  %s\033[0m\n' "${msg}"
   printf '  Press Enter when ready...'
   read -r
-}
-
-# ── Input helpers ───────────────────────────────────────────────────────────
-
-prompt_value() {
-  local var_name="$1" prompt="$2" default="${3:-}" regex="${4:-}"
-  local val
-  # When --yes is set and a default exists, accept it without prompting
-  if is_true "${AUTO_YES}" && [[ -n "${default}" ]]; then
-    eval "${var_name}=\${default}"
-    return 0
-  fi
-  printf '%s' "${prompt}"
-  [[ -n "${default}" ]] && printf ' [%s]' "${default}"
-  printf ': '
-  read -r val
-  val="${val:-$default}"
-  if [[ -n "${regex}" ]] && ! [[ "${val}" =~ ${regex} ]]; then
-    die "Invalid input for ${var_name}: '${val}' does not match ${regex}"
-  fi
-  eval "${var_name}=\${val}"
-}
-
-prompt_secret() {
-  local var_name="$1" prompt="$2"
-  printf '%s: ' "${prompt}"
-  read -rs val
-  printf '\n'
-  [[ -n "${val}" ]] || die "${var_name} cannot be empty."
-  eval "${var_name}=\${val}"
-}
-
-prompt_choice() {
-  local var_name="$1" prompt="$2" default="$3"
-  shift 3
-  local options=("$@")
-  # When --yes is set, accept the default without prompting
-  if is_true "${AUTO_YES}"; then
-    eval "${var_name}=\${default}"
-    return 0
-  fi
-  printf '%s [%s] (%s): ' "${prompt}" "${default}" "$(IFS=/; echo "${options[*]}")"
-  read -r val
-  val="${val:-$default}"
-  local valid=false
-  for opt in "${options[@]}"; do
-    [[ "${val}" == "${opt}" ]] && valid=true
-  done
-  ${valid} || die "Invalid choice for ${var_name}: '${val}'. Options: ${options[*]}"
-  eval "${var_name}=\${val}"
 }
 
 # ── Usage ───────────────────────────────────────────────────────────────────
@@ -148,6 +69,7 @@ Required:
 
 Optional:
   --mode <tunnel|standard>       Deployment mode (default: tunnel)
+  --app-domain-mode <vps|apex>  App subdomain scope: vps=appname.DOMAIN, apex=appname.ZONE (default: apex)
   --cf-zone <zone>              Cloudflare zone (default: derived from domain)
   --swap-size <size>            Swap size (default: 2G)
   --yes                         Skip confirmation prompts (for automation)
@@ -168,6 +90,7 @@ parse_args() {
       --domain)          DOMAIN="${2:?--domain requires a value}"; shift 2 ;;
       --cf-api-token)    CF_API_TOKEN="${2:?--cf-api-token requires a value}"; shift 2 ;;
       --cf-zone)         CF_ZONE="${2:?--cf-zone requires a value}"; shift 2 ;;
+      --app-domain-mode) APP_DOMAIN_MODE="${2:?--app-domain-mode requires a value}"; shift 2 ;;
       --swap-size)       SWAP_SIZE="${2:?--swap-size requires a value}"; shift 2 ;;
       --yes)             AUTO_YES="true"; shift ;;
       -h|--help)         usage; exit 0 ;;
@@ -179,15 +102,7 @@ parse_args() {
 # ── Input collection (flag → prompt fallback) ──────────────────────────────
 
 collect_inputs() {
-  [[ -n "${SERVER_IP}" ]]   || prompt_value  SERVER_IP "Server public IP" "" "${IPV4_RE}"
-  [[ -n "${ADMIN_USER}" ]]  || prompt_value  ADMIN_USER "Admin username" "coolifyadmin" "${LINUX_USER_RE}"
-  [[ -n "${PUBKEY_FILE}" ]] || prompt_value  PUBKEY_FILE "SSH public key file" "${HOME}/.ssh/id_ed25519.pub"
-  [[ -n "${TAILSCALE_AUTH_KEY}" ]] || prompt_value TAILSCALE_AUTH_KEY "Tailscale auth key (tskey-auth-...)" ""
-  [[ -n "${DEPLOY_MODE}" ]] || prompt_choice DEPLOY_MODE "Deployment mode" "tunnel" "tunnel" "standard"
-  [[ -n "${DOMAIN}" ]]      || prompt_value  DOMAIN "Domain name (FQDN)" "" "${FQDN_RE}"
-  [[ -n "${CF_API_TOKEN}" ]] || prompt_secret CF_API_TOKEN "Cloudflare API token"
-  [[ -n "${CF_ZONE}" ]]     || CF_ZONE=""  # will be derived from domain
-  [[ -n "${SWAP_SIZE}" ]]   || SWAP_SIZE="2G"
+  collect_common_inputs
 }
 
 # ── Input validation ───────────────────────────────────────────────────────
@@ -209,6 +124,9 @@ validate_inputs() {
   [[ "${DEPLOY_MODE}" == "standard" || "${DEPLOY_MODE}" == "tunnel" ]] \
     || die "Mode must be 'standard' or 'tunnel' (got: ${DEPLOY_MODE})"
 
+  [[ "${APP_DOMAIN_MODE}" == "vps" || "${APP_DOMAIN_MODE}" == "apex" ]] \
+    || die "App domain mode must be 'vps' or 'apex' (got: ${APP_DOMAIN_MODE})"
+
   [[ "${DOMAIN}" =~ ${FQDN_RE} ]]         || die "Invalid domain: ${DOMAIN}"
   [[ -n "${CF_API_TOKEN}" ]]               || die "Cloudflare API token is required."
   [[ "${SWAP_SIZE}" =~ ${SWAP_RE} ]]       || die "Invalid swap size: ${SWAP_SIZE} (expected e.g. 2G, 512M)"
@@ -218,131 +136,6 @@ validate_inputs() {
   for script in "${scripts[@]}"; do
     [[ -f "${SCRIPT_DIR}/${script}" ]] || die "Required script not found: ${SCRIPT_DIR}/${script}"
   done
-}
-
-# ── Cloudflare API ─────────────────────────────────────────────────────────
-
-cf_api() {
-  local method="$1" endpoint="$2" body="${3:-}"
-  local url="https://api.cloudflare.com/client/v4${endpoint}"
-  local args=(-s -X "${method}" -H "Authorization: Bearer ${CF_API_TOKEN}" -H "Content-Type: application/json")
-  [[ -n "${body}" ]] && args+=(-d "${body}")
-  curl "${args[@]}" "${url}"
-}
-
-cf_verify_token() {
-  # Use zones endpoint rather than /user/tokens/verify — the latter requires
-  # User:User Tokens:Read which is not part of our required token permissions.
-  local resp
-  resp="$(cf_api GET /zones?per_page=1)"
-  local status
-  status="$(printf '%s' "${resp}" | jq -r '.success // false')"
-  [[ "${status}" == "true" ]] || die "Cloudflare API token verification failed: $(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"')"
-  log "Cloudflare API token verified."
-}
-
-cf_get_zone_id() {
-  # If --cf-zone was specified, use it directly
-  if [[ -n "${CF_ZONE}" ]]; then
-    local resp
-    resp="$(cf_api GET "/zones?name=${CF_ZONE}&status=active")"
-    CF_ZONE_ID="$(printf '%s' "${resp}" | jq -r '.result[0].id // empty')"
-    [[ -n "${CF_ZONE_ID}" ]] || die "Cloudflare zone not found for '${CF_ZONE}'. Check --cf-zone value."
-    CF_ZONE_NAME="${CF_ZONE}"
-    log "Cloudflare zone ID: ${CF_ZONE_ID} (${CF_ZONE_NAME})"
-    return 0
-  fi
-
-  # Auto-detect zone by trying progressively shorter suffixes of DOMAIN.
-  # This correctly handles multi-part TLDs (e.g. .com.au, .co.uk) where
-  # stripping only the first label would give a non-existent zone.
-  local candidate="${DOMAIN}"
-  while [[ "${candidate}" == *.* ]]; do
-    local resp
-    resp="$(cf_api GET "/zones?name=${candidate}&status=active")"
-    CF_ZONE_ID="$(printf '%s' "${resp}" | jq -r '.result[0].id // empty')"
-    if [[ -n "${CF_ZONE_ID}" ]]; then
-      CF_ZONE_NAME="${candidate}"
-      log "Cloudflare zone ID: ${CF_ZONE_ID} (${CF_ZONE_NAME})"
-      return 0
-    fi
-    candidate="${candidate#*.}"  # strip leftmost label and retry
-  done
-  die "Cloudflare zone not found for any suffix of '${DOMAIN}'. Check domain or use --cf-zone."
-}
-
-cf_get_account_id() {
-  local resp
-  resp="$(cf_api GET /accounts)"
-  CF_ACCOUNT_ID="$(printf '%s' "${resp}" | jq -r '.result[0].id // empty')"
-  [[ -n "${CF_ACCOUNT_ID}" ]] || die "No Cloudflare account found."
-  log "Cloudflare account ID: ${CF_ACCOUNT_ID}"
-}
-
-cf_upsert_a_record() {
-  local name="$1" ip="$2" proxied="${3:-true}"
-  local existing
-  existing="$(cf_api GET "/zones/${CF_ZONE_ID}/dns_records?type=A&name=${name}")"
-  local record_id
-  record_id="$(printf '%s' "${existing}" | jq -r '.result[0].id // empty')"
-  local body
-  body="$(jq -n --arg name "${name}" --arg ip "${ip}" --argjson proxied "${proxied}" \
-    '{type:"A",name:$name,content:$ip,proxied:$proxied,ttl:1}')"
-
-  if [[ -n "${record_id}" ]]; then
-    cf_api PUT "/zones/${CF_ZONE_ID}/dns_records/${record_id}" "${body}" >/dev/null
-    log "Updated A record: ${name} → ${ip} (proxied=${proxied})"
-  else
-    cf_api POST "/zones/${CF_ZONE_ID}/dns_records" "${body}" >/dev/null
-    log "Created A record: ${name} → ${ip} (proxied=${proxied})"
-  fi
-}
-
-cf_create_tunnel() {
-  local tunnel_name="${DOMAIN%%.*}-coolify"
-
-  # Delete any existing inactive tunnel with the same name (idempotent re-run support)
-  local existing_id
-  existing_id="$(cf_api GET "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel?name=${tunnel_name}&is_deleted=false" \
-    | jq -r '.result[0].id // empty')"
-  if [[ -n "${existing_id}" ]]; then
-    log "Stopping cloudflared to release tunnel connections before delete..."
-    systemctl stop cloudflared 2>/dev/null || true
-    sleep 3  # Allow connections to close
-    log "Deleting stale tunnel ${tunnel_name} (${existing_id}) before recreating..."
-    cf_api DELETE "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel/${existing_id}" >/dev/null \
-      || warn "Could not delete stale tunnel ${existing_id}; proceeding anyway."
-    sleep 2  # Allow CF to release the name
-  fi
-
-  TUNNEL_SECRET="$(openssl rand -base64 32)"
-  local body
-  body="$(jq -n --arg name "${tunnel_name}" --arg secret "${TUNNEL_SECRET}" \
-    '{name:$name,tunnel_secret:$secret,config_src:"local"}')"
-  local resp
-  resp="$(cf_api POST "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel" "${body}")"
-  TUNNEL_ID="$(printf '%s' "${resp}" | jq -r '.result.id // empty')"
-  [[ -n "${TUNNEL_ID}" ]] || die "Failed to create Cloudflare Tunnel: $(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"')"
-  log "Created tunnel: ${tunnel_name} (${TUNNEL_ID})"
-}
-
-cf_upsert_cname() {
-  local name="$1" target="$2"
-  local existing
-  existing="$(cf_api GET "/zones/${CF_ZONE_ID}/dns_records?type=CNAME&name=${name}")"
-  local record_id
-  record_id="$(printf '%s' "${existing}" | jq -r '.result[0].id // empty')"
-  local body
-  body="$(jq -n --arg name "${name}" --arg target "${target}" \
-    '{type:"CNAME",name:$name,content:$target,proxied:true,ttl:1}')"
-
-  if [[ -n "${record_id}" ]]; then
-    cf_api PUT "/zones/${CF_ZONE_ID}/dns_records/${record_id}" "${body}" >/dev/null
-    log "Updated CNAME: ${name} → ${target}"
-  else
-    cf_api POST "/zones/${CF_ZONE_ID}/dns_records" "${body}" >/dev/null
-    log "Created CNAME: ${name} → ${target}"
-  fi
 }
 
 verify_docker_user_gate_local() {
@@ -410,21 +203,6 @@ reconcile_docker_daemon_local() {
   pass "Docker daemon hardening reconciled (json-file log rotation + live-restore)"
 }
 
-run_final_validation_gate_local() {
-  log "Running final validate_hardening.sh..."
-  local validate_json
-  validate_json="$("${SCRIPT_DIR}/validate_hardening.sh" --json 2>/dev/null)" || true
-  local fail_count
-  fail_count="$(printf '%s' "${validate_json}" | jq -r '.fail // -1' 2>/dev/null || echo "-1")"
-  if [[ "${fail_count}" == "0" ]]; then
-    pass "Final validation: validate_hardening.sh — 0 failures"
-  else
-    fail "Final validation: validate_hardening.sh reported ${fail_count} failures"
-    printf '%s\n' "${validate_json}" | jq '.checks[] | select(.status=="FAIL")' 2>/dev/null || true
-    die "Final validation failed. Resolve validation failures before considering deployment complete."
-  fi
-}
-
 # ── Pre-flight ──────────────────────────────────────────────────────────────
 
 preflight() {
@@ -445,6 +223,7 @@ preflight() {
   cf_verify_token
   cf_get_zone_id
   cf_get_account_id  # always fetch — needed for tunnel (default mode)
+  resolve_app_domain
   pass "Cloudflare API verified (zone: ${CF_ZONE_ID})"
 }
 
@@ -508,15 +287,8 @@ phase2_gates() {
   log "Gate C: Running validate_hardening.sh..."
   local validate_json
   validate_json="$("${SCRIPT_DIR}/validate_hardening.sh" --json 2>/dev/null)" || true
-  local fail_count
-  fail_count="$(printf '%s' "${validate_json}" | jq -r '.fail // -1' 2>/dev/null || echo "-1")"
-  if [[ "${fail_count}" == "0" ]]; then
-    pass "Gate C: validate_hardening.sh — 0 failures"
-  else
-    fail "Gate C: validate_hardening.sh reported ${fail_count} failures"
-    printf '%s\n' "${validate_json}" | jq '.checks[] | select(.status=="FAIL")' 2>/dev/null || true
-    die "Gate C failed. Fix validation failures before continuing."
-  fi
+  report_validation_result "Gate C" "${validate_json}" \
+    "Gate C failed. Fix validation failures before continuing."
 }
 
 # ── Phase 3: Docker + Coolify ──────────────────────────────────────────────
@@ -560,6 +332,62 @@ phase3_docker_coolify() {
   systemctl restart docker-user-hardening.service \
     || die "Failed to restart docker-user-hardening.service after Docker daemon reconciliation."
   verify_docker_user_gate_local "Gate D (post-Coolify)"
+
+  # Add Coolify's generated SSH public key to root's authorized_keys.
+  # Required for the Coolify "This Machine" onboarding: Coolify SSHes to localhost as root
+  # using its own key. The hardening Match block allows key-only root login from
+  # localhost (127.0.0.1), 172.16.0.0/12, and 10.0.0.0/8 (Docker pool); key must be present.
+  log "Adding Coolify SSH key to root authorized_keys..."
+  local keyfile auth pubkey
+  keyfile=$(ls /data/coolify/ssh/keys/ssh_key@* 2>/dev/null | head -1 || true)
+  if [[ -z "${keyfile}" ]]; then
+    warn "No Coolify SSH key found — skipping root authorized_keys update"
+  else
+    pubkey=$(ssh-keygen -y -f "${keyfile}")
+    auth=/root/.ssh/authorized_keys
+    mkdir -p /root/.ssh && chmod 700 /root/.ssh
+    touch "${auth}" && chmod 600 "${auth}"
+    if grep -qxF "${pubkey}" "${auth}" 2>/dev/null; then
+      log "Coolify key already in root authorized_keys"
+    else
+      # Ensure file ends with newline before appending to avoid key concatenation
+      [[ -s "${auth}" ]] && [[ "$(tail -c1 "${auth}" | od -An -tx1 | tr -d ' \n')" != "0a" ]] \
+        && printf '\n' >> "${auth}"
+      printf '%s\n' "${pubkey}" >> "${auth}"
+    fi
+    pass "Coolify SSH key in root authorized_keys"
+  fi
+
+  # Fix host.docker.internal resolution on Linux Docker.
+  # Docker on Linux doesn't resolve host-gateway to a real IP in all versions/configurations.
+  # Patch Coolify's docker-compose.yml to use the actual coolify network gateway IP,
+  # then recreate the container so the fix takes effect.
+  log "Fixing host.docker.internal for Linux Docker..."
+  local compose_yml="/data/coolify/source/docker-compose.yml"
+  if [[ -f "${compose_yml}" ]]; then
+    local gateway
+    gateway=$(docker network inspect coolify --format '{{range .IPAM.Config}}{{.Subnet}} {{.Gateway}} {{end}}' 2>/dev/null \
+      | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '/[0-9]' | head -1 || true)
+
+    if [[ -z "${gateway}" ]]; then
+      warn "Cannot determine coolify network gateway — skipping host.docker.internal fix"
+    else
+      local current
+      current=$(grep -m1 'host\.docker\.internal:' "${compose_yml}" | awk -F: '{print $NF}' | tr -d ' ' || true)
+      if [[ "${current}" == "${gateway}" ]]; then
+        log "host.docker.internal already set to ${gateway}"
+      else
+        sed -i "s|host\.docker\.internal:.*|host.docker.internal:${gateway}|g" "${compose_yml}"
+        log "Patched host.docker.internal → ${gateway}"
+        docker compose -f /data/coolify/source/docker-compose.yml \
+                       -f /data/coolify/source/docker-compose.prod.yml \
+                       up -d --force-recreate coolify soketi 2>&1 | tail -5
+      fi
+      pass "host.docker.internal patched in Coolify docker-compose"
+    fi
+  else
+    warn "docker-compose.yml not found — skipping host.docker.internal fix"
+  fi
 }
 
 # ── Phase 4: Binding + DNS ─────────────────────────────────────────────────
@@ -585,22 +413,47 @@ phase4_binding_dns() {
     || warn "configure_coolify_binding.sh returned non-zero (may be ok if Coolify is still starting)"
   pass "Dashboard binding configured"
 
+  # Set Coolify wildcard domain directly in the database.
+  # configure_coolify_binding.sh already waited up to 60s for port 8000 to bind,
+  # which guarantees the s6 startup sequence (migrate→seed→init) has completed and
+  # the server_settings row (server_id=0, the hardcoded Localhost server) exists.
+  # The API PATCH /servers/{uuid} does not expose wildcard_domain, so we write
+  # directly to PostgreSQL via docker exec on the coolify-db container.
+  log "Setting Coolify wildcard domain to http://${APP_DOMAIN}..."
+  local coolify_env="/data/coolify/source/.env"
+  local db_user db_name db_pass
+  db_user="$(grep '^DB_USERNAME=' "${coolify_env}" | cut -d= -f2 || echo 'coolify')"
+  db_name="$(grep '^DB_DATABASE=' "${coolify_env}" | cut -d= -f2 || echo 'coolify')"
+  db_pass="$(grep '^DB_PASSWORD=' "${coolify_env}" | cut -d= -f2)"
+  docker exec -e PGPASSWORD="${db_pass}" coolify-db \
+    psql -U "${db_user}" -d "${db_name}" -c \
+    "UPDATE server_settings SET wildcard_domain = 'http://${APP_DOMAIN}' WHERE server_id = 0;" \
+    2>/dev/null \
+    || warn "psql update failed — set Wildcard Domain manually in Coolify UI > Servers > localhost"
+  pass "Coolify wildcard domain: http://${APP_DOMAIN}"
+
   if [[ "${DEPLOY_MODE}" == "standard" ]]; then
     # Standard mode: A records pointing to server public IP (proxied)
     log "Configuring DNS: A record ${DOMAIN} → ${SERVER_IP} (proxied)..."
     cf_upsert_a_record "${DOMAIN}" "${SERVER_IP}" "true"
     pass "DNS A record configured: ${DOMAIN} → ${SERVER_IP}"
 
-    # Wildcard A record for subdomains (*.example.com → server IP)
-    local wildcard_name="*.${CF_ZONE_NAME}"
+    # Wildcard A records — always create both scopes so manually set domains at either level work
+    local wildcard_name="*.${APP_DOMAIN}"
     log "Configuring DNS: wildcard A record ${wildcard_name} → ${SERVER_IP} (proxied)..."
     cf_upsert_a_record "${wildcard_name}" "${SERVER_IP}" "true"
     pass "DNS wildcard A record configured: ${wildcard_name} → ${SERVER_IP}"
+    if [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
+      local apex_wildcard="*.${CF_ZONE_NAME}"
+      cf_upsert_a_record "${apex_wildcard}" "${SERVER_IP}" "true"
+      pass "DNS wildcard A record configured: ${apex_wildcard} → ${SERVER_IP}"
+    fi
 
   elif [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
     # Tunnel mode: create tunnel, install cloudflared, CNAME
     log "Creating Cloudflare Tunnel..."
-    cf_create_tunnel
+    _stop_cloudflared() { systemctl stop cloudflared 2>/dev/null || true; }
+    cf_create_tunnel "_stop_cloudflared"
     pass "Tunnel created: ${TUNNEL_ID}"
 
     # Install cloudflared
@@ -625,20 +478,34 @@ phase4_binding_dns() {
     printf '%s' "${creds_json}" > "/etc/cloudflared/${TUNNEL_ID}.json"
     chmod 600 "/etc/cloudflared/${TUNNEL_ID}.json"
 
-    # Write tunnel config with wildcard ingress for multi-app support
-    local wildcard_hostname="*.${CF_ZONE_NAME}"
+    # Write tunnel config — always include both wildcard levels so manually set app domains
+    # at either scope (vps or apex) are routed correctly.
+    # ws. and terminal. hostnames route Soketi WebSocket and terminal services through the
+    # tunnel so the browser can reach them over HTTPS without exposing extra ports.
+    local extra_apex_ingress=""
+    if [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
+      extra_apex_ingress="  - hostname: \"*.${CF_ZONE_NAME}\"
+    service: http://localhost:8000
+"
+    fi
     cat > /etc/cloudflared/config.yml <<EOF
 tunnel: ${TUNNEL_ID}
 credentials-file: /etc/cloudflared/${TUNNEL_ID}.json
 
 ingress:
   - hostname: ${DOMAIN}
-    service: http://localhost:80
-  - hostname: "${wildcard_hostname}"
-    service: http://localhost:80
-  - service: http_status:404
+    service: http://localhost:8000
+  - hostname: ws.${DOMAIN}
+    service: http://localhost:6001
+  - hostname: terminal.${DOMAIN}
+    service: http://localhost:6002
+  - hostname: "*.${APP_DOMAIN}"
+    service: http://localhost:8000
+${extra_apex_ingress}  - service: http_status:404
 EOF
-    pass "Tunnel credentials and config written (with wildcard ${wildcard_hostname})"
+    local wc_summary="*.${APP_DOMAIN}"
+    [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]] && wc_summary+=" and *.${CF_ZONE_NAME}"
+    pass "Tunnel credentials and config written (wildcards: ${wc_summary})"
 
     # Start cloudflared service
     cloudflared service install 2>/dev/null || true
@@ -651,9 +518,13 @@ EOF
     cf_upsert_cname "${DOMAIN}" "${tunnel_target}"
     pass "DNS CNAME configured: ${DOMAIN} → ${tunnel_target}"
 
-    local wildcard_name="*.${CF_ZONE_NAME}"
-    cf_upsert_cname "${wildcard_name}" "${tunnel_target}"
-    pass "DNS wildcard CNAME configured: ${wildcard_name} → ${tunnel_target}"
+    # Always create both wildcard CNAME levels for full routing coverage
+    cf_upsert_cname "*.${APP_DOMAIN}" "${tunnel_target}"
+    pass "DNS wildcard CNAME configured: *.${APP_DOMAIN} → ${tunnel_target}"
+    if [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
+      cf_upsert_cname "*.${CF_ZONE_NAME}" "${tunnel_target}"
+      pass "DNS wildcard CNAME configured: *.${CF_ZONE_NAME} → ${tunnel_target}"
+    fi
   fi
 }
 
@@ -666,37 +537,14 @@ phase5_verify() {
   pause_for_operator "From your LAPTOP, verify: curl http://${TS_IP}:8000 should work; curl http://${SERVER_IP}:8000 should NOT"
 
   # Final validation run
-  run_final_validation_gate_local
+  log "Running final validate_hardening.sh..."
+  local final_validate_json
+  final_validate_json="$("${SCRIPT_DIR}/validate_hardening.sh" --json 2>/dev/null)" || true
+  report_validation_result "Final validation" "${final_validate_json}" \
+    "Final validation failed. Resolve validation failures before considering deployment complete."
 
   # Print summary
-  printf '\n'
-  printf '┌─────────────────────────────────────────────────────────────┐\n'
-  printf '│                    DEPLOYMENT COMPLETE                      │\n'
-  printf '├─────────────────────────────────────────────────────────────┤\n'
-  printf '│  Server Public IP : %-39s│\n' "${SERVER_IP}"
-  printf '│  Tailscale IP     : %-39s│\n' "${TS_IP}"
-  printf '│  Admin User       : %-39s│\n' "${ADMIN_USER}"
-  printf '│  Deploy Mode      : %-39s│\n' "${DEPLOY_MODE}"
-  printf '│  Domain           : %-39s│\n' "${DOMAIN}"
-  printf '│  Dashboard URL    : %-39s│\n' "http://${TS_IP}:8000"
-  printf '│  SSH Access       : ssh %s@%-28s│\n' "${ADMIN_USER}" "${TS_IP}"
-  printf '├─────────────────────────────────────────────────────────────┤\n'
-  if [[ "${DEPLOY_MODE}" == "standard" ]]; then
-    printf '│  DNS              : A %s → %s│\n' "${DOMAIN}" "${SERVER_IP}"
-    printf '│  Wildcard DNS     : A *.%-36s│\n' "${CF_ZONE_NAME}"
-  else
-    printf '│  DNS              : CNAME %s│\n' "${DOMAIN}"
-    printf '│  Wildcard DNS     : CNAME *.%-33s│\n' "${CF_ZONE_NAME}"
-    printf '│  Tunnel ID        : %-39s│\n' "${TUNNEL_ID}"
-  fi
-  printf '└─────────────────────────────────────────────────────────────┘\n'
-  printf '\n'
-  log "Next steps:"
-  log "  1. Open http://${TS_IP}:8000 to create your Coolify admin account"
-  log "  2. In Cloudflare dashboard: SSL/TLS > Overview > set mode to Full"
-  log "  3. In Coolify: Servers > your server > Wildcard Domain > set to ${CF_ZONE_NAME}"
-  log "  4. In Coolify: use http:// (not https://) for resource domains"
-  log "  5. Deploy your first app — it gets a subdomain + SSL automatically!"
+  print_deployment_summary
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────
@@ -714,6 +562,7 @@ main() {
   log "  Pubkey:    ${PUBKEY_FILE}"
   log "  Mode:      ${DEPLOY_MODE}"
   log "  Domain:    ${DOMAIN}"
+  log "  App scope: ${APP_DOMAIN_MODE}"
   log "  Swap:      ${SWAP_SIZE}"
   confirm "Proceed with deployment?"
 

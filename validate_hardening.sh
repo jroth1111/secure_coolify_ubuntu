@@ -119,7 +119,7 @@ ssh_check() {
     fi
   fi
 
-  # Verify Match Address block: root key-only login from localhost/Docker bridge
+  # Verify Match Address block: root key-only login from localhost/Docker bridge (10.0.0.0/8)
   local match_local
   match_local="$(sshd -T -C addr=127.0.0.1,user=root,host=localhost,laddr=127.0.0.1 2>/dev/null)" || true
   if [[ -n "${match_local}" ]]; then
@@ -135,6 +135,20 @@ ssh_check() {
       record "PASS" "ssh: Match localhost AllowUsers includes root"
     else
       record "FAIL" "ssh: Match localhost AllowUsers" "root not listed"
+    fi
+  fi
+
+  # Verify Docker bridge address (10.0.0.0/8) also gets the Match block
+  local match_docker
+  match_docker="$(sshd -T -C addr=10.0.1.5,user=root,host=10.0.1.5,laddr=10.0.1.1 2>/dev/null)" || true
+  if [[ -n "${match_docker}" ]]; then
+    if grep -qE "^permitrootlogin (prohibit-password|without-password)$" <<< "${match_docker}"; then
+      record "PASS" "ssh: Match Docker bridge root=prohibit-password"
+    else
+      local docker_root_val
+      docker_root_val="$(grep -m1 "^permitrootlogin " <<< "${match_docker}" | awk '{print $2}')"
+      record "FAIL" "ssh: Match Docker bridge root" \
+        "expected prohibit-password, got ${docker_root_val:-<empty>} — Coolify SSH will be denied"
     fi
   fi
 
@@ -170,6 +184,23 @@ ufw_check() {
   else
     record "FAIL" "ufw: SSH on ${TAILSCALE_IFACE}" "rule missing"
   fi
+
+  # Coolify SSHes from its Docker container (10.0.0.0/8) to the host.
+  if grep -qE "${SSH_PORT}.*ALLOW.*10\.0\.0\.0/8" <<< "${ufw_out}"; then
+    record "PASS" "ufw: SSH from Docker bridge (10.0.0.0/8)"
+  else
+    record "FAIL" "ufw: SSH from Docker bridge" "10.0.0.0/8 → port ${SSH_PORT} rule missing — Coolify cannot reach host"
+  fi
+
+  # Coolify dashboard (8000), Soketi (6001), terminal (6002) on Tailscale only.
+  for port_label in "8000:dashboard" "6001:soketi" "6002:terminal"; do
+    local port="${port_label%%:*}" label="${port_label##*:}"
+    if grep -qE "${port}/tcp.*on ${TAILSCALE_IFACE}.*ALLOW IN" <<< "${ufw_out}"; then
+      record "PASS" "ufw: Coolify ${label} (${port}) on ${TAILSCALE_IFACE}"
+    else
+      record "FAIL" "ufw: Coolify ${label} (${port})" "port ${port} not allowed on ${TAILSCALE_IFACE}"
+    fi
+  done
 
   if [[ -n "${WAN_IFACE}" ]]; then
     if grep -qE "${SSH_PORT}/tcp.*on ${WAN_IFACE}.*ALLOW IN" <<< "${ufw_out}"; then
@@ -266,6 +297,22 @@ docker_user_lifecycle_check() {
   else
     record "FAIL" "docker-user: WantedBy=docker.service" "missing — rules may not re-apply after Docker start"
   fi
+
+  # Functional: service must have run at least once since boot (rules are only in iptables if it did).
+  local active_state
+  active_state="$(systemctl show docker-user-hardening.service --property=ActiveState --value 2>/dev/null || echo "unknown")"
+  if [[ "${active_state}" == "active" || "${active_state}" == "activating" ]]; then
+    record "PASS" "docker-user: service has run (${active_state})"
+  else
+    # For a oneshot service, "inactive" is normal after a successful run.
+    local result
+    result="$(systemctl show docker-user-hardening.service --property=Result --value 2>/dev/null || echo "unknown")"
+    if [[ "${result}" == "success" ]]; then
+      record "PASS" "docker-user: service completed successfully"
+    else
+      record "FAIL" "docker-user: service result" "result=${result} — rules may not have been applied"
+    fi
+  fi
 }
 
 # ── Sysctl ──
@@ -348,6 +395,28 @@ fail2ban_check() {
     record "FAIL" "fail2ban: ignoreip" "jail file missing"
   else
     record "FAIL" "fail2ban: ignoreip" "100.64.0.0/10 not in ignoreip"
+  fi
+
+  # Functional check: verify fail2ban's ban backend is operational.
+  # When banaction=ufw, fail2ban delegates to UFW instead of creating iptables chains directly.
+  # When banaction=iptables-multiport (default), it creates f2b-* chains.
+  local banaction
+  banaction="$(grep -m1 '^banaction' /etc/fail2ban/jail.d/coolify-hardening.local 2>/dev/null \
+    | awk '{print $3}' || true)"
+  banaction="${banaction:-iptables-multiport}"
+
+  if [[ "${banaction}" == "ufw" ]]; then
+    if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "^Status: active"; then
+      record "PASS" "fail2ban: banaction=ufw and UFW active"
+    else
+      record "FAIL" "fail2ban: banaction=ufw" "UFW not active — fail2ban bans will silently fail"
+    fi
+  else
+    if iptables -L f2b-sshd >/dev/null 2>&1; then
+      record "PASS" "fail2ban: f2b-sshd iptables chain present"
+    else
+      record "FAIL" "fail2ban: f2b-sshd iptables chain" "chain missing — fail2ban may not have hooked into iptables"
+    fi
   fi
 }
 
@@ -449,7 +518,10 @@ swap_check() {
   fi
 
   local fstab_count
-  fstab_count="$(grep -cxF '/swapfile none swap sw 0 0' /etc/fstab 2>/dev/null || true)"
+  # Match any /swapfile fstab entry regardless of options format.
+  # Old Ubuntu: "/swapfile none swap sw 0 0"
+  # Modern Ubuntu: "/swapfile swap swap defaults 0 0"
+  fstab_count="$(grep -cE '^/swapfile[[:space:]]' /etc/fstab 2>/dev/null || true)"
   fstab_count="${fstab_count:-0}"
   if [[ "${fstab_count}" == "1" ]]; then
     record "PASS" "swap: single fstab entry"
@@ -457,6 +529,8 @@ swap_check() {
     record "INFO" "swap: fstab" "not applicable in container"
   elif (( fstab_count > 1 )); then
     record "FAIL" "swap: fstab" "duplicate entries (${fstab_count})"
+  else
+    record "FAIL" "swap: fstab" "entry not found in /etc/fstab — swap will not persist on reboot"
   fi
 }
 
@@ -493,20 +567,48 @@ admin_sudo_check() {
     return 0
   fi
 
-  # Check if passwordless sudo is configured
+  # Check if passwordless sudo is configured.
+  # Passwordless sudo is required: ssh_admin_sudo in the orchestrator runs non-interactively
+  # and will hang waiting for a password prompt if NOPASSWD is absent.
   local sudoers_file="/etc/sudoers.d/${ADMIN_USER}"
   if [[ -f "${sudoers_file}" ]]; then
     if grep -q "NOPASSWD" "${sudoers_file}" 2>/dev/null; then
       record "PASS" "admin: passwordless sudo"
     else
-      record "WARN" "admin: sudo" "sudoers file exists but NOPASSWD not set"
+      record "FAIL" "admin: sudo" "sudoers file exists but NOPASSWD not set — ssh_admin_sudo will hang"
     fi
   else
     # Check if sudo -l shows NOPASSWD for this user
     if sudo -l -U "${ADMIN_USER}" 2>/dev/null | grep -q "NOPASSWD"; then
       record "PASS" "admin: passwordless sudo (via other config)"
     else
-      record "WARN" "admin: sudo" "may require password (NOPASSWD not configured)"
+      record "FAIL" "admin: sudo" "NOPASSWD not configured — ssh_admin_sudo will hang"
+    fi
+  fi
+
+  # Check admin authorized_keys: file must exist, be non-empty, and each key must be
+  # on its own line. The concatenation bug (missing trailing newline on a prior key)
+  # would still allow sudo to work while silently breaking SSH login.
+  local home_dir auth_file
+  home_dir="$(getent passwd "${ADMIN_USER}" | cut -d: -f6 2>/dev/null)" || true
+  auth_file="${home_dir}/.ssh/authorized_keys"
+  if [[ ! -f "${auth_file}" ]]; then
+    record "FAIL" "admin: authorized_keys exists" "${auth_file} not found"
+  elif [[ ! -s "${auth_file}" ]]; then
+    record "FAIL" "admin: authorized_keys non-empty" "${auth_file} is empty"
+  else
+    # Every non-comment, non-blank line must start with a recognised key type.
+    # A line starting with anything else (e.g. two keys fused together) will fail this check.
+    local bad_lines
+    # grep -v exits 1 when it finds no non-matching lines (the success case).
+    # Under set -Eeuo pipefail that would kill the script; || true absorbs it.
+    bad_lines=$(grep -vE '^(#|[[:space:]]*$|ssh-[a-z0-9-]+[[:space:]]|ecdsa-sha2-[a-z0-9-]+[[:space:]]|sk-[a-z0-9@.-]+[[:space:]])' \
+      "${auth_file}" 2>/dev/null | wc -l) || true
+    if [[ "${bad_lines}" -eq 0 ]]; then
+      record "PASS" "admin: authorized_keys format"
+    else
+      record "FAIL" "admin: authorized_keys format" \
+        "${bad_lines} line(s) do not start with a valid key type (possible concatenation bug)"
     fi
   fi
 }
@@ -548,6 +650,21 @@ docker_daemon_check() {
     record "PASS" "docker-daemon: live-restore configured"
   else
     record "FAIL" "docker-daemon: live-restore" "not set in daemon.json"
+  fi
+
+  # Verify the RUNNING daemon matches the config file — daemon.json changes only take
+  # effect after a restart, so file and live state can diverge silently.
+  if docker info >/dev/null 2>&1; then
+    local live_driver
+    live_driver="$(docker info --format '{{.LoggingDriver}}' 2>/dev/null || true)"
+    if [[ "${live_driver}" == "json-file" ]]; then
+      record "PASS" "docker-daemon: live log-driver is json-file"
+    elif [[ -n "${live_driver}" ]]; then
+      record "FAIL" "docker-daemon: live log-driver" \
+        "daemon reports '${live_driver}' — restart Docker to apply daemon.json"
+    fi
+  else
+    record "INFO" "docker-daemon: live config" "docker daemon not responding; skipping live check"
   fi
 }
 
@@ -594,6 +711,32 @@ tailscale_check() {
     record "PASS" "tailscale: ${TAILSCALE_IFACE} present"
   else
     record "FAIL" "tailscale: ${TAILSCALE_IFACE}" "interface not found"
+    return
+  fi
+
+  # Check actual connection state via tailscale CLI (not just interface presence).
+  # Interface can exist while the daemon is in a broken/logged-out state.
+  if command -v tailscale >/dev/null 2>&1; then
+    local ts_state
+    ts_state="$(tailscale status --json 2>/dev/null \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('BackendState','unknown'))" \
+      2>/dev/null || echo "unknown")"
+    if [[ "${ts_state}" == "Running" ]]; then
+      record "PASS" "tailscale: BackendState=Running"
+    else
+      record "FAIL" "tailscale: BackendState" "expected Running, got ${ts_state}"
+    fi
+
+    # Check that a Tailscale IPv4 (100.x) has actually been assigned
+    local ts_ip
+    ts_ip="$(tailscale ip -4 2>/dev/null || true)"
+    if [[ -n "${ts_ip}" ]]; then
+      record "PASS" "tailscale: IPv4 assigned (${ts_ip})"
+    else
+      record "FAIL" "tailscale: IPv4 address" "no Tailscale IPv4 — check auth key and login state"
+    fi
+  else
+    record "INFO" "tailscale: CLI" "tailscale binary not found; skipping state/IP checks"
   fi
 }
 
@@ -688,6 +831,15 @@ unattended_upgrades_check() {
   else
     record "FAIL" "auto-updates: reboot policy" "not configured"
   fi
+
+  # Functional: verify apt timers are actually running (config alone doesn't prove execution).
+  for timer in apt-daily.timer apt-daily-upgrade.timer; do
+    if systemctl is-active --quiet "${timer}" 2>/dev/null; then
+      record "PASS" "auto-updates: ${timer} active"
+    else
+      record "FAIL" "auto-updates: ${timer}" "timer not active — unattended-upgrades will not run"
+    fi
+  done
 }
 
 # ── Listening ports (informational) ──
@@ -700,16 +852,216 @@ listening_ports_info() {
   fi
 }
 
-# ── cloudflared (informational) ──
+# ── Coolify SSH access to localhost ──
+# Gate-C safe: all checks are skipped if Coolify is not yet installed.
+
+coolify_ssh_check() {
+  local ssh_dir="/data/coolify/ssh/keys"
+
+  # Skip entirely if Coolify hasn't been installed yet (Gate C runs before install)
+  if [[ ! -d "${ssh_dir}" ]]; then
+    return 0
+  fi
+
+  local keyfile
+  keyfile=$(ls "${ssh_dir}"/ssh_key@* 2>/dev/null | head -1 || true)
+  if [[ -z "${keyfile}" ]]; then
+    record "FAIL" "coolify: ssh key exists" "no ssh_key@* found in ${ssh_dir}"
+    return 0
+  fi
+  record "PASS" "coolify: ssh key exists"
+
+  # Derive the public key from the private key
+  local pubkey
+  pubkey=$(ssh-keygen -y -f "${keyfile}" 2>/dev/null || true)
+  if [[ -z "${pubkey}" ]]; then
+    record "FAIL" "coolify: ssh key readable" "ssh-keygen -y failed on ${keyfile}"
+    return 0
+  fi
+
+  # Check authorized_keys exists and contains the key on its own line.
+  # Match on key data (field 2) only — sshd ignores comment field 3+, and ssh-keygen -y
+  # may output a different comment than what was written. A bare substring grep would
+  # still match a concatenated line, so we compare against per-line field 2 extractions.
+  local auth="/root/.ssh/authorized_keys"
+  if [[ ! -f "${auth}" ]]; then
+    record "FAIL" "coolify: key in root authorized_keys" "${auth} does not exist"
+    return 0
+  fi
+
+  local key_data
+  key_data=$(awk '{print $2}' <<< "${pubkey}")
+
+  if awk '{print $2}' "${auth}" 2>/dev/null | grep -qxF "${key_data}"; then
+    record "PASS" "coolify: key in root authorized_keys"
+  else
+    # Check for concatenation: key data appears but not as a standalone field
+    if grep -qF "${key_data}" "${auth}" 2>/dev/null; then
+      record "FAIL" "coolify: key in root authorized_keys" \
+        "key present but not on its own line (concatenation bug) — rewrite ${auth}"
+    else
+      record "FAIL" "coolify: key in root authorized_keys" \
+        "Coolify public key not found in ${auth}"
+    fi
+    return 0
+  fi
+
+  # Functional test 1: SSH as root to 127.0.0.1 using Coolify's key (host-side).
+  # Tests key + sshd Match block from the host loopback perspective.
+  if ssh \
+      -o StrictHostKeyChecking=no \
+      -o UserKnownHostsFile=/dev/null \
+      -o ConnectTimeout=5 \
+      -o BatchMode=yes \
+      -o LogLevel=ERROR \
+      -i "${keyfile}" \
+      root@127.0.0.1 'exit 0' 2>/dev/null; then
+    record "PASS" "coolify: root@127.0.0.1 SSH functional"
+  else
+    record "FAIL" "coolify: root@127.0.0.1 SSH functional" \
+      "key auth failed — check sshd Match block and authorized_keys"
+  fi
+
+  # Functional test 2: SSH from INSIDE the coolify container to host.docker.internal.
+  # This is the exact path Coolify uses for 'This Machine'. Catches:
+  #   - host.docker.internal not resolving (host-gateway bug on Linux Docker)
+  #   - UFW blocking port 22 from Docker bridge subnet (10.0.0.0/8)
+  #   - sshd Match block not covering the Docker bridge address range
+  if command -v docker >/dev/null 2>&1 && docker inspect coolify >/dev/null 2>&1; then
+    local container_keyfile
+    container_keyfile="/var/www/html/storage/app/ssh/keys/$(basename "${keyfile}")"
+    if docker exec coolify \
+        sh -c "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+               -o ConnectTimeout=5 -o BatchMode=yes -o LogLevel=ERROR \
+               -i '${container_keyfile}' root@host.docker.internal 'exit 0'" \
+        2>/dev/null; then
+      record "PASS" "coolify: container→host SSH via host.docker.internal"
+    else
+      record "FAIL" "coolify: container→host SSH via host.docker.internal" \
+        "SSH from coolify container failed — check host.docker.internal in /etc/hosts, UFW 10.0.0.0/8 rule, and sshd Match block"
+    fi
+  else
+    record "INFO" "coolify: container→host SSH" "coolify container not running; skipped"
+  fi
+}
+
+# ── cloudflared ──
 
 cloudflared_check() {
-  if systemctl is-active --quiet cloudflared 2>/dev/null; then
-    record "INFO" "cloudflared: active"
-  elif systemctl list-unit-files --no-legend cloudflared.service 2>/dev/null | grep -q cloudflared; then
-    record "INFO" "cloudflared: installed but not active"
-  else
+  # Not installed at all — that is fine before Coolify deploy
+  if ! systemctl list-unit-files --no-legend cloudflared.service 2>/dev/null | grep -q cloudflared \
+      && ! command -v cloudflared >/dev/null 2>&1; then
     record "INFO" "cloudflared: not installed"
+    return
   fi
+
+  # Installed — now it must be active
+  if systemctl is-active --quiet cloudflared 2>/dev/null; then
+    record "PASS" "cloudflared: service active"
+  else
+    local svc_state
+    svc_state="$(systemctl is-active cloudflared 2>/dev/null || echo "unknown")"
+    record "FAIL" "cloudflared: service active" "state is ${svc_state}"
+    return
+  fi
+
+  # Config file checks
+  local config_file="/etc/cloudflared/config.yml"
+  if [[ ! -f "${config_file}" ]]; then
+    record "FAIL" "cloudflared: config file" "${config_file} not found"
+    return
+  fi
+
+  local tunnel_id
+  tunnel_id="$(grep -m1 '^tunnel:' "${config_file}" | awk '{print $2}' || true)"
+  if [[ -n "${tunnel_id}" ]]; then
+    record "PASS" "cloudflared: tunnel ID configured"
+  else
+    record "FAIL" "cloudflared: tunnel ID" "not found in ${config_file}"
+  fi
+
+  # Ingress must target Coolify on port 8000, not the old default of 80
+  if grep -qE 'localhost:8000|127\.0\.0\.1:8000' "${config_file}"; then
+    record "PASS" "cloudflared: ingress targets port 8000"
+  else
+    local ingress_svc
+    ingress_svc="$(grep -m1 '^\s*service:' "${config_file}" | awk '{print $2}' || true)"
+    record "FAIL" "cloudflared: ingress port" \
+      "expected localhost:8000, got '${ingress_svc:-unknown}' — re-run deploy to fix"
+  fi
+
+  # Functional connectivity: probe cloudflared's /ready endpoint.
+  # The metrics port is not always 2000; newer cloudflared picks an ephemeral port or
+  # uses a management socket. Discover the port dynamically from ss/procfs, then probe it.
+  local cf_pid cf_port
+  cf_pid="$(pgrep -x cloudflared | head -1 || true)"
+  if [[ -n "${cf_pid}" ]]; then
+    cf_port="$(ss -tlnp 2>/dev/null \
+      | awk -v pid="${cf_pid}" 'index($0,"pid="pid",") && /127\.0\.0\.1:/{print $4}' \
+      | awk -F: '{print $NF}' | head -1 || true)"
+  fi
+
+  if [[ -n "${cf_port:-}" ]] && curl -sf --max-time 3 "http://127.0.0.1:${cf_port}/ready" >/dev/null 2>&1; then
+    local ready_json conn_count
+    ready_json="$(curl -sf --max-time 3 "http://127.0.0.1:${cf_port}/ready" 2>/dev/null || true)"
+    conn_count="$(printf '%s' "${ready_json}" | python3 -c \
+      "import sys,json; print(json.load(sys.stdin).get('readyConnections',0))" 2>/dev/null || echo "?")"
+    record "PASS" "cloudflared: tunnel /ready OK (${conn_count} connections)"
+  elif [[ -n "${cf_port:-}" ]]; then
+    record "FAIL" "cloudflared: tunnel /ready" \
+      "port ${cf_port} not responding — tunnel may be disconnected"
+  else
+    record "INFO" "cloudflared: tunnel /ready" \
+      "could not determine cloudflared metrics port — manual check needed"
+  fi
+}
+
+# ── Coolify container health ──
+# Gate-C safe: skips entirely if /data/coolify does not exist.
+
+coolify_container_check() {
+  if ! command -v docker >/dev/null 2>&1; then
+    record "INFO" "coolify-containers: docker" "Docker not installed; skipped"
+    return
+  fi
+
+  if [[ ! -d "/data/coolify" ]]; then
+    return 0
+  fi
+
+  local containers=("coolify" "coolify-db" "coolify-redis" "coolify-proxy")
+  for ctr in "${containers[@]}"; do
+    local state health
+    state="$(docker inspect --format '{{.State.Status}}' "${ctr}" 2>/dev/null || echo "not-found")"
+    if [[ "${state}" == "not-found" ]]; then
+      # proxy may genuinely be absent if no apps deployed yet — info not fail
+      if [[ "${ctr}" == "coolify-proxy" ]]; then
+        record "INFO" "coolify-containers: ${ctr}" "not found (normal before first app deploy)"
+      else
+        record "FAIL" "coolify-containers: ${ctr}" "container not found"
+      fi
+      continue
+    fi
+
+    if [[ "${state}" != "running" ]]; then
+      record "FAIL" "coolify-containers: ${ctr} running" "state is ${state}"
+      continue
+    fi
+
+    # Check healthcheck status if configured (some containers have none)
+    health="$(docker inspect \
+      --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' \
+      "${ctr}" 2>/dev/null || echo "unknown")"
+
+    case "${health}" in
+      healthy|no-healthcheck)
+        record "PASS" "coolify-containers: ${ctr} running (${health})" ;;
+      starting)
+        record "INFO" "coolify-containers: ${ctr}" "healthcheck still starting — re-run in a minute" ;;
+      *)
+        record "FAIL" "coolify-containers: ${ctr} health" "${health}" ;;
+    esac
+  done
 }
 
 # ── Hardening validation timer ──
@@ -751,6 +1103,8 @@ apparmor_check
 disabled_services_check
 tailscale_check
 coolify_binding_check
+coolify_ssh_check
+coolify_container_check
 validate_timer_check
 listening_ports_info
 cloudflared_check

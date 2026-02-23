@@ -79,7 +79,7 @@ log "Using Tailscale IP: ${TAILSCALE_IP}"
 [[ -f "${COOLIFY_ENV}" ]] || die "Coolify .env file not found at ${COOLIFY_ENV}. Is Coolify installed?"
 
 if [[ "${DRY_RUN}" == "true" ]]; then
-  log "DRY-RUN: would add UFW rules for ports 8000 and 6001 on tailscale0"
+  log "DRY-RUN: would add UFW rules for ports 8000, 6001, and 6002 on tailscale0"
   log "DRY-RUN: would verify Coolify is listening on port 8000"
   log "DRY-RUN: would verify port 8000 is not reachable on public IP"
   exit 0
@@ -96,7 +96,8 @@ if command -v ufw >/dev/null 2>&1; then
   # Idempotent — ufw silently skips duplicate rules
   ufw allow in on tailscale0 proto tcp to any port 8000 comment "coolify-hardening-dashboard-tailscale" 2>/dev/null || true
   ufw allow in on tailscale0 proto tcp to any port 6001 comment "coolify-hardening-soketi-tailscale" 2>/dev/null || true
-  log "UFW rules applied for ports 8000 and 6001 on tailscale0."
+  ufw allow in on tailscale0 proto tcp to any port 6002 comment "coolify-hardening-terminal-tailscale" 2>/dev/null || true
+  log "UFW rules applied for ports 8000, 6001, and 6002 on tailscale0."
 else
   warn "ufw not found — skipping UFW rule check."
 fi
@@ -126,6 +127,13 @@ if [[ -n "${BOUND_6001}" ]]; then
   log "PASS: Port 6001 is listening"
 else
   warn "Port 6001 not yet listening (may start later). Check: ss -tlnp | grep 6001"
+fi
+
+BOUND_6002="$(ss -tlnp 2>/dev/null | grep ':6002 ' || true)"
+if [[ -n "${BOUND_6002}" ]]; then
+  log "PASS: Port 6002 is listening"
+else
+  warn "Port 6002 not yet listening (may start later). Check: ss -tlnp | grep 6002"
 fi
 
 # Test that public IP is NOT serving the dashboard (UFW should block it)

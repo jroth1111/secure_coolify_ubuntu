@@ -1035,8 +1035,9 @@ HostKeyAlgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256
 Banner /etc/issue.net
 
 # Coolify connects to its own host as root via localhost / Docker bridge.
-# Allow key-only root login from loopback and RFC 1918 Docker networks only.
-Match Address 127.0.0.1,::1,172.16.0.0/12
+# Allow key-only root login from loopback and Docker address pool (10.0.0.0/8
+# configured in daemon.json) and RFC 1918 172.16/12 bridges.
+Match Address 127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8
     PermitRootLogin prohibit-password
     AllowUsers ${ADMIN_USER} root
 EOF
@@ -1077,10 +1078,18 @@ configure_ufw() {
 
   run ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port "${SSH_PORT}" comment "coolify-hardening-ssh-tailscale"
 
-  # Allow Coolify dashboard and Soketi only on Tailscale interface.
-  # UFW default deny blocks external access; these rules make the dashboard reachable via VPN.
+  # Allow Coolify to SSH to the host from inside its Docker container.
+  # Docker uses 10.0.0.0/8 as address pool (set in daemon.json). The container
+  # connects to host.docker.internal (= Docker bridge gateway) on port 22 to manage
+  # "This Machine". Key-only auth; the sshd Match block above restricts login to root.
+  run ufw allow in from 10.0.0.0/8 to any port "${SSH_PORT}" comment "coolify-hardening-ssh-docker-bridge"
+
+  # Allow Coolify dashboard, Soketi, and terminal on Tailscale interface only.
+  # UFW default deny blocks external access; these rules make them reachable via VPN.
+  # 8000 = dashboard, 6001 = Soketi real-time, 6002 = terminal (required since beta.336)
   run ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 8000 comment "coolify-hardening-dashboard-tailscale"
   run ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 6001 comment "coolify-hardening-soketi-tailscale"
+  run ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 6002 comment "coolify-hardening-terminal-tailscale"
 
   if is_true "${TUNNEL_MODE}"; then
     log "Tunnel mode: skipping WAN 80/443 UFW rules (traffic arrives via outbound tunnel)."

@@ -42,7 +42,9 @@ Ask for these first — they define what we're deploying and where:
 >
 > And what's the **server public IP**?"
 
-If the domain is a subdomain like `app.example.com`, note that apps will get subdomains like `myapp.example.com` (siblings at the zone root), not `myapp.app.example.com` (nested — which would break free-tier Universal SSL).
+The default app subdomain scope is `apex` — apps auto-assign at `appname.ZONE` (e.g. `appname.example.com`), which works with Cloudflare Free Universal SSL. The alternative `vps` scope puts apps at `appname.DOMAIN` (e.g. `appname.vps.example.com`), scoped to this server, but requires paid ACM or an Enterprise plan for proxied SSL when DOMAIN is a subdomain. See `--app-domain-mode` below.
+
+**TLS note**: When DOMAIN is a subdomain (e.g. `vps.example.com`) living in a parent Cloudflare zone, `vps` mode produces two-level URLs (`app.vps.example.com`) that are not covered by Free Universal SSL (`*.example.com` only covers one level). `vps` mode is safe without paid certs only when DOMAIN is itself the zone apex. For proxied SSL on the **free plan** with a subdomain DOMAIN: (a) `--app-domain-mode apex` — simplest, apps at `app.example.com`; (b) Cloudflare for SaaS Custom Hostnames — issues per-hostname certs at any depth, 100 free then $0.10/hostname/month, fully proxied, but each hostname must be registered individually via the CF API (not automated by these scripts; requires an additional `SSL and Certificates: Write` token permission beyond what `--cf-api-token` covers). Wildcard custom hostnames are Enterprise-only. Outside the proxied path: DNS-only (grey-cloud) + origin TLS (Traefik/Let's Encrypt). Paid options: Advanced Certificate Manager; or Cloudflare Subdomain Setup (child zone delegation — Enterprise only).
 
 ### Step 3: Mode recommendation (informed by domain + workload)
 
@@ -63,7 +65,7 @@ Now collect the values that only the user can provide:
 
 | Input | Example | Notes |
 |-------|---------|-------|
-| Root password | *(secret)* | For initial SSH to the VPS |
+| Root password | *(secret)* | For initial SSH to the VPS. **After a VPS rebuild**, providers auto-generate a new root password — verify against the VPS control panel before deploying. |
 | Tailscale auth key | `tskey-auth-xxxxx` | From Tailscale admin console > Settings > Keys. Must start with `tskey-auth-`. |
 | Cloudflare API token | *(secret)* | Must have Zone:DNS:Edit **and** Account:Cloudflare Tunnel:Edit permissions |
 
@@ -85,6 +87,7 @@ Show the full configuration summary (with secrets masked) and confirm before exe
 | Input | Default | Notes |
 |-------|---------|-------|
 | Mode | `tunnel` | Determined in Step 2. Only pass `--mode standard` if explicitly chosen. |
+| App domain mode | `apex` | `apex`=apps at `appname.ZONE` (default — works with Free Universal SSL); `vps`=apps at `appname.DOMAIN` (scoped to server, but `vps` produces nested URLs like `app.vps.example.com` not covered by Free Universal SSL when DOMAIN is a subdomain — requires paid ACM or Enterprise). |
 | Admin username | `coolifyadmin` | Linux user created on server |
 | SSH pubkey file | `~/.ssh/id_ed25519.pub` | Path on the machine running the script |
 | Swap size | `2G` | Format: `<N>G` or `<N>M` |
@@ -101,7 +104,7 @@ Full reference for Step 1 checks:
    - macOS: `brew install sshpass` (may need `brew install hudochenkov/sshpass/sshpass` if not in default tap)
    - Ubuntu/Debian: `sudo apt-get install -y sshpass`
    - Fedora: `sudo dnf install -y sshpass`
-5. **Working directory** — run `deploy.sh` from the repo root directory (where `bootstrap_hardening.sh`, `validate_hardening.sh`, and `configure_coolify_binding.sh` are located). The script locates companion scripts relative to its own path.
+5. **Working directory** — run `deploy.sh` from the repo root directory (where `bootstrap_hardening.sh`, `validate_hardening.sh`, and `configure_coolify_binding.sh` are located). The script locates companion scripts relative to its own path. The `lib/coolify-common.sh` shared library must be present at `lib/coolify-common.sh` relative to each script — it is sourced automatically and must be kept alongside `deploy.sh` and `setup.sh`.
 
 ## Tailscale Setup Guide
 
@@ -181,7 +184,7 @@ The token needs exactly two permissions:
 ### From operator laptop (preferred)
 
 ```bash
-# Tunnel mode (default — recommended)
+# Tunnel mode, apex app scope (default — apps at appname.example.com, works with Free Universal SSL)
 bash deploy.sh \
   --server-ip <ip> \
   --root-pass <pass> \
@@ -190,6 +193,18 @@ bash deploy.sh \
   --tailscale-auth-key <key> \
   --domain <fqdn> \
   --cf-api-token <token> \
+  --yes
+
+# Tunnel mode, vps app scope (apps at appname.vps.example.com — requires paid ACM or Enterprise for proxied SSL when DOMAIN is a subdomain)
+bash deploy.sh \
+  --server-ip <ip> \
+  --root-pass <pass> \
+  --admin-user <user> \
+  --pubkey-file <path> \
+  --tailscale-auth-key <key> \
+  --domain <fqdn> \
+  --cf-api-token <token> \
+  --app-domain-mode vps \
   --yes
 
 # Standard mode (if user explicitly requests open 80/443)
@@ -208,7 +223,7 @@ bash deploy.sh \
 ### From the server directly
 
 ```bash
-# Tunnel mode (default — recommended)
+# Tunnel mode, apex app scope (default — apps at appname.example.com, works with Free Universal SSL)
 sudo bash setup.sh \
   --server-ip <ip> \
   --admin-user <user> \
@@ -216,6 +231,17 @@ sudo bash setup.sh \
   --tailscale-auth-key <key> \
   --domain <fqdn> \
   --cf-api-token <token> \
+  --yes
+
+# Tunnel mode, vps app scope (apps at appname.vps.example.com — requires paid ACM or Enterprise for proxied SSL when DOMAIN is a subdomain)
+sudo bash setup.sh \
+  --server-ip <ip> \
+  --admin-user <user> \
+  --pubkey-file <path> \
+  --tailscale-auth-key <key> \
+  --domain <fqdn> \
+  --cf-api-token <token> \
+  --app-domain-mode vps \
   --yes
 
 # Standard mode (if user explicitly requests open 80/443)
@@ -250,13 +276,12 @@ Omitting `--mode` defaults to `tunnel`. Only pass `--mode standard` if the user 
 
 ## Post-Deploy Steps (Required — Inform the User)
 
-After the script completes, the operator must do these three things to enable automatic SSL + subdomains for every app:
+After the script completes, the operator must do these two things:
 
 1. **Cloudflare dashboard: SSL/TLS > Overview** — set encryption mode to **Full** (not Flexible, not Full Strict)
-2. **Coolify UI: Servers > your server > Wildcard Domain** — set to the zone root (e.g., `example.com`). This tells Coolify to auto-assign subdomains like `myapp.example.com` to every new resource. Since the scripts already created wildcard DNS + tunnel ingress, each subdomain gets SSL and routing automatically — zero per-app DNS or cert work.
-3. **Coolify resource domains** — must use `http://` protocol (not `https://`), because Cloudflare terminates TLS at the edge
+2. **Coolify resource domains** — must use `http://` protocol (not `https://`), because Cloudflare terminates TLS at the edge
 
-After these three steps, every new app deployed in Coolify gets a subdomain + SSL automatically.
+The **Wildcard Domain** in Coolify is set automatically by the script (no manual step needed). Every new app gets a subdomain + SSL automatically.
 
 Inform the user of these steps after deployment completes.
 
@@ -273,7 +298,15 @@ If the user asks about origin wildcard certs (Traefik DNS-01 with Cloudflare tok
 
 ## Execution Notes
 
-- **Timeout**: the script takes 10–20 minutes end-to-end (hardening + Docker + Coolify install are the slow phases). Set Bash tool timeout to at least 1200000ms (20 min). Running in background is recommended so you can monitor progress.
+- **Timeout**: the script takes 10–20 minutes end-to-end (hardening + Docker + Coolify install are the slow phases). The Bash tool hard cap is 600000ms (10 min) — too short for a full run. Always use `run_in_background=true` and monitor the output file:
+  ```bash
+  # Start the deployment in background — tool returns an output_file path
+  bash deploy.sh ... --yes   # with run_in_background=true
+
+  # Monitor progress by reading the output file periodically
+  # (tail last 40 lines to see current phase without overwhelming context)
+  ```
+- **Phase 1 output gaps (expected)**: During phase 1 hardening, there are typically 3–5 minute silent gaps in the output file while `unattended-upgrades` and Tailscale install run. This is normal POSIX pipe behaviour — `tee` block-buffers when stdout is not a terminal. The deployment is not hung; wait it out. The next visible output will be `PASS Hardening completed` and then `PASS Server Tailscale IP: 100.x.x.x`.
 - **Output**: the script prints a summary box at the end with Tailscale IP, dashboard URL, DNS records, admin user, and SSH command. Relay this to the user.
 - **Re-runs**: all scripts are idempotent. If a run fails partway, fix the issue and re-run the same command:
   - Docker install is skipped if Docker is already present
@@ -291,7 +324,7 @@ If the user asks about origin wildcard certs (Traefik DNS-01 with Cloudflare tok
 
 - If a gate fails, the script stops with diagnostic output
 - All scripts are idempotent — safe to re-run to retry after fixing the issue
-- Never attempt to edit `bootstrap_hardening.sh` or `validate_hardening.sh` to work around failures
+- If Gate C fails, diagnose carefully: the failure may be a real server misconfiguration **or** a bug in `validate_hardening.sh` itself (wrong regex, missing format variant, WARN vs FAIL counter bug). Fixing a script bug is correct; do not comment out or weaken a legitimate check to bypass a real failure.
 - Pre-flight failures exit immediately with no server-side changes
 
 ## Tunnel Mode Limitations (important — ask the user about these)
@@ -299,7 +332,7 @@ If the user asks about origin wildcard certs (Traefik DNS-01 with Cloudflare tok
 Before defaulting to tunnel mode, check whether these constraints affect the user's workload:
 
 1. **100MB upload limit** — Cloudflare Free/Pro plans cap request bodies at 100MB. Apps accepting large file uploads (Nextcloud, Immich photo/video backup) will get `413 Payload Too Large` for files over 100MB. With standard mode, specific subdomains can be set to DNS-only ("grey cloud") to bypass this. With tunnel mode, there is no bypass.
-2. **Nested subdomain TLS** — Free-plan Universal SSL covers `*.example.com` but not `*.app.example.com`. If Coolify generates deeply nested PR preview subdomains, they will fail TLS. Use single-level subdomains or Advanced Certificate Manager.
+2. **Nested subdomain TLS** — Free-plan Universal SSL covers `*.example.com` but not `*.vps.example.com`. If `--app-domain-mode vps` is used and DOMAIN is a subdomain, apps get two-level URLs (`app.vps.example.com`) not covered by Free Universal SSL on the proxied path. The default `apex` mode avoids this. If `vps` mode is explicitly requested and DOMAIN is a subdomain — free proxied option: Cloudflare for SaaS Custom Hostnames (per-hostname cert provisioning via CF API, 100 free, requires `SSL and Certificates: Write` token permission, wildcard custom hostnames Enterprise-only, not automated by these scripts); free non-proxied option: DNS-only (grey-cloud) + origin TLS (Traefik/Let's Encrypt); paid options: Advanced Certificate Manager or Cloudflare Subdomain Setup (Enterprise only).
 3. **Media streaming** — Heavy video streaming (Jellyfin, Plex) through Cloudflare may violate their CDN-specific terms of service and trigger throttling or account action. If the user hosts media servers, recommend `--mode standard` with DNS-only for media subdomains.
 4. **Cloudflare Access + webhooks** — If the user plans to add Cloudflare Access (Zero Trust auth) later, GitHub/GitLab webhooks will break unless they create IP-based bypass policies for webhook paths.
 
@@ -329,10 +362,12 @@ Follow the Collection Sequence above. This tree handles branching decisions:
 |---------|-------------|-----|
 | Pre-flight fails: `sshpass` not found | `sshpass` not installed on operator machine | macOS: `brew install hudochenkov/sshpass/sshpass`; Linux: `apt install sshpass` |
 | Pre-flight fails: SSH key not found | No key at `~/.ssh/id_ed25519.pub` | Generate: `ssh-keygen -t ed25519`, or pass `--pubkey-file <path>` |
+| Phase 1 fails: `sshpass` exits with code 5 (`Permission denied`) | Wrong root password | VPS providers auto-generate a new root password after a rebuild — verify in the VPS control panel and re-run with the correct `--root-pass` |
 | Phase 1 fails: `backend error: invalid key` | Tailscale auth key already used (non-reusable) or from wrong tailnet | Generate a new `tskey-auth-...` key at login.tailscale.com/admin/settings/keys. If hardening completed before the failure, server may be accessible — check Tailscale admin panel for the server's IP and resume with `--ts-ip` |
 | Gate A fails (SSH timeout) | Tailscale not running on operator laptop, or not on same tailnet | Run `tailscale status` on laptop; ensure both machines are on same Tailnet |
 | Deploy exits after "PASS Hardening completed" with no further output | Post-hardening UFW blocks all public-IP SSH; `ssh_root 'tailscale ip -4'` timed out silently | Fixed in current code: bootstrap now prints `HARDEN_RESULT_TAILSCALE_IP=<ip>` and deploy.sh captures it via `tee`. If on an old version, check Tailscale admin panel for server IP then resume with `--ts-ip` |
 | Gate C fails (validation) | Hardening step partially failed | Check `/var/log/bootstrap-hardening.log` on server; run `sudo /root/validate_hardening.sh --json` to see which checks failed |
+| Gate C fails with a check that doesn't match any real server problem (e.g., swap reports missing fstab entry when swap is actually working) | Bug in `validate_hardening.sh` (wrong grep pattern, missing format variant, WARN instead of FAIL) | Fix `validate_hardening.sh` locally; companion scripts are re-synced at the start of phase 2, so resume with `--ts-ip <ip>` — the corrected script will be uploaded automatically |
 | Gate D fails (no DOCKER-USER rules) | Docker not fully started | Run `sudo systemctl restart docker` then `sudo systemctl start docker-user-hardening.service` |
 | Cloudflare zone not found | Domain not on Cloudflare or wrong zone | Zone is auto-detected via iterative suffix search (works for `.com.au`, `.co.uk`, etc.). Use `--cf-zone <zone>` to override if the domain is delegated to a sub-zone |
 | Tunnel creation fails (permissions) | API token lacks Account:Tunnels:Edit | Regenerate token with correct permissions |
@@ -341,5 +376,5 @@ Follow the Collection Sequence above. This tree handles branching decisions:
 | `TOO_MANY_REDIRECTS` on app | Resource domain using `https://` in Coolify | Change to `http://` — Cloudflare handles TLS at edge |
 | Apps unreachable after deploy | SSL/TLS mode set to Flexible | Change to Full in Cloudflare dashboard |
 | `413 Payload Too Large` on upload | Cloudflare 100MB limit (Free/Pro) | Use chunked uploads in app, or redeploy with `--mode standard` and grey-cloud the subdomain |
-| `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` | Nested subdomain (`*.app.example.com`) not covered by Universal SSL | Use single-level subdomains, or purchase Advanced Certificate Manager |
+| `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` | Nested subdomain (`app.vps.example.com`) not covered by Free Universal SSL on proxied path | Simplest fix: `--app-domain-mode apex`. Free proxied alternative: Cloudflare for SaaS Custom Hostnames (manual per-hostname CF API provisioning, 100 free, requires `SSL and Certificates: Write` token; wildcard custom hostnames Enterprise-only). DNS-only path: standard mode + grey-cloud DNS + Traefik/Let's Encrypt at origin. Paid: ACM or CF Subdomain Setup (Enterprise only) |
 | GitHub webhooks fail after adding Cloudflare Access | Access blocks unauthenticated POST requests | Create bypass policy for webhook paths, allowlisting GitHub IPs from `https://api.github.com/meta` |
