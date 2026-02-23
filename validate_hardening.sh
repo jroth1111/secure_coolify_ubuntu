@@ -3,16 +3,20 @@ set -Eeuo pipefail
 
 # validate_hardening.sh — Standalone health-check companion for bootstrap_hardening.sh
 # Re-runnable: prints PASS/FAIL per check, exits 0 if all pass, 1 if any fail.
-# Usage: sudo ./validate_hardening.sh [--json]
+# Usage: sudo ./validate_hardening.sh [--json|--health-check]
 
 STATE_FILE="/var/lib/bootstrap-hardening/state"
 JOURNALD_DROPIN="/etc/systemd/journald.conf.d/60-persistent.conf"
 JSON_MODE="false"
+HEALTH_CHECK_MODE="false"
 IS_CONTAINER="false"
 
-if [[ "${1:-}" == "--json" ]]; then
-  JSON_MODE="true"
-fi
+for arg in "$@"; do
+  case "${arg}" in
+    --json) JSON_MODE="true" ;;
+    --health-check) HEALTH_CHECK_MODE="true" ;;
+  esac
+done
 
 if [[ -f /.dockerenv || "${container:-}" == "docker" ]]; then
   IS_CONTAINER="true"
@@ -40,8 +44,10 @@ record() {
     escaped_name="$(printf '%s' "${name}" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')"
     escaped_detail="$(printf '%s' "${detail}" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')"
     RESULTS+=("{\"check\":\"${escaped_name}\",\"status\":\"${status}\",\"detail\":\"${escaped_detail}\"}")
-  else
+  elif [[ "${HEALTH_CHECK_MODE}" != "true" ]]; then
     printf '%-6s %-45s %s\n' "[${status}]" "${name}" "${detail}"
+  else
+    :
   fi
 }
 
@@ -1164,7 +1170,7 @@ validate_timer_check() {
 
 [[ "$(id -u)" -eq 0 ]] || { echo "Run as root." >&2; exit 1; }
 
-if [[ "${JSON_MODE}" == "false" ]]; then
+if [[ "${JSON_MODE}" == "false" && "${HEALTH_CHECK_MODE}" != "true" ]]; then
   printf '%-6s %-45s %s\n' "STATUS" "CHECK" "DETAIL"
   printf '%s\n' "--------------------------------------------------------------"
 fi
@@ -1195,7 +1201,14 @@ cloudflared_check
 
 # ── Summary ──
 
-if [[ "${JSON_MODE}" == "true" ]]; then
+if [[ "${HEALTH_CHECK_MODE}" == "true" ]]; then
+  if ((FAIL_COUNT > 0)); then
+    echo "UNHEALTHY"
+    exit 1
+  fi
+  echo "HEALTHY"
+  exit 0
+elif [[ "${JSON_MODE}" == "true" ]]; then
   printf '{"pass":%d,"fail":%d,"info":%d,"checks":[' "${PASS_COUNT}" "${FAIL_COUNT}" "${INFO_COUNT}"
   first="true"
   for r in "${RESULTS[@]}"; do
