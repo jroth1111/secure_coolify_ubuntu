@@ -987,14 +987,24 @@ cloudflared_check() {
     record "FAIL" "cloudflared: tunnel ID" "not found in ${config_file}"
   fi
 
-  # Ingress must target Coolify on port 8000, not the old default of 80
+  # Dashboard hostname must route to Coolify on port 8000
   if grep -qE 'localhost:8000|127\.0\.0\.1:8000' "${config_file}"; then
-    record "PASS" "cloudflared: ingress targets port 8000"
+    record "PASS" "cloudflared: ingress routes dashboard (port 8000)"
   else
     local ingress_svc
     ingress_svc="$(grep -m1 '^\s*service:' "${config_file}" | awk '{print $2}' || true)"
-    record "FAIL" "cloudflared: ingress port" \
-      "expected localhost:8000, got '${ingress_svc:-unknown}' — re-run deploy to fix"
+    record "FAIL" "cloudflared: ingress dashboard" \
+      "expected localhost:8000 for dashboard, got '${ingress_svc:-unknown}' — re-run deploy to fix"
+  fi
+
+  # Wildcard app domains must route to Traefik (coolify-proxy) on port 80, not port 8000.
+  # Port 8000 is the Coolify dashboard — routing wildcards there causes all app domains
+  # to show the dashboard instead of the actual app.
+  if grep -qE 'localhost:80$|localhost:80[^0-9]|127\.0\.0\.1:80$|127\.0\.0\.1:80[^0-9]' "${config_file}"; then
+    record "PASS" "cloudflared: ingress routes apps via Traefik (port 80)"
+  else
+    record "FAIL" "cloudflared: ingress app routing" \
+      "no localhost:80 route — app domains will show dashboard instead of apps"
   fi
 
   # Soketi WebSocket route (ws.DOMAIN → localhost:6001)

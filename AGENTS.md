@@ -20,7 +20,7 @@ Decompose user requests into tasks.
 Work follows claim → execute → verify → close. Project-specific additions:
 
 - **Never start a deployment task** without first verifying operator machine prerequisites
-- **Never start phase 4** (Docker+Coolify) unless Gate C JSON shows `"fail":0`.
+- **Never start phase 3** (Docker+Coolify) unless Gate C JSON shows `"fail":0`.
 - **Never close a deployment task** without recording the gate output in the task notes.
 - **Never close a script-change task** without `bash -n <script>` passing and the result recorded.
 

@@ -86,7 +86,7 @@ Show the full configuration summary (with secrets masked) and confirm before exe
 
 | Input | Default | Notes |
 |-------|---------|-------|
-| Mode | `tunnel` | Determined in Step 2. Only pass `--mode standard` if explicitly chosen. |
+| Mode | `tunnel` | Determined in Step 3. Only pass `--mode standard` if explicitly chosen. |
 | App domain mode | `apex` | `apex`=apps at `appname.ZONE` (default — works with Free Universal SSL); `vps`=apps at `appname.DOMAIN` (scoped to server, but `vps` produces nested URLs like `app.vps.example.com` not covered by Free Universal SSL when DOMAIN is a subdomain — requires paid ACM or Enterprise). |
 | Admin username | `coolifyadmin` | Linux user created on server |
 | SSH pubkey file | `~/.ssh/id_ed25519.pub` | Path on the machine running the script |
@@ -289,7 +289,7 @@ Inform the user of these steps after deployment completes.
 
 Both modes use Cloudflare's edge for user-facing TLS. No wildcard cert is needed on the origin:
 
-- **Tunnel mode**: Cloudflare terminates TLS. Tunnel delivers HTTP to `localhost:8000` (dashboard), `localhost:6001` (Soketi WebSocket via `ws.DOMAIN`), and `localhost:6002` (terminal via `terminal.DOMAIN`). No origin cert.
+- **Tunnel mode**: Cloudflare terminates TLS. Tunnel routing: `DOMAIN → localhost:8000` (Coolify dashboard), `*.APP_DOMAIN → localhost:80` (Traefik/coolify-proxy — routes by hostname to app containers), `ws.DOMAIN → localhost:6001` (Soketi WebSocket), `terminal.DOMAIN → localhost:6002` (terminal). Dashboard gets its own port-8000 rule; wildcard app traffic goes through Traefik on port 80 so each app resolves to its container. No origin cert.
 - **Standard mode** (proxied + Full SSL): Cloudflare terminates edge TLS. Full mode accepts any origin cert (self-signed OK).
 
 The `--cf-api-token` is used for DNS record management via Cloudflare's REST API. Wrangler CLI is not applicable (it only manages Workers/R2/D1/Pages — no DNS commands).
@@ -375,6 +375,7 @@ Follow the Collection Sequence above. This tree handles branching decisions:
 | `cloudflared` won't start | Credentials file mismatch | Check `/etc/cloudflared/config.yml` and credentials JSON |
 | "Cannot connect to real-time service" warning in dashboard | PUSHER_HOST not set in Coolify `.env` or Soketi port 6001 not routed through tunnel | Tunnel mode: verify `PUSHER_HOST=ws.DOMAIN`, `PUSHER_PORT=443`, `PUSHER_SCHEME=https` in `/data/coolify/source/.env` and that `/etc/cloudflared/config.yml` has a `ws.DOMAIN → localhost:6001` ingress rule. Then: `docker compose -f /data/coolify/source/docker-compose.yml -f /data/coolify/source/docker-compose.prod.yml up -d --force-recreate coolify soketi` |
 | `TOO_MANY_REDIRECTS` on app | Resource domain using `https://` in Coolify | Change to `http://` — Cloudflare handles TLS at edge |
+| App domains show Coolify dashboard instead of the app | Wildcard ingress routes to `localhost:8000` (dashboard) instead of `localhost:80` (Traefik) | Fix `/etc/cloudflared/config.yml`: wildcard `*.APP_DOMAIN` service must be `http://localhost:80`. The dashboard hostname stays on `localhost:8000`. Then `sudo systemctl restart cloudflared`. Ensure coolify-proxy is started (Coolify UI > Servers > localhost > Proxy > Start). |
 | Apps unreachable after deploy | SSL/TLS mode set to Flexible | Change to Full in Cloudflare dashboard |
 | `413 Payload Too Large` on upload | Cloudflare 100MB limit (Free/Pro) | Use chunked uploads in app, or redeploy with `--mode standard` and grey-cloud the subdomain |
 | `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` | Nested subdomain (`app.vps.example.com`) not covered by Free Universal SSL on proxied path | Simplest fix: `--app-domain-mode apex`. Free proxied alternative: Cloudflare for SaaS Custom Hostnames (manual per-hostname CF API provisioning, 100 free, requires `SSL and Certificates: Write` token; wildcard custom hostnames Enterprise-only). DNS-only path: standard mode + grey-cloud DNS + Traefik/Let's Encrypt at origin. Paid: ACM or CF Subdomain Setup (Enterprise only) |

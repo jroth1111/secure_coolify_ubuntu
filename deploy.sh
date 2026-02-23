@@ -645,7 +645,7 @@ PUSHER_EOF
     local extra_apex_ingress=""
     if [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
       extra_apex_ingress="  - hostname: \"*.${CF_ZONE_NAME}\"
-    service: http://localhost:8000
+    service: http://localhost:80
 "
     fi
     ssh_admin_sudo "tee /etc/cloudflared/config.yml >/dev/null" <<EOF
@@ -660,7 +660,7 @@ ingress:
   - hostname: terminal.${DOMAIN}
     service: http://localhost:6002
   - hostname: "*.${APP_DOMAIN}"
-    service: http://localhost:8000
+    service: http://localhost:80
 ${extra_apex_ingress}  - service: http_status:404
 EOF
     local wc_summary="*.${APP_DOMAIN}"

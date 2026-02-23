@@ -41,8 +41,8 @@ steps:
   - "SET-09|setup|setup.sh|Running final validate_hardening.sh...|docs/deploy_setup_functionality_test_matrix.md|SET-09|tests/unit/test_setup_workflow_contract.bats::setup: final validation is executed"
 
 consistency_checks:
-  - "README.md|15 automated hardening steps in a single script"
-  - "README.md|The default mode is **tunnel**"
+  - "README.md|applies **15 security controls**"
+  - "README.md|`--tunnel-mode` / `--mode tunnel`"
   - "README.md|`--tunnel-mode` | `false` |"
   - "HARDENING_PROCEDURE.md|applies 15 baseline controls in this order"
   - "docs/DEPLOYMENT_RUNBOOK.md|Automated scripts (`deploy.sh`/`setup.sh`) use this gate mapping"
