@@ -376,14 +376,25 @@ check_disk_space() {
     log "DRY-RUN: would check disk space (required: ${required_mb}M)."
     return 0
   fi
+
+  # If a stale swapfile exists and will be removed, we can reclaim that space.
+  local swapfile_mb=0
+  if [[ -f /swapfile ]] && ! swapon --show --noheadings 2>/dev/null | grep -q '/swapfile'; then
+    swapfile_mb="$(du -m /swapfile 2>/dev/null | cut -f1)" || swapfile_mb=0
+  fi
+
   local avail_mb
   avail_mb="$(df -m / 2>/dev/null | awk 'NR==2 {print $4}')"
   if [[ -z "${avail_mb}" || ! "${avail_mb}" =~ ^[0-9]+$ ]]; then
     warn "Cannot determine available disk space; skipping pre-flight check."
     return 0
   fi
-  if (( avail_mb < required_mb )); then
-    die "Insufficient disk space: ${avail_mb}M available, ${required_mb}M required (swap: ${swap_size} + 512M base)."
+
+  # Add reclaimed swapfile space to available
+  local effective_avail=$(( avail_mb + swapfile_mb ))
+
+  if (( effective_avail < required_mb )); then
+    die "Insufficient disk space: ${avail_mb}M available (+${swapfile_mb}M from stale swap), ${required_mb}M required (swap: ${swap_size} + 512M base)."
   fi
   log "Disk pre-flight: ${avail_mb}M available, ${required_mb}M required. OK."
 }
@@ -640,12 +651,19 @@ configure_coolify_binding() {
 
   if command -v ufw >/dev/null 2>&1; then
     # Idempotent — ufw silently skips duplicate rules
-    run ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 8000 \
-      comment "coolify-hardening-dashboard-tailscale" 2>/dev/null || true
-    run ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 6001 \
-      comment "coolify-hardening-soketi-tailscale" 2>/dev/null || true
-    run ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 6002 \
-      comment "coolify-hardening-terminal-tailscale" 2>/dev/null || true
+    local ufw_result
+    ufw_result="$(ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 8000 \
+      comment "coolify-hardening-dashboard-tailscale" 2>&1)" || {
+      warn "UFW rule for port 8000 on ${TAILSCALE_IFACE} failed: ${ufw_result}"
+    }
+    ufw_result="$(ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 6001 \
+      comment "coolify-hardening-soketi-tailscale" 2>&1)" || {
+      warn "UFW rule for port 6001 on ${TAILSCALE_IFACE} failed: ${ufw_result}"
+    }
+    ufw_result="$(ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 6002 \
+      comment "coolify-hardening-terminal-tailscale" 2>&1)" || {
+      warn "UFW rule for port 6002 on ${TAILSCALE_IFACE} failed: ${ufw_result}"
+    }
     log "UFW rules verified for ports 8000, 6001, and 6002 on ${TAILSCALE_IFACE}."
   else
     warn "ufw not found — skipping UFW rule verification."
@@ -1293,8 +1311,11 @@ configure_docker_daemon() {
     log "Backed up ${DOCKER_DAEMON_JSON} to ${backup}"
 
     # Merge: our settings take precedence but preserve other existing settings
-    local merged
-    merged="$(jq -s '.[0] * .[1]' "${DOCKER_DAEMON_JSON}" <(echo "${required_settings}") 2>/dev/null)"
+    local merged required_tmp
+    required_tmp="$(mktemp)"
+    echo "${required_settings}" > "${required_tmp}"
+    merged="$(jq -s '.[0] * .[1]' "${DOCKER_DAEMON_JSON}" "${required_tmp}" 2>/dev/null)"
+    rm -f "${required_tmp}"
 
     if [[ -z "${merged}" ]]; then
       die "Failed to merge ${DOCKER_DAEMON_JSON} with jq; cannot safely apply hardening settings."
@@ -1812,8 +1833,10 @@ main() {
 
   # Ensure DETECTED_TAILSCALE_IP is populated for generate_report() regardless of
   # --bind-dashboard-to-tailscale (get_tailscale_ip only runs inside configure_coolify_binding
-  # which is skipped when binding is not requested).
-  [[ -n "${DETECTED_TAILSCALE_IP}" ]] || get_tailscale_ip >/dev/null 2>&1 || true
+  # which is skipped when binding is not requested). Do this BEFORE generate_report.
+  if [[ -z "${DETECTED_TAILSCALE_IP}" ]]; then
+    get_tailscale_ip >/dev/null 2>&1 || true
+  fi
 
   generate_report
   log "Completed hardening bootstrap successfully."

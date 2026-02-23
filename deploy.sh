@@ -350,11 +350,13 @@ EOF
   log "Running bootstrap_hardening.sh (this may take a few minutes)..."
   local harden_tmp
   harden_tmp="$(mktemp)"
-  # Use || { } to handle pipeline failure explicitly — PIPESTATUS after a pipeline is unreliable
-  # when set -Eeuo pipefail is active because set -e exits the script before PIPESTATUS is read.
-  ssh_root "/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force" \
-    2>&1 | tee "${harden_tmp}" \
-    || { rm -f "${harden_tmp}"; die "bootstrap_hardening.sh failed. Check server logs: /var/log/bootstrap-hardening.log"; }
+
+  # Capture stdout/stderr while preserving failure semantics from the SSH command.
+  if ! ssh_root "/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force" \
+    2>&1 | tee "${harden_tmp}"; then
+    rm -f "${harden_tmp}"
+    die "bootstrap_hardening.sh failed. Check server logs: /var/log/bootstrap-hardening.log"
+  fi
   pass "Hardening completed"
 
   # Extract Tailscale IP from captured bootstrap output (sentinel line)
@@ -425,8 +427,8 @@ phase3_docker_coolify() {
     log "Docker already installed — skipping install."
   else
     log "Installing Docker..."
-    # Use bash -c under sudo so the entire pipeline runs as root
-    ssh_admin_sudo 'bash -c "curl -fsSL https://get.docker.com | sh"' \
+    # Use pipefail so curl/network failures are not masked by the shell pipeline.
+    ssh_admin_sudo "bash -o pipefail -c 'curl -fsSL https://get.docker.com | sh'" \
       || die "Docker installation failed."
     pass "Docker installed"
   fi
@@ -445,8 +447,8 @@ phase3_docker_coolify() {
     pass "Coolify already installed"
   else
     log "Installing Coolify (this may take a few minutes)..."
-    # Use bash -c under sudo so the entire pipeline runs as root
-    ssh_admin_sudo 'bash -c "curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash"' \
+    # Use pipefail so curl/network failures are not masked by the shell pipeline.
+    ssh_admin_sudo "bash -o pipefail -c 'curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash'" \
       || die "Coolify installation failed."
     pass "Coolify installed"
   fi
@@ -705,10 +707,12 @@ phase5_verify() {
   local gate_e_passed=false
   for (( attempt=1; attempt<=attempts; attempt++ )); do
     # curl -w '%{http_code}' writes "000" to stdout on connection errors and exits non-zero.
-    # Using "|| echo '000'" would append a second "000" giving "000000". Use "|| true" and
-    # slice to 3 chars to always get a 3-digit code regardless of curl exit status.
-    ts_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 10 "http://${TS_IP}:8000" 2>/dev/null)" || true
-    pub_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 "http://${SERVER_IP}:8000" 2>/dev/null)" || true
+    # On complete failure, output may be empty; default to "000".
+    ts_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 10 "http://${TS_IP}:8000" 2>/dev/null)" || ts_code=""
+    pub_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 "http://${SERVER_IP}:8000" 2>/dev/null)" || pub_code=""
+    # Ensure we have a 3-char code; default to "000" on empty output
+    ts_code="${ts_code:-000}"
+    pub_code="${pub_code:-000}"
     ts_code="${ts_code:0:3}"
     pub_code="${pub_code:0:3}"
     if [[ "${ts_code}" != "000" && "${pub_code}" == "000" ]]; then
@@ -740,7 +744,9 @@ phase5_verify() {
   local https_code attempts=12 attempt delay=10
   local gate_f_passed=false
   for (( attempt=1; attempt<=attempts; attempt++ )); do
-    https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -L "https://${DOMAIN}" 2>/dev/null)" || true
+    https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -L "https://${DOMAIN}" 2>/dev/null)" || https_code=""
+    # Ensure we have a 3-char code; default to "000" on empty output
+    https_code="${https_code:-000}"
     https_code="${https_code:0:3}"
     # Accept any non-zero HTTP response — even a 302/401 proves the tunnel and DNS work
     if [[ "${https_code}" != "000" && -n "${https_code}" ]]; then

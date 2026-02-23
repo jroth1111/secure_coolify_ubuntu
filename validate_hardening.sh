@@ -35,7 +35,11 @@ record() {
   esac
 
   if [[ "${JSON_MODE}" == "true" ]]; then
-    RESULTS+=("{\"check\":\"${name}\",\"status\":\"${status}\",\"detail\":\"${detail}\"}")
+    # Escape special characters for valid JSON output
+    local escaped_name escaped_detail
+    escaped_name="$(printf '%s' "${name}" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')"
+    escaped_detail="$(printf '%s' "${detail}" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')"
+    RESULTS+=("{\"check\":\"${escaped_name}\",\"status\":\"${status}\",\"detail\":\"${escaped_detail}\"}")
   else
     printf '%-6s %-45s %s\n' "[${status}]" "${name}" "${detail}"
   fi
@@ -171,6 +175,14 @@ ssh_check() {
 ufw_check() {
   local ufw_out
   ufw_out="$(ufw status verbose 2>/dev/null)" || { record "FAIL" "ufw: status query" "cannot run ufw"; return; }
+  ufw_has_port_on_iface() {
+    local port="$1" iface="$2"
+    grep -qE "${port}/tcp.*(on[[:space:]]+${iface}.*ALLOW IN|ALLOW IN.*on[[:space:]]+${iface})" <<< "${ufw_out}"
+  }
+  ufw_has_port_anywhere_unscoped() {
+    local port="$1"
+    grep -qE "${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere([[:space:]]+\\(v6\\))?$" <<< "${ufw_out}"
+  }
 
   if grep -q "^Status: active$" <<< "${ufw_out}"; then
     record "PASS" "ufw: active"
@@ -179,7 +191,7 @@ ufw_check() {
     return
   fi
 
-  if grep -qE "${SSH_PORT}/tcp.*on ${TAILSCALE_IFACE}.*ALLOW IN" <<< "${ufw_out}"; then
+  if ufw_has_port_on_iface "${SSH_PORT}" "${TAILSCALE_IFACE}"; then
     record "PASS" "ufw: SSH on ${TAILSCALE_IFACE}"
   else
     record "FAIL" "ufw: SSH on ${TAILSCALE_IFACE}" "rule missing"
@@ -195,7 +207,7 @@ ufw_check() {
   # Coolify dashboard (8000), Soketi (6001), terminal (6002) on Tailscale only.
   for port_label in "8000:dashboard" "6001:soketi" "6002:terminal"; do
     local port="${port_label%%:*}" label="${port_label##*:}"
-    if grep -qE "${port}/tcp.*on ${TAILSCALE_IFACE}.*ALLOW IN" <<< "${ufw_out}"; then
+    if ufw_has_port_on_iface "${port}" "${TAILSCALE_IFACE}"; then
       record "PASS" "ufw: Coolify ${label} (${port}) on ${TAILSCALE_IFACE}"
     else
       record "FAIL" "ufw: Coolify ${label} (${port})" "port ${port} not allowed on ${TAILSCALE_IFACE}"
@@ -204,7 +216,8 @@ ufw_check() {
 
   if [[ -n "${WAN_IFACE}" ]]; then
     # SSH must not be on WAN
-    if grep -qE "${SSH_PORT}/tcp.*on ${WAN_IFACE}.*ALLOW IN" <<< "${ufw_out}"; then
+    if ufw_has_port_on_iface "${SSH_PORT}" "${WAN_IFACE}" \
+      || ufw_has_port_anywhere_unscoped "${SSH_PORT}"; then
       record "FAIL" "ufw: SSH NOT on WAN" "SSH allowed on ${WAN_IFACE}"
     else
       record "PASS" "ufw: SSH NOT on WAN"
@@ -213,8 +226,8 @@ ufw_check() {
     # Coolify ports must not be on WAN (must only be on tailscale0)
     for port_label in "8000:dashboard" "6001:soketi" "6002:terminal"; do
       local port="${port_label%%:*}" label="${port_label##*:}"
-      if grep -qE "${port}/tcp.*on ${WAN_IFACE}.*ALLOW IN" <<< "${ufw_out}" \
-         || grep -qE "${port}/tcp\s+ALLOW IN\s+Anywhere" <<< "${ufw_out}"; then
+      if ufw_has_port_on_iface "${port}" "${WAN_IFACE}" \
+         || ufw_has_port_anywhere_unscoped "${port}"; then
         record "FAIL" "ufw: ${label} (${port}) NOT on WAN" \
           "port ${port} allowed on WAN — must be tailscale0-only"
       else
@@ -223,12 +236,14 @@ ufw_check() {
     done
 
     if is_true "${TUNNEL_MODE}"; then
-      if grep -qE "80/tcp.*on ${WAN_IFACE}.*ALLOW IN" <<< "${ufw_out}"; then
+      if ufw_has_port_on_iface "80" "${WAN_IFACE}" \
+        || ufw_has_port_anywhere_unscoped "80"; then
         record "FAIL" "ufw: tunnel-mode no port 80" "WAN 80 rule exists"
       else
         record "PASS" "ufw: tunnel-mode no port 80"
       fi
-      if grep -qE "443/tcp.*on ${WAN_IFACE}.*ALLOW IN" <<< "${ufw_out}"; then
+      if ufw_has_port_on_iface "443" "${WAN_IFACE}" \
+        || ufw_has_port_anywhere_unscoped "443"; then
         record "FAIL" "ufw: tunnel-mode no port 443" "WAN 443 rule exists"
       else
         record "PASS" "ufw: tunnel-mode no port 443"
@@ -348,6 +363,7 @@ sysctl_check() {
     [kernel.dmesg_restrict]="1"
     [kernel.perf_event_paranoid]="3"
     [kernel.yama.ptrace_scope]="1"
+    [kernel.kptr_restrict]="2"
     [vm.swappiness]="10"
   )
 
@@ -511,9 +527,16 @@ swap_check() {
   fi
 
   if swapon --show --noheadings 2>/dev/null | grep -q .; then
-    local swap_total
-    swap_total="$(swapon --show --noheadings --bytes 2>/dev/null | awk '{sum+=$3} END {printf "%.0fM", sum/1048576}')"
-    record "PASS" "swap: active (${swap_total})"
+    local swap_total swap_output
+    # swapon --show output format: NAME TYPE SIZE USED PRIO
+    # SIZE column position varies; use --bytes and sum the SIZE column (3rd field)
+    swap_output="$(swapon --show --noheadings --bytes 2>/dev/null)" || true
+    if [[ -n "${swap_output}" ]]; then
+      swap_total="$(awk '{sum+=$3} END {printf "%.0fM", sum/1048576}' <<< "${swap_output}")"
+      record "PASS" "swap: active (${swap_total})"
+    else
+      record "PASS" "swap: active"
+    fi
   elif [[ "${IS_CONTAINER}" == "true" ]]; then
     record "INFO" "swap: status" "unavailable in container"
   else
@@ -612,11 +635,13 @@ admin_sudo_check() {
   else
     # Every non-comment, non-blank line must start with a recognised key type.
     # A line starting with anything else (e.g. two keys fused together) will fail this check.
-    local bad_lines
-    # grep -v exits 1 when it finds no non-matching lines (the success case).
-    # Under set -Eeuo pipefail that would kill the script; || true absorbs it.
-    bad_lines=$(grep -vE '^(#|[[:space:]]*$|ssh-[a-z0-9-]+[[:space:]]|ecdsa-sha2-[a-z0-9-]+[[:space:]]|sk-[a-z0-9@.-]+[[:space:]])' \
-      "${auth_file}" 2>/dev/null | wc -l) || true
+    local bad_lines auth_content
+    # Check each line for valid key format. grep -v exits 1 when it finds no
+    # non-matching lines (the success case). Capture output first, then count.
+    auth_content=$(grep -vE '^(#|[[:space:]]*$|ssh-[a-z0-9-]+[[:space:]]|ecdsa-sha2-[a-z0-9-]+[[:space:]]|sk-[a-z0-9@.-]+[[:space:]])' \
+      "${auth_file}" 2>/dev/null) || auth_content=""
+    # Avoid here-string counting an empty input as one line.
+    bad_lines="$(printf '%s' "${auth_content}" | awk 'END {print NR+0}' 2>/dev/null || echo "0")"
     if [[ "${bad_lines}" -eq 0 ]]; then
       record "PASS" "admin: authorized_keys format"
     else
