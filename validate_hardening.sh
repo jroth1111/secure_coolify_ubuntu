@@ -990,6 +990,22 @@ cloudflared_check() {
       "expected localhost:8000, got '${ingress_svc:-unknown}' — re-run deploy to fix"
   fi
 
+  # Soketi WebSocket route (ws.DOMAIN → localhost:6001)
+  if grep -qE 'localhost:6001|127\.0\.0\.1:6001' "${config_file}"; then
+    record "PASS" "cloudflared: ingress routes Soketi (port 6001)"
+  else
+    record "FAIL" "cloudflared: ingress Soketi" \
+      "no localhost:6001 route — WebSocket real-time service unreachable via tunnel"
+  fi
+
+  # Terminal route (terminal.DOMAIN → localhost:6002)
+  if grep -qE 'localhost:6002|127\.0\.0\.1:6002' "${config_file}"; then
+    record "PASS" "cloudflared: ingress routes terminal (port 6002)"
+  else
+    record "FAIL" "cloudflared: ingress terminal" \
+      "no localhost:6002 route — terminal service unreachable via tunnel"
+  fi
+
   # Functional connectivity: probe cloudflared's /ready endpoint.
   # The metrics port is not always 2000; newer cloudflared picks an ephemeral port or
   # uses a management socket. Discover the port dynamically from ss/procfs, then probe it.
