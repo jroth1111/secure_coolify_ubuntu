@@ -417,8 +417,8 @@ setup() {
   grep -q "hardening-validate.timer" "${VALIDATE_SCRIPT}"
 }
 
-# ── coolify binding Tailscale IP fallback ─────────────────────────────────────
+# ── coolify binding public exposure rationale ─────────────────────────────────
 
-@test "coolify_binding_check: logs INFO when using live Tailscale IP fallback" {
-  grep -q "live fallback" "${VALIDATE_SCRIPT}"
+@test "coolify_binding_check: documents why self-connect cannot validate public exposure" {
+  grep -q "cannot validate public exposure" "${VALIDATE_SCRIPT}"
 }

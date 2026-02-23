@@ -203,11 +203,24 @@ ufw_check() {
   done
 
   if [[ -n "${WAN_IFACE}" ]]; then
+    # SSH must not be on WAN
     if grep -qE "${SSH_PORT}/tcp.*on ${WAN_IFACE}.*ALLOW IN" <<< "${ufw_out}"; then
       record "FAIL" "ufw: SSH NOT on WAN" "SSH allowed on ${WAN_IFACE}"
     else
       record "PASS" "ufw: SSH NOT on WAN"
     fi
+
+    # Coolify ports must not be on WAN (must only be on tailscale0)
+    for port_label in "8000:dashboard" "6001:soketi" "6002:terminal"; do
+      local port="${port_label%%:*}" label="${port_label##*:}"
+      if grep -qE "${port}/tcp.*on ${WAN_IFACE}.*ALLOW IN" <<< "${ufw_out}" \
+         || grep -qE "${port}/tcp\s+ALLOW IN\s+Anywhere" <<< "${ufw_out}"; then
+        record "FAIL" "ufw: ${label} (${port}) NOT on WAN" \
+          "port ${port} allowed on WAN — must be tailscale0-only"
+      else
+        record "PASS" "ufw: ${label} (${port}) NOT on WAN"
+      fi
+    done
 
     if is_true "${TUNNEL_MODE}"; then
       if grep -qE "80/tcp.*on ${WAN_IFACE}.*ALLOW IN" <<< "${ufw_out}"; then
@@ -790,19 +803,10 @@ coolify_binding_check() {
     record "INFO" "coolify: port 8000" "not yet listening (Coolify may still be starting)"
   fi
 
-  # Verify public IP is NOT serving the dashboard (UFW should block it)
-  if command -v nc >/dev/null 2>&1; then
-    local public_ip tailscale_ip
-    public_ip="$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')"
-    tailscale_ip="$(tailscale ip -4 2>/dev/null || true)"
-    if [[ -n "${public_ip}" && "${public_ip}" != "${tailscale_ip}" ]]; then
-      if nc -z -w2 "${public_ip}" 8000 2>/dev/null; then
-        record "FAIL" "coolify: public exposure" "port 8000 reachable on public IP ${public_ip} — check UFW rules"
-      else
-        record "PASS" "coolify: not exposed on public IP"
-      fi
-    fi
-  fi
+  # Note: nc-based self-connect tests cannot validate public exposure — the kernel
+  # routes server→own-public-IP locally, bypassing UFW INPUT rules entirely.
+  # Public port exposure is validated via UFW rule inspection in ufw_check() instead.
+  # External connectivity tests (Gate E/F in deploy.sh) verify from the operator machine.
 
   # Verify UFW binding-guard timer is active (periodically re-applies UFW rules if removed)
   if systemctl is-active --quiet coolify-binding-guard.timer 2>/dev/null; then
@@ -1015,12 +1019,34 @@ cloudflared_check() {
       "no localhost:6001 route — WebSocket real-time service unreachable via tunnel"
   fi
 
-  # Terminal route (terminal.DOMAIN → localhost:6002)
+  # Terminal route (DOMAIN/terminal/ws → localhost:6002, path-based on dashboard hostname).
+  # Must use path-based routing on the dashboard hostname, NOT a separate terminal.DOMAIN hostname.
+  # Coolify's terminal WebSocket connects to /terminal/ws on the same origin as the dashboard.
   if grep -qE 'localhost:6002|127\.0\.0\.1:6002' "${config_file}"; then
-    record "PASS" "cloudflared: ingress routes terminal (port 6002)"
+    if grep -q '/terminal/ws' "${config_file}"; then
+      record "PASS" "cloudflared: ingress routes terminal (port 6002 via /terminal/ws path)"
+    else
+      record "FAIL" "cloudflared: ingress terminal path" \
+        "localhost:6002 route exists but missing 'path: /terminal/ws' — terminal uses path-based routing on dashboard hostname, not a separate hostname"
+    fi
   else
     record "FAIL" "cloudflared: ingress terminal" \
       "no localhost:6002 route — terminal service unreachable via tunnel"
+  fi
+
+  # Ingress order: terminal path rule must appear BEFORE the dashboard catch-all.
+  # cloudflared matches first-match — if DOMAIN→:8000 comes before DOMAIN+path→:6002,
+  # the path rule never fires and the terminal WebSocket breaks.
+  local terminal_line dashboard_line
+  terminal_line="$(grep -nE 'localhost:6002|127\.0\.0\.1:6002' "${config_file}" | head -1 | cut -d: -f1 || true)"
+  dashboard_line="$(grep -nE 'localhost:8000|127\.0\.0\.1:8000' "${config_file}" | head -1 | cut -d: -f1 || true)"
+  if [[ -n "${terminal_line}" && -n "${dashboard_line}" ]]; then
+    if (( terminal_line < dashboard_line )); then
+      record "PASS" "cloudflared: terminal rule before dashboard (correct ingress order)"
+    else
+      record "FAIL" "cloudflared: ingress order" \
+        "terminal (line ${terminal_line}) must appear before dashboard (line ${dashboard_line}) — cloudflared is first-match"
+    fi
   fi
 
   # Functional connectivity: probe cloudflared's /ready endpoint.
