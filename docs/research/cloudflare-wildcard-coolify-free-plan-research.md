@@ -31,7 +31,7 @@ Sources:
 
 ### 3) Coolify domain and SSL behavior
 - Coolify supports regular and wildcard DNS patterns, and can auto-generate domains when server wildcard domain is configured.
-- Coolify auto-requests Let’s Encrypt certs for `https://` domains.
+- Coolify auto-requests Let's Encrypt certs for `https://` domains.
 - If Cloudflare proxy interferes with HTTP/TLS-ALPN validation, Coolify docs say to use DNS challenge or disable proxy.
 - For wildcard certs in Traefik, Coolify requires DNS challenge.
 
@@ -42,17 +42,16 @@ Sources:
 - https://coolify.io/docs/knowledge-base/proxy/traefik/wildcard-certs
 - https://letsencrypt.org/docs/challenge-types/
 
-### 4) Free-plan practical impact for your hostnames
-- `appname.example.com` = first-level under zone apex -> covered by Universal SSL (when proxied).
-- `appname.vps.example.com` = second-level under zone apex -> not covered by Universal SSL on Free plan.
+### 4) Free-plan practical impact
+- `appname.example.com` = first-level under zone apex → covered by Universal SSL (when proxied).
+- `appname.vps.example.com` = second-level under zone apex → not covered by Universal SSL on Free plan.
 
-## Decision for your setup
+## Decision
 - If you want Cloudflare proxy + SSL on Free plan, use:
   - `appname.example.com` (recommended), not `appname.vps.example.com`.
 
 ## Exceptions
 - `appname.vps.example.com` can still work if you:
-  - run it DNS-only (grey cloud) and terminate TLS at origin (Coolify/Traefik/Let’s Encrypt), or
+  - run it DNS-only (grey cloud) and terminate TLS at origin (Coolify/Traefik/Let's Encrypt), or
   - buy Advanced Certificate Manager (paid), or
   - use an alternate zone design where `vps.example.com` is a separately delegated/activated zone.
-
