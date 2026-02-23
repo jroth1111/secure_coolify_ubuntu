@@ -268,11 +268,14 @@ Omitting `--mode` defaults to `tunnel`. Only pass `--mode standard` if the user 
 
 ## Phases
 
-1. **Pre-flight** — validates tools, SSH pubkey, Cloudflare token + zone + account, SSH connectivity
-2. **Harden** — uploads scripts via root password SSH, runs `bootstrap_hardening.sh` (installs Tailscale, hardens SSH/UFW). Bootstrap prints `HARDEN_RESULT_TAILSCALE_IP=<ip>` sentinel on stdout; deploy.sh captures it via `tee` — this is the only safe way to get the TS_IP since UFW blocks all public-IP SSH after hardening completes. Skipped when `--ts-ip` is provided.
-3. **Gates** — cleans up `deploy.env` from server (root SSH blocked post-hardening, so done here via admin key), verifies SSH transition to admin@tailscale-IP (Gate A–B), re-syncs companion scripts via admin SCP so the latest versions are always used (Gate B+), runs `validate_hardening.sh --json` (Gate C)
-4. **Docker + Coolify** — installs Docker (skips if already installed), starts DOCKER-USER rules (Gate D), installs Coolify (skips if already installed)
-5. **DNS + Verify** — configures dashboard UFW rules, sets PUSHER_HOST/PORT/SCHEME env vars for tunnel-mode WebSocket routing (ws.DOMAIN → Soketi via tunnel, terminal.DOMAIN → terminal via tunnel), creates/replaces Cloudflare Tunnel + CNAME + wildcard DNS (or A + wildcard A in standard mode), runs Gate E curl check (Tailscale reachable, public IP blocked)
+Steps are numbered `[0/5]`–`[5/5]` in the output; phase references in AGENTS.md use these step numbers.
+
+- **[0/5] Pre-flight** — validates tools, SSH pubkey, Cloudflare token + zone + account, SSH connectivity
+- **[1/5] Harden** — uploads scripts via root password SSH, runs `bootstrap_hardening.sh` (installs Tailscale, hardens SSH/UFW). Bootstrap prints `HARDEN_RESULT_TAILSCALE_IP=<ip>` sentinel on stdout; deploy.sh captures it via `tee` — this is the only safe way to get the TS_IP since UFW blocks all public-IP SSH after hardening completes. Skipped when `--ts-ip` is provided.
+- **[2/5] Gates** — cleans up `deploy.env` from server (root SSH blocked post-hardening, so done here via admin key), verifies SSH transition to admin@tailscale-IP (Gate A–B), re-syncs companion scripts via admin SCP so the latest versions are always used (Gate B+), runs `validate_hardening.sh --json` (Gate C)
+- **[3/5] Docker + Coolify** — installs Docker (skips if already installed), starts DOCKER-USER rules (Gate D), installs Coolify (skips if already installed)
+- **[4/5] DNS + Verify** — configures dashboard UFW rules, sets PUSHER_HOST/PORT/SCHEME env vars for tunnel-mode WebSocket routing (ws.DOMAIN → Soketi via tunnel, terminal.DOMAIN → terminal via tunnel), creates/replaces Cloudflare Tunnel + CNAME + wildcard DNS (or A + wildcard A in standard mode)
+- **[5/5] Final verification** — Gate E (curl: dashboard reachable on Tailscale IP, blocked on public IP), Gate F (curl from operator machine: external `https://DOMAIN` responds — proves tunnel+DNS+TLS end-to-end; non-fatal if DNS hasn't propagated yet), final `validate_hardening.sh --json` run, prints summary box
 
 ## Post-Deploy Steps (Required — Inform the User)
 
