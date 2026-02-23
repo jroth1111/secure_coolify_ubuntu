@@ -541,19 +541,30 @@ EOF
   ssh_root "chmod 600 /root/deploy.env"
   pass "Environment file written"
 
-  # Run hardening
+  # Run hardening, streaming output to terminal while capturing it for TS_IP extraction.
+  # After hardening, UFW blocks all SSH on the public IP (only tailscale0 allowed), so
+  # we cannot open a new root SSH session to run 'tailscale ip -4'. Instead, bootstrap
+  # prints 'HARDEN_RESULT_TAILSCALE_IP=<ip>' as the last stdout line; we parse that.
   log "Running bootstrap_hardening.sh (this may take a few minutes)..."
+  local harden_tmp
+  harden_tmp="$(mktemp)"
   ssh_root "/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force" \
-    || die "bootstrap_hardening.sh failed. Check server logs: /var/log/bootstrap-hardening.log"
+    2>&1 | tee "${harden_tmp}"
+  local harden_exit=${PIPESTATUS[0]}
+  if [[ "${harden_exit}" -ne 0 ]]; then
+    rm -f "${harden_tmp}"
+    die "bootstrap_hardening.sh failed. Check server logs: /var/log/bootstrap-hardening.log"
+  fi
   pass "Hardening completed"
 
-  # Capture Tailscale IP
-  TS_IP="$(ssh_root 'tailscale ip -4' 2>/dev/null | tr -d '[:space:]')"
-  [[ -n "${TS_IP}" ]] || die "Failed to get Tailscale IP from server."
+  # Extract Tailscale IP from captured bootstrap output (sentinel line)
+  TS_IP="$(grep '^HARDEN_RESULT_TAILSCALE_IP=' "${harden_tmp}" | cut -d= -f2 | tr -d '[:space:]')"
+  rm -f "${harden_tmp}"
+  [[ -n "${TS_IP}" ]] || die "Failed to get Tailscale IP from bootstrap output."
   pass "Server Tailscale IP: ${TS_IP}"
 
-  # Clean up sensitive env file
-  ssh_root "rm -f /root/deploy.env"
+  # Note: deploy.env cleanup is deferred to phase2_gates (ssh_admin_sudo after Gate B),
+  # because root SSH via public IP is now blocked by UFW.
 }
 
 # ── Phase 2: Gate checks ───────────────────────────────────────────────────
@@ -587,6 +598,10 @@ phase2_gates() {
     fail "Gate B: Expected ${ADMIN_USER}, got '${whoami_result}'"
     die "Gate B failed."
   fi
+
+  # Clean up sensitive deploy.env left on server by phase 1.
+  # Done here (not in phase 1) because post-hardening UFW blocks root SSH on the public IP.
+  ssh_admin_sudo "rm -f /root/deploy.env" 2>/dev/null || true
 
   # Always re-sync companion scripts via admin SCP after Gate A/B confirm SSH works.
   # This ensures the latest versions are used even when phase 1 (root upload) was skipped.

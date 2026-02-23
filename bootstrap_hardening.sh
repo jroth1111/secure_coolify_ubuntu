@@ -1786,6 +1786,13 @@ main() {
 
   generate_report
   log "Completed hardening bootstrap successfully."
+
+  # Print Tailscale IP on stdout for orchestrators (deploy.sh) to capture.
+  # Post-hardening, UFW blocks all SSH on the public IP (tailscale0 only), so
+  # the orchestrator cannot run 'tailscale ip -4' via a new root SSH session.
+  local _ts_ip_final
+  _ts_ip_final="$(tailscale ip -4 2>/dev/null)" || true
+  [[ -n "${_ts_ip_final}" ]] && printf 'HARDEN_RESULT_TAILSCALE_IP=%s\n' "${_ts_ip_final}"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

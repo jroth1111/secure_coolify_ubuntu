@@ -330,6 +330,7 @@ Follow the Collection Sequence above. This tree handles branching decisions:
 | Pre-flight fails: `sshpass` not found | `sshpass` not installed on operator machine | macOS: `brew install hudochenkov/sshpass/sshpass`; Linux: `apt install sshpass` |
 | Pre-flight fails: SSH key not found | No key at `~/.ssh/id_ed25519.pub` | Generate: `ssh-keygen -t ed25519`, or pass `--pubkey-file <path>` |
 | Gate A fails (SSH timeout) | Tailscale not running on operator laptop, or not on same tailnet | Run `tailscale status` on laptop; ensure both machines are on same Tailnet |
+| Deploy exits after "PASS Hardening completed" with no further output | Post-hardening UFW blocks all public-IP SSH; `ssh_root 'tailscale ip -4'` timed out silently | Fixed in current code: bootstrap now prints `HARDEN_RESULT_TAILSCALE_IP=<ip>` and deploy.sh captures it via `tee`. If on an old version, check Tailscale admin panel for server IP then resume with `--ts-ip` |
 | Gate C fails (validation) | Hardening step partially failed | Check `/var/log/bootstrap-hardening.log` on server; run `sudo /root/validate_hardening.sh --json` to see which checks failed |
 | Gate D fails (no DOCKER-USER rules) | Docker not fully started | Run `sudo systemctl restart docker` then `sudo systemctl start docker-user-hardening.service` |
 | Cloudflare zone not found | Domain not on Cloudflare or wrong zone | Zone is auto-detected via iterative suffix search (works for `.com.au`, `.co.uk`, etc.). Use `--cf-zone <zone>` to override if the domain is delegated to a sub-zone |
