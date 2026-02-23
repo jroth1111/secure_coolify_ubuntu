@@ -18,6 +18,11 @@ for arg in "$@"; do
   esac
 done
 
+if [[ "${JSON_MODE}" == "true" && "${HEALTH_CHECK_MODE}" == "true" ]]; then
+  printf 'Error: --json and --health-check are mutually exclusive.\n' >&2
+  exit 1
+fi
+
 if [[ -f /.dockerenv || "${container:-}" == "docker" ]]; then
   IS_CONTAINER="true"
 fi
