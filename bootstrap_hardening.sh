@@ -1784,6 +1784,11 @@ main() {
   log "Running post-apply checks."
   run_post_checks
 
+  # Ensure DETECTED_TAILSCALE_IP is populated for generate_report() regardless of
+  # --bind-dashboard-to-tailscale (get_tailscale_ip only runs inside configure_coolify_binding
+  # which is skipped when binding is not requested).
+  [[ -n "${DETECTED_TAILSCALE_IP}" ]] || get_tailscale_ip >/dev/null 2>&1 || true
+
   generate_report
   log "Completed hardening bootstrap successfully."
 

@@ -548,13 +548,11 @@ EOF
   log "Running bootstrap_hardening.sh (this may take a few minutes)..."
   local harden_tmp
   harden_tmp="$(mktemp)"
+  # Use || { } to handle pipeline failure explicitly — PIPESTATUS after a pipeline is unreliable
+  # when set -Eeuo pipefail is active because set -e exits the script before PIPESTATUS is read.
   ssh_root "/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force" \
-    2>&1 | tee "${harden_tmp}"
-  local harden_exit=${PIPESTATUS[0]}
-  if [[ "${harden_exit}" -ne 0 ]]; then
-    rm -f "${harden_tmp}"
-    die "bootstrap_hardening.sh failed. Check server logs: /var/log/bootstrap-hardening.log"
-  fi
+    2>&1 | tee "${harden_tmp}" \
+    || { rm -f "${harden_tmp}"; die "bootstrap_hardening.sh failed. Check server logs: /var/log/bootstrap-hardening.log"; }
   pass "Hardening completed"
 
   # Extract Tailscale IP from captured bootstrap output (sentinel line)
