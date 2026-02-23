@@ -243,8 +243,8 @@ Omitting `--mode` defaults to `tunnel`. Only pass `--mode standard` if the user 
 ## Phases
 
 1. **Pre-flight** — validates tools, SSH pubkey, Cloudflare token + zone + account, SSH connectivity
-2. **Harden** — uploads scripts, runs `bootstrap_hardening.sh` with `--tunnel-mode`, captures Tailscale IP. Skipped when `--ts-ip` is provided.
-3. **Gates** — verifies SSH transition to admin@tailscale-IP (Gate A-B), re-syncs companion scripts via admin SCP so the latest versions are always used (Gate B+), runs `validate_hardening.sh --json` (Gate C)
+2. **Harden** — uploads scripts via root password SSH, runs `bootstrap_hardening.sh` (installs Tailscale, hardens SSH/UFW). Bootstrap prints `HARDEN_RESULT_TAILSCALE_IP=<ip>` sentinel on stdout; deploy.sh captures it via `tee` — this is the only safe way to get the TS_IP since UFW blocks all public-IP SSH after hardening completes. Skipped when `--ts-ip` is provided.
+3. **Gates** — cleans up `deploy.env` from server (root SSH blocked post-hardening, so done here via admin key), verifies SSH transition to admin@tailscale-IP (Gate A–B), re-syncs companion scripts via admin SCP so the latest versions are always used (Gate B+), runs `validate_hardening.sh --json` (Gate C)
 4. **Docker + Coolify** — installs Docker (skips if already installed), starts DOCKER-USER rules (Gate D), installs Coolify (skips if already installed)
 5. **DNS + Verify** — configures dashboard UFW rules, creates/replaces Cloudflare Tunnel + CNAME + wildcard DNS (or A + wildcard A in standard mode), runs Gate E curl check (Tailscale reachable, public IP blocked)
 
@@ -329,6 +329,7 @@ Follow the Collection Sequence above. This tree handles branching decisions:
 |---------|-------------|-----|
 | Pre-flight fails: `sshpass` not found | `sshpass` not installed on operator machine | macOS: `brew install hudochenkov/sshpass/sshpass`; Linux: `apt install sshpass` |
 | Pre-flight fails: SSH key not found | No key at `~/.ssh/id_ed25519.pub` | Generate: `ssh-keygen -t ed25519`, or pass `--pubkey-file <path>` |
+| Phase 1 fails: `backend error: invalid key` | Tailscale auth key already used (non-reusable) or from wrong tailnet | Generate a new `tskey-auth-...` key at login.tailscale.com/admin/settings/keys. If hardening completed before the failure, server may be accessible — check Tailscale admin panel for the server's IP and resume with `--ts-ip` |
 | Gate A fails (SSH timeout) | Tailscale not running on operator laptop, or not on same tailnet | Run `tailscale status` on laptop; ensure both machines are on same Tailnet |
 | Deploy exits after "PASS Hardening completed" with no further output | Post-hardening UFW blocks all public-IP SSH; `ssh_root 'tailscale ip -4'` timed out silently | Fixed in current code: bootstrap now prints `HARDEN_RESULT_TAILSCALE_IP=<ip>` and deploy.sh captures it via `tee`. If on an old version, check Tailscale admin panel for server IP then resume with `--ts-ip` |
 | Gate C fails (validation) | Hardening step partially failed | Check `/var/log/bootstrap-hardening.log` on server; run `sudo /root/validate_hardening.sh --json` to see which checks failed |
