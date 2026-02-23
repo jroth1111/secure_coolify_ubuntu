@@ -272,7 +272,7 @@ Omitting `--mode` defaults to `tunnel`. Only pass `--mode standard` if the user 
 2. **Harden** — uploads scripts via root password SSH, runs `bootstrap_hardening.sh` (installs Tailscale, hardens SSH/UFW). Bootstrap prints `HARDEN_RESULT_TAILSCALE_IP=<ip>` sentinel on stdout; deploy.sh captures it via `tee` — this is the only safe way to get the TS_IP since UFW blocks all public-IP SSH after hardening completes. Skipped when `--ts-ip` is provided.
 3. **Gates** — cleans up `deploy.env` from server (root SSH blocked post-hardening, so done here via admin key), verifies SSH transition to admin@tailscale-IP (Gate A–B), re-syncs companion scripts via admin SCP so the latest versions are always used (Gate B+), runs `validate_hardening.sh --json` (Gate C)
 4. **Docker + Coolify** — installs Docker (skips if already installed), starts DOCKER-USER rules (Gate D), installs Coolify (skips if already installed)
-5. **DNS + Verify** — configures dashboard UFW rules, creates/replaces Cloudflare Tunnel + CNAME + wildcard DNS (or A + wildcard A in standard mode), runs Gate E curl check (Tailscale reachable, public IP blocked)
+5. **DNS + Verify** — configures dashboard UFW rules, sets PUSHER_HOST/PORT/SCHEME env vars for tunnel-mode WebSocket routing (ws.DOMAIN → Soketi via tunnel, terminal.DOMAIN → terminal via tunnel), creates/replaces Cloudflare Tunnel + CNAME + wildcard DNS (or A + wildcard A in standard mode), runs Gate E curl check (Tailscale reachable, public IP blocked)
 
 ## Post-Deploy Steps (Required — Inform the User)
 
@@ -289,7 +289,7 @@ Inform the user of these steps after deployment completes.
 
 Both modes use Cloudflare's edge for user-facing TLS. No wildcard cert is needed on the origin:
 
-- **Tunnel mode**: Cloudflare terminates TLS. Tunnel delivers HTTP to `localhost:80` (Traefik). No origin cert.
+- **Tunnel mode**: Cloudflare terminates TLS. Tunnel delivers HTTP to `localhost:8000` (dashboard), `localhost:6001` (Soketi WebSocket via `ws.DOMAIN`), and `localhost:6002` (terminal via `terminal.DOMAIN`). No origin cert.
 - **Standard mode** (proxied + Full SSL): Cloudflare terminates edge TLS. Full mode accepts any origin cert (self-signed OK).
 
 The `--cf-api-token` is used for DNS record management via Cloudflare's REST API. Wrangler CLI is not applicable (it only manages Workers/R2/D1/Pages — no DNS commands).
@@ -373,6 +373,7 @@ Follow the Collection Sequence above. This tree handles branching decisions:
 | Tunnel creation fails (permissions) | API token lacks Account:Tunnels:Edit | Regenerate token with correct permissions |
 | Tunnel creation fails (name already exists) | Rare CF API race | The script auto-deletes stale tunnels before creating — if this still occurs, check for tunnels with non-zero connections in CF dashboard (Zero Trust > Networks > Tunnels) |
 | `cloudflared` won't start | Credentials file mismatch | Check `/etc/cloudflared/config.yml` and credentials JSON |
+| "Cannot connect to real-time service" warning in dashboard | PUSHER_HOST not set in Coolify `.env` or Soketi port 6001 not routed through tunnel | Tunnel mode: verify `PUSHER_HOST=ws.DOMAIN`, `PUSHER_PORT=443`, `PUSHER_SCHEME=https` in `/data/coolify/source/.env` and that `/etc/cloudflared/config.yml` has a `ws.DOMAIN → localhost:6001` ingress rule. Then: `docker compose -f /data/coolify/source/docker-compose.yml -f /data/coolify/source/docker-compose.prod.yml up -d --force-recreate coolify soketi` |
 | `TOO_MANY_REDIRECTS` on app | Resource domain using `https://` in Coolify | Change to `http://` — Cloudflare handles TLS at edge |
 | Apps unreachable after deploy | SSL/TLS mode set to Flexible | Change to Full in Cloudflare dashboard |
 | `413 Payload Too Large` on upload | Cloudflare 100MB limit (Free/Pro) | Use chunked uploads in app, or redeploy with `--mode standard` and grey-cloud the subdomain |

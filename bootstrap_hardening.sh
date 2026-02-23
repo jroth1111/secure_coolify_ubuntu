@@ -117,10 +117,11 @@ Env-file uses the same variable names (ADMIN_USER, SSH_PORT, TUNNEL_MODE, etc.).
 CLI flags override env-file values.
 
 Dashboard Tailscale Restriction (--bind-dashboard-to-tailscale):
-  Verifies and re-applies UFW rules restricting Coolify dashboard (port 8000) and Soketi
-  (port 6001) to the tailscale0 interface only, then installs a watchdog timer that
-  periodically re-applies them if removed. UFW rules on tailscale0 are always configured
-  by the hardening step; this flag adds a periodic verification layer on top.
+  Verifies and re-applies UFW rules restricting Coolify dashboard (port 8000), Soketi
+  (port 6001), and terminal (port 6002) to the tailscale0 interface only, then installs
+  a watchdog timer that periodically re-applies them if removed. UFW rules on tailscale0
+  are always configured by the hardening step; this flag adds a periodic verification
+  layer on top.
 EOF
 }
 
@@ -527,8 +528,9 @@ configure_coolify_binding_watchdog() {
   write_file "${COOLIFY_BINDING_GUARD_SCRIPT}" "0750" "root" "root" <<'GUARD_EOF'
 #!/usr/bin/env bash
 # Coolify dashboard UFW binding guard.
-# Verifies that UFW rules restricting the Coolify dashboard (port 8000) and Soketi
-# (port 6001) to the tailscale0 interface exist, and re-applies them if missing.
+# Verifies that UFW rules restricting the Coolify dashboard (port 8000), Soketi
+# (port 6001), and terminal (port 6002) to the tailscale0 interface exist, and
+# re-applies them if missing.
 # Does NOT modify Coolify's .env — security is enforced entirely by UFW.
 set -Euo pipefail
 
@@ -560,10 +562,18 @@ if ! ufw status | grep -q "6001.*on ${TAILSCALE_IFACE}"; then
   changed=true
 fi
 
+# Check and re-apply UFW rule for port 6002 on tailscale0
+if ! ufw status | grep -q "6002.*on ${TAILSCALE_IFACE}"; then
+  log "UFW rule for port 6002 on ${TAILSCALE_IFACE} missing — re-applying."
+  ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 6002 \
+    comment "coolify-hardening-terminal-tailscale" 2>/dev/null || true
+  changed=true
+fi
+
 if "${changed}"; then
-  log "UFW rules re-applied for ports 8000 and 6001 on ${TAILSCALE_IFACE}."
+  log "UFW rules re-applied for ports 8000, 6001, and 6002 on ${TAILSCALE_IFACE}."
 else
-  log "UFW rules for ports 8000 and 6001 on ${TAILSCALE_IFACE} are present — no action needed."
+  log "UFW rules for ports 8000, 6001, and 6002 on ${TAILSCALE_IFACE} are present — no action needed."
 fi
 
 # Verify public IP is NOT serving the dashboard
@@ -623,7 +633,7 @@ configure_coolify_binding() {
   log "Verifying Coolify dashboard UFW rules on ${TAILSCALE_IFACE}..."
 
   if is_true "${DRY_RUN}"; then
-    log "DRY-RUN: would verify UFW rules for ports 8000 and 6001 on ${TAILSCALE_IFACE}"
+    log "DRY-RUN: would verify UFW rules for ports 8000, 6001, and 6002 on ${TAILSCALE_IFACE}"
     log "DRY-RUN: would verify port 8000 is listening and not reachable on public IP"
     return 0
   fi
@@ -634,7 +644,9 @@ configure_coolify_binding() {
       comment "coolify-hardening-dashboard-tailscale" 2>/dev/null || true
     run ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 6001 \
       comment "coolify-hardening-soketi-tailscale" 2>/dev/null || true
-    log "UFW rules verified for ports 8000 and 6001 on ${TAILSCALE_IFACE}."
+    run ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 6002 \
+      comment "coolify-hardening-terminal-tailscale" 2>/dev/null || true
+    log "UFW rules verified for ports 8000, 6001, and 6002 on ${TAILSCALE_IFACE}."
   else
     warn "ufw not found — skipping UFW rule verification."
   fi
@@ -1517,6 +1529,11 @@ run_post_checks() {
         log "PASS: UFW rule for port 6001 on ${TAILSCALE_IFACE} is present"
       else
         warn "UFW rule for port 6001 on ${TAILSCALE_IFACE} not found. Check: ufw status"
+      fi
+      if ufw status | grep -q "6002.*on ${TAILSCALE_IFACE}"; then
+        log "PASS: UFW rule for port 6002 on ${TAILSCALE_IFACE} is present"
+      else
+        warn "UFW rule for port 6002 on ${TAILSCALE_IFACE} not found. Check: ufw status"
       fi
     fi
 
