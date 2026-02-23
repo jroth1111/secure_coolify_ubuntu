@@ -284,7 +284,7 @@ If the user asks about origin wildcard certs (Traefik DNS-01 with Cloudflare tok
   ```bash
   bash deploy.sh ... --ts-ip 100.x.x.x --yes
   ```
-  The `--root-pass` flag is not required when `--ts-ip` is supplied.
+  Neither `--root-pass` nor `--tailscale-auth-key` is required when `--ts-ip` is supplied (hardening is skipped).
 - **Secrets in process list**: `--root-pass` and `--cf-api-token` will briefly appear in `ps` output during invocation. The script uses `SSHPASS` env var internally (not CLI args) for SSH operations. This is acceptable for single-operator laptops but the user should be aware.
 
 ## Error Handling

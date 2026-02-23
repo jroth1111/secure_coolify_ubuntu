@@ -215,8 +215,17 @@ validate_inputs() {
   PRIVATE_KEY="${PUBKEY_FILE%.pub}"
   [[ -f "${PRIVATE_KEY}" ]] || die "Private key not found: ${PRIVATE_KEY} (expected alongside ${PUBKEY_FILE})"
 
-  [[ "${TAILSCALE_AUTH_KEY}" == tskey-auth-* ]] \
-    || die "Tailscale auth key must start with 'tskey-auth-' (got: ${TAILSCALE_AUTH_KEY:0:12}...)"
+  # Auth key only required when hardening will run; --ts-ip skips hardening.
+  if ! is_true "${SKIP_HARDEN}"; then
+    [[ "${TAILSCALE_AUTH_KEY}" == tskey-auth-* ]] \
+      || die "Tailscale auth key must start with 'tskey-auth-' (got: ${TAILSCALE_AUTH_KEY:0:12}...)"
+  fi
+
+  # When resuming via --ts-ip, validate the supplied IP is a valid IPv4 address.
+  if is_true "${SKIP_HARDEN}"; then
+    [[ "${TS_IP}" =~ ${IPV4_RE} ]] \
+      || die "Invalid Tailscale IP supplied via --ts-ip: '${TS_IP}'"
+  fi
 
   [[ "${DEPLOY_MODE}" == "standard" || "${DEPLOY_MODE}" == "tunnel" ]] \
     || die "Mode must be 'standard' or 'tunnel' (got: ${DEPLOY_MODE})"
