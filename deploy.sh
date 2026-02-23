@@ -565,6 +565,30 @@ docker exec -e PGPASSWORD="\${db_pass}" coolify-db \
 WILDCARD_EOF
   pass "Coolify wildcard domain: http://${APP_DOMAIN}"
 
+  # In tunnel mode, set PUSHER_* env vars so the browser connects to Soketi via the
+  # tunnel (wss://ws.DOMAIN) instead of trying to reach localhost:6001 directly.
+  # Standard mode does not need this — browser connects to the Tailscale IP on port 6001.
+  if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
+    log "Setting PUSHER env vars for tunnel-mode WebSocket routing..."
+    ssh_admin_sudo 'bash -s' <<PUSHER_EOF
+set -Eeuo pipefail
+coolify_env="/data/coolify/source/.env"
+# Idempotent: remove existing PUSHER_HOST/PORT/SCHEME lines, then append
+sed -i '/^PUSHER_HOST=/d; /^PUSHER_PORT=/d; /^PUSHER_SCHEME=/d' "\${coolify_env}"
+cat >> "\${coolify_env}" <<'INNER'
+PUSHER_HOST=ws.${DOMAIN}
+PUSHER_PORT=443
+PUSHER_SCHEME=https
+INNER
+echo "PUSHER env vars written to \${coolify_env}"
+# Recreate coolify + soketi to pick up the new env (fast — ~10s, no DB/redis restart)
+docker compose -f /data/coolify/source/docker-compose.yml \
+               -f /data/coolify/source/docker-compose.prod.yml \
+               up -d --force-recreate coolify soketi 2>&1 | tail -5
+PUSHER_EOF
+    pass "PUSHER env vars configured: ws.${DOMAIN}:443 (wss)"
+  fi
+
   if [[ "${DEPLOY_MODE}" == "standard" ]]; then
     # Standard mode: A records pointing to server public IP (proxied)
     log "Configuring DNS: A record ${DOMAIN} → ${SERVER_IP} (proxied)..."
