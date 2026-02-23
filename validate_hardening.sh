@@ -1133,6 +1133,7 @@ coolify_container_check() {
   for ctr in "${containers[@]}"; do
     local state health
     state="$(docker inspect --format '{{.State.Status}}' "${ctr}" 2>/dev/null || echo "not-found")"
+    state="$(printf '%s' "${state}" | tr -d '[:space:]')"
     if [[ "${state}" == "not-found" ]]; then
       # proxy may genuinely be absent if no apps deployed yet — info not fail
       if [[ "${ctr}" == "coolify-proxy" ]]; then
@@ -1152,6 +1153,7 @@ coolify_container_check() {
     health="$(docker inspect \
       --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' \
       "${ctr}" 2>/dev/null || echo "unknown")"
+    health="$(printf '%s' "${health}" | tr -d '[:space:]')"
 
     case "${health}" in
       healthy|no-healthcheck)

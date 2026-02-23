@@ -338,7 +338,7 @@ phase3_docker_coolify() {
   # using its own key. The hardening Match block allows key-only root login from
   # localhost (127.0.0.1), 172.16.0.0/12, and 10.0.0.0/8 (Docker pool); key must be present.
   log "Adding Coolify SSH key to root authorized_keys..."
-  local keyfile auth pubkey
+  local keyfile auth pubkey tmp key_data
   keyfile=$(ls /data/coolify/ssh/keys/ssh_key@* 2>/dev/null | head -1 || true)
   if [[ -z "${keyfile}" ]]; then
     warn "No Coolify SSH key found — skipping root authorized_keys update"
@@ -347,14 +347,23 @@ phase3_docker_coolify() {
     auth=/root/.ssh/authorized_keys
     mkdir -p /root/.ssh && chmod 700 /root/.ssh
     touch "${auth}" && chmod 600 "${auth}"
-    if grep -qxF "${pubkey}" "${auth}" 2>/dev/null; then
+    tmp="$(mktemp)"
+    awk '
+      $1 ~ /^(ssh-(rsa|ed25519|dss)|ecdsa-[^[:space:]]+)$/ && NF >= 2 {
+        if (!seen[$2]++) {
+          print $1 " " $2
+        }
+      }
+    ' "${auth}" > "${tmp}" 2>/dev/null || true
+    key_data="$(awk '{print $2}' <<< "${pubkey}")"
+    if awk '{print $2}' "${tmp}" 2>/dev/null | grep -qxF "${key_data}"; then
       log "Coolify key already in root authorized_keys"
     else
-      # Ensure file ends with newline before appending to avoid key concatenation
-      [[ -s "${auth}" ]] && [[ "$(tail -c1 "${auth}" | od -An -tx1 | tr -d ' \n')" != "0a" ]] \
-        && printf '\n' >> "${auth}"
-      printf '%s\n' "${pubkey}" >> "${auth}"
+      printf '%s\n' "${pubkey}" >> "${tmp}"
+      log "Coolify key added to root authorized_keys"
     fi
+    install -m 600 "${tmp}" "${auth}"
+    rm -f "${tmp}"
     pass "Coolify SSH key in root authorized_keys"
   fi
 
