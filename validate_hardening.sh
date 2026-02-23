@@ -774,6 +774,13 @@ coolify_binding_check() {
     record "INFO" "coolify: UFW rule port 6001" "rule for port 6001 on ${TAILSCALE_IFACE} missing (Soketi may not be in use)"
   fi
 
+  # Check UFW rule for port 6002 on tailscale0
+  if echo "${ufw_out}" | grep -q "6002.*on ${TAILSCALE_IFACE}"; then
+    record "PASS" "coolify: UFW rule port 6002 on ${TAILSCALE_IFACE}"
+  else
+    record "INFO" "coolify: UFW rule port 6002" "rule for port 6002 on ${TAILSCALE_IFACE} missing (terminal may not be in use)"
+  fi
+
   # Check port 8000 is listening (any address — UFW restricts which interfaces can reach it)
   local bound_8000
   bound_8000="$(ss -tlnp 2>/dev/null | grep ':8000 ' || true)"
