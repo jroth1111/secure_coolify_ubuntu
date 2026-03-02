@@ -1153,7 +1153,7 @@ ClientAliveCountMax 2
 # Keep OpenSSH secure defaults; only prioritize modern algorithms.
 Ciphers ^chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
 MACs ^hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
-KexAlgorithms ^sntrup761x25519-sha512,curve25519-sha256,curve25519-sha256@libssh.org
+KexAlgorithms ^sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org
 HostKeyAlgorithms ^ssh-ed25519,rsa-sha2-512,rsa-sha2-256
 Banner /etc/issue.net
 
@@ -1476,8 +1476,8 @@ SystemMaxUse=${JOURNAL_MAX_USE}
 SystemKeepFree=500M
 MaxRetentionSec=${JOURNAL_RETENTION}
 EOF
-  run systemctl restart systemd-journald
   run journalctl --flush
+  run systemctl restart systemd-journald
 
   # Verify persistent storage is active (journald should create /var/log/journal)
   if ! is_true "${DRY_RUN}"; then
@@ -1557,8 +1557,10 @@ set_auditd_conf_kv() {
 
   [[ -f "${AUDITD_CONF_FILE}" ]] || return 0
 
-  if grep -qE "^[[:space:]]*${key}[[:space:]]*=" "${AUDITD_CONF_FILE}"; then
-    run sed -i -E "s|^[[:space:]]*${key}[[:space:]]*=.*|${key} = ${value}|" "${AUDITD_CONF_FILE}"
+  local key_re
+  key_re="$(printf '%s' "${key}" | sed 's/[][.\\*^$+?{}()|]/\\&/g')"
+  if grep -qE "^[[:space:]]*${key_re}[[:space:]]*=" "${AUDITD_CONF_FILE}"; then
+    run sed -i -E "s|^[[:space:]]*${key_re}[[:space:]]*=.*|${key} = ${value}|" "${AUDITD_CONF_FILE}"
   else
     if is_true "${DRY_RUN}"; then
       log "DRY-RUN: append '${key} = ${value}' to ${AUDITD_CONF_FILE}"
