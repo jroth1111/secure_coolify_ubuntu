@@ -77,7 +77,7 @@ BIND_DASHBOARD_TO_TAILSCALE="false"
 TAILSCALE_IP=""
 TAILSCALE_CIDR="100.64.0.0/10"
 STRICT_DOCKER_SSH_CIDRS="false"
-DOCKER_SSH_CIDRS="10.0.0.0/8"
+DOCKER_SSH_CIDRS="10.0.0.0/8,172.16.0.0/12"
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
 
 if [[ -f "${STATE_FILE}" ]]; then
@@ -92,7 +92,7 @@ if [[ -f "${STATE_FILE}" ]]; then
   TAILSCALE_IP="${tailscale_ip:-}"
   TAILSCALE_CIDR="${tailscale_cidr:-100.64.0.0/10}"
   STRICT_DOCKER_SSH_CIDRS="${strict_docker_ssh_cidrs:-false}"
-  DOCKER_SSH_CIDRS="${docker_ssh_cidrs:-10.0.0.0/8}"
+  DOCKER_SSH_CIDRS="${docker_ssh_cidrs:-10.0.0.0/8,172.16.0.0/12}"
 fi
 
 is_true() {
@@ -107,7 +107,7 @@ regex_escape() {
 }
 
 load_docker_ssh_cidrs() {
-  local raw="${DOCKER_SSH_CIDRS:-10.0.0.0/8}"
+  local raw="${DOCKER_SSH_CIDRS:-10.0.0.0/8,172.16.0.0/12}"
   local item
   local -a cidrs=()
 
