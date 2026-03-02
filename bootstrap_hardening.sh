@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SCRIPT_VERSION="1.2.1"
+SCRIPT_VERSION="1.2.2"
 SCRIPT_NAME="$(basename "$0")"
 
 LOG_FILE="/var/log/bootstrap-hardening.log"
@@ -10,7 +10,7 @@ STATE_DIR="/var/lib/bootstrap-hardening"
 STATE_FILE="${STATE_DIR}/state"
 
 SSH_DROPIN_FILE="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
-JOURNALD_DROPIN_FILE="/etc/systemd/journald.conf.d/60-persistent.conf"
+JOURNALD_DROPIN_FILE="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
 AUDIT_RULES_FILE="/etc/audit/rules.d/60-coolify-baseline.rules"
 DOCKER_USER_SCRIPT="/usr/local/sbin/docker-user-hardening.sh"
 DOCKER_USER_ENV_FILE="/etc/default/docker-user-hardening"
@@ -31,7 +31,7 @@ ADMIN_PUBKEY="${ADMIN_PUBKEY:-}"
 TAILSCALE_CIDR="${TAILSCALE_CIDR:-100.64.0.0/10}"
 SSH_PORT="${SSH_PORT:-22}"
 WAN_IFACE="${WAN_IFACE:-}"
-ENABLE_AUTO_REBOOT="${ENABLE_AUTO_REBOOT:-true}"
+ENABLE_AUTO_REBOOT="${ENABLE_AUTO_REBOOT:-false}"
 AUTO_REBOOT_TIME="${AUTO_REBOOT_TIME:-03:30}"
 JOURNAL_RETENTION="${JOURNAL_RETENTION:-3month}"
 JOURNAL_MAX_USE="${JOURNAL_MAX_USE:-1G}"
@@ -100,7 +100,7 @@ Optional:
   --wan-iface <iface>           WAN interface (default: auto-detected)
   --tunnel-mode                 Skip WAN 80/443 rules (Cloudflare Tunnel / outbound-only)
   --swap-size <size>            Swap file size (default: 2G; format: <N>G or <N>M; 0 to skip)
-  --enable-auto-reboot <bool>   Enable unattended-upgrades reboot (default: true)
+  --enable-auto-reboot <bool>   Enable unattended-upgrades reboot (default: false)
   --auto-reboot-time <HH:MM>    Reboot time for unattended-upgrades (default: 03:30)
   --journal-retention <span>   Journal retention period (default: 3month)
   --bind-dashboard-to-tailscale Bind Coolify dashboard to Tailscale IP only (split-horizon)
@@ -1369,9 +1369,11 @@ configure_journald() {
 Storage=persistent
 Compress=yes
 SystemMaxUse=${JOURNAL_MAX_USE}
+SystemKeepFree=500M
 MaxRetentionSec=${JOURNAL_RETENTION}
 EOF
   run systemctl restart systemd-journald
+  run journalctl --flush
 }
 
 build_audit_rules() {
@@ -1443,7 +1445,7 @@ EOF
 Unattended-Upgrade::Origins-Pattern {
     "origin=Ubuntu,codename=\${distro_codename}-security,label=Ubuntu";
     "origin=Ubuntu,codename=\${distro_codename}-updates,label=Ubuntu";
-    "origin=Docker,label=Docker CE";
+    "origin=Docker,label=Docker CE,archive=\${distro_codename},component=stable";
 };
 Unattended-Upgrade::MinimalSteps "true";
 Unattended-Upgrade::Automatic-Reboot "${reboot_bool}";

@@ -13,7 +13,7 @@ TEST_WAN="eth0"
 SSH_DROPIN="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
 SYSCTL_DROPIN="/etc/sysctl.d/60-coolify-hardening.conf"
 FAIL2BAN_JAIL="/etc/fail2ban/jail.d/coolify-hardening.local"
-JOURNALD_DROPIN="/etc/systemd/journald.conf.d/60-persistent.conf"
+JOURNALD_DROPIN="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
 STATE_FILE="/var/lib/bootstrap-hardening/state"
 REPORT_FILE="/var/log/bootstrap-hardening-report.json"
 AUDIT_RULES="/etc/audit/rules.d/60-coolify-baseline.rules"
@@ -334,6 +334,7 @@ teardown_file() {
   run cat "${JOURNALD_DROPIN}"
   assert_success
   assert_output --partial "Storage=persistent"
+  assert_output --partial "SystemKeepFree=500M"
   assert_output --partial "MaxRetentionSec=3month"
 }
 
@@ -348,9 +349,10 @@ teardown_file() {
 @test "upgrades: local policy has reboot and cleanup settings" {
   run cat "${APT_LOCAL_FILE}"
   assert_success
-  assert_output --partial 'Unattended-Upgrade::Automatic-Reboot "true";'
+  assert_output --partial 'Unattended-Upgrade::Automatic-Reboot "false";'
   assert_output --partial 'Unattended-Upgrade::Automatic-Reboot-Time "03:30";'
   assert_output --partial 'Unattended-Upgrade::Remove-Unused-Dependencies "true";'
+  assert_output --partial 'origin=Docker,label=Docker CE,archive=${distro_codename},component=stable'
 }
 
 # ── Banner ───────────────────────────────────────────────────────────────────

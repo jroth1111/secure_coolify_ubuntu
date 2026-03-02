@@ -111,7 +111,7 @@ teardown_file() {
 @test "validate: exits non-zero when journald persistence is disabled" {
   local journald_dropin
   local backup
-  journald_dropin="/etc/systemd/journald.conf.d/60-persistent.conf"
+  journald_dropin="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
   backup="$(mktemp)"
 
   cp "${journald_dropin}" "${backup}"

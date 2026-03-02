@@ -6,7 +6,7 @@ set -Eeuo pipefail
 # Usage: sudo ./validate_hardening.sh [--json|--health-check]
 
 STATE_FILE="/var/lib/bootstrap-hardening/state"
-JOURNALD_DROPIN="/etc/systemd/journald.conf.d/60-persistent.conf"
+JOURNALD_DROPIN="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
 JSON_MODE="false"
 HEALTH_CHECK_MODE="false"
 IS_CONTAINER="false"
@@ -499,6 +499,12 @@ journald_check() {
     record "FAIL" "journald: persistent storage" "drop-in missing or not persistent"
   fi
 
+  if [[ -f "${JOURNALD_DROPIN}" ]] && grep -q "^SystemKeepFree=500M$" "${JOURNALD_DROPIN}"; then
+    record "PASS" "journald: keep-free policy"
+  else
+    record "FAIL" "journald: keep-free policy" "SystemKeepFree=500M missing"
+  fi
+
   local usage
   usage="$(journalctl --disk-usage 2>/dev/null | head -1)" || true
   if [[ -n "${usage}" ]]; then
@@ -872,8 +878,10 @@ unattended_upgrades_check() {
     record "FAIL" "auto-updates: Ubuntu origin" "not in origins pattern"
   fi
 
-  if grep -q "Docker" "${apt_local}"; then
-    record "PASS" "auto-updates: Docker CE origin covered"
+  if grep -q "origin=Docker,label=Docker CE,archive=\${distro_codename},component=stable" "${apt_local}"; then
+    record "PASS" "auto-updates: Docker CE origin pinned to stable"
+  elif grep -q "origin=Docker,label=Docker CE" "${apt_local}"; then
+    record "FAIL" "auto-updates: Docker CE origin" "present but not pinned to archive/component=stable"
   else
     record "FAIL" "auto-updates: Docker CE origin" "missing — Docker packages not auto-updated"
   fi
