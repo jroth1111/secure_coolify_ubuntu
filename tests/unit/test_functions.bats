@@ -1354,10 +1354,25 @@ allowusers testadmin"
   grep -q '"default-ulimits".*DOCKER_DAEMON_JSON' "${SCRIPT}"
 }
 
+# ── sysctl precedence and defaults ────────────────────────────────────────────
+
+@test "sysctl drop-in uses 99- prefix for precedence" {
+  grep -q 'SYSCTL_DROPIN_FILE="/etc/sysctl.d/99-coolify-hardening.conf"' "${SCRIPT}"
+}
+
+@test "configure_sysctl: removes old 60- drop-in during migration" {
+  grep -q '60-coolify-hardening.conf' "${SCRIPT}"
+  grep -q 'Removing superseded sysctl drop-in' "${SCRIPT}"
+}
+
+@test "sysctl: kernel.unprivileged_bpf_disabled is 2 (not 1)" {
+  grep -q 'kernel.unprivileged_bpf_disabled = 2' "${SCRIPT}"
+}
+
 # ── journald JOURNAL_MAX_USE ──────────────────────────────────────────────────
 
-@test "bootstrap script declares JOURNAL_MAX_USE global" {
-  grep -q 'JOURNAL_MAX_USE=' "${SCRIPT}"
+@test "bootstrap script declares JOURNAL_MAX_USE default of 2G" {
+  grep -q 'JOURNAL_MAX_USE="${JOURNAL_MAX_USE:-2G}"' "${SCRIPT}"
 }
 
 @test "configure_journald: uses JOURNAL_MAX_USE variable" {

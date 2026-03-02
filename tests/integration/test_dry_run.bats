@@ -7,7 +7,7 @@ load '../helpers'
 
 TEST_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDataForDryRunTests test@bats"
 SSH_DROPIN="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
-SYSCTL_DROPIN="/etc/sysctl.d/60-coolify-hardening.conf"
+SYSCTL_DROPIN="/etc/sysctl.d/99-coolify-hardening.conf"
 FAIL2BAN_JAIL="/etc/fail2ban/jail.d/coolify-hardening.local"
 JOURNALD_DROPIN="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
 AUDIT_RULES="/etc/audit/rules.d/60-coolify-baseline.rules"

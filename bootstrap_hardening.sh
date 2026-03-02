@@ -18,7 +18,7 @@ DOCKER_USER_ENV_FILE="/etc/default/docker-user-hardening"
 DOCKER_USER_UNIT_FILE="/etc/systemd/system/docker-user-hardening.service"
 APT_AUTO_FILE="/etc/apt/apt.conf.d/20auto-upgrades"
 APT_LOCAL_FILE="/etc/apt/apt.conf.d/52unattended-upgrades-local"
-SYSCTL_DROPIN_FILE="/etc/sysctl.d/60-coolify-hardening.conf"
+SYSCTL_DROPIN_FILE="/etc/sysctl.d/99-coolify-hardening.conf"
 FAIL2BAN_JAIL_FILE="/etc/fail2ban/jail.d/coolify-hardening.local"
 COOLIFY_BINDING_GUARD_SCRIPT="/usr/local/sbin/coolify-binding-guard.sh"
 COOLIFY_BINDING_GUARD_SERVICE="/etc/systemd/system/coolify-binding-guard.service"
@@ -35,7 +35,7 @@ WAN_IFACE="${WAN_IFACE:-}"
 ENABLE_AUTO_REBOOT="${ENABLE_AUTO_REBOOT:-false}"
 AUTO_REBOOT_TIME="${AUTO_REBOOT_TIME:-03:30}"
 JOURNAL_RETENTION="${JOURNAL_RETENTION:-3month}"
-JOURNAL_MAX_USE="${JOURNAL_MAX_USE:-1G}"
+JOURNAL_MAX_USE="${JOURNAL_MAX_USE:-2G}"
 TUNNEL_MODE="${TUNNEL_MODE:-false}"
 SWAP_SIZE="${SWAP_SIZE:-2G}"
 DRY_RUN="${DRY_RUN:-false}"
@@ -808,6 +808,13 @@ disable_unused_services() {
 }
 
 configure_sysctl() {
+  # Migration: remove old 60-prefixed drop-in (replaced by 99- for precedence)
+  local old_sysctl="/etc/sysctl.d/60-coolify-hardening.conf"
+  if [[ -f "${old_sysctl}" && "${old_sysctl}" != "${SYSCTL_DROPIN_FILE}" ]]; then
+    log "Removing superseded sysctl drop-in ${old_sysctl} (replaced by ${SYSCTL_DROPIN_FILE})."
+    run rm -f "${old_sysctl}"
+  fi
+
   # Check if BBR kernel module is available
   local bbr_available="false"
   if modinfo tcp_bbr &>/dev/null; then
@@ -841,7 +848,7 @@ net.ipv4.tcp_synack_retries = 2
 fs.protected_hardlinks = 1
 fs.protected_symlinks = 1
 fs.suid_dumpable = 0
-kernel.unprivileged_bpf_disabled = 1
+kernel.unprivileged_bpf_disabled = 2
 kernel.kexec_load_disabled = 1
 kernel.sysrq = 4
 kernel.randomize_va_space = 2

@@ -434,7 +434,7 @@ sysctl_check() {
     [fs.protected_hardlinks]="1"
     [fs.protected_symlinks]="1"
     [fs.suid_dumpable]="0"
-    [kernel.unprivileged_bpf_disabled]="1"
+    [kernel.unprivileged_bpf_disabled]="2"
     [kernel.kexec_load_disabled]="1"
     [kernel.sysrq]="4"
     [kernel.randomize_va_space]="2"

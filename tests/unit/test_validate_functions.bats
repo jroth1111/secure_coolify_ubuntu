@@ -400,6 +400,10 @@ setup() {
   grep -q '\[kernel.yama.ptrace_scope\]="1"' "${VALIDATE_SCRIPT}"
 }
 
+@test "sysctl_check expects kernel.unprivileged_bpf_disabled=2" {
+  grep -q '\[kernel.unprivileged_bpf_disabled\]="2"' "${VALIDATE_SCRIPT}"
+}
+
 # ── Swappiness check (Priority 3.2) ─────────────────────────────────────────────
 
 @test "sysctl_check expects vm.swappiness=10" {

@@ -11,7 +11,7 @@ TEST_PORT="2222"
 TEST_WAN="eth0"
 
 SSH_DROPIN="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
-SYSCTL_DROPIN="/etc/sysctl.d/60-coolify-hardening.conf"
+SYSCTL_DROPIN="/etc/sysctl.d/99-coolify-hardening.conf"
 FAIL2BAN_JAIL="/etc/fail2ban/jail.d/coolify-hardening.local"
 JOURNALD_DROPIN="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
 STATE_FILE="/var/lib/bootstrap-hardening/state"
