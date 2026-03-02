@@ -224,6 +224,10 @@ setup() {
   grep -q "^docker_daemon_check()" "${VALIDATE_SCRIPT}"
 }
 
+@test "validate script contains docker_trust_boundary_check function" {
+  grep -q "^docker_trust_boundary_check()" "${VALIDATE_SCRIPT}"
+}
+
 @test "validate script contains apparmor_check function" {
   grep -q "^apparmor_check()" "${VALIDATE_SCRIPT}"
 }
@@ -348,6 +352,14 @@ setup() {
 
 @test "docker_daemon_check looks for live-restore" {
   grep -q 'live-restore' "${VALIDATE_SCRIPT}"
+}
+
+@test "docker_trust_boundary_check validates docker.sock world-writable risk" {
+  grep -q "docker-trust: socket not world-writable" "${VALIDATE_SCRIPT}"
+}
+
+@test "docker_trust_boundary_check checks admin docker group membership" {
+  grep -q "docker-trust: admin user not in docker group" "${VALIDATE_SCRIPT}"
 }
 
 # ── New kernel parameter checks (Priority 3.1) ───────────────────────────────────

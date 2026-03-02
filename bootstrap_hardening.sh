@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SCRIPT_VERSION="1.2.2"
+SCRIPT_VERSION="1.2.3"
 SCRIPT_NAME="$(basename "$0")"
 
 LOG_FILE="/var/log/bootstrap-hardening.log"
@@ -1628,6 +1628,31 @@ run_post_checks() {
     if command -v ip6tables >/dev/null 2>&1; then
       ip6tables -t filter -S DOCKER-USER 2>/dev/null | grep -q "coolify-hardening-wan-drop6" || die "Post-check failed: DOCKER-USER IPv6 drop rule missing."
     fi
+
+    if [[ -S /var/run/docker.sock ]]; then
+      local docker_sock_mode docker_sock_other docker_sock_owner_group
+      docker_sock_mode="$(stat -c '%a' /var/run/docker.sock 2>/dev/null || true)"
+      docker_sock_owner_group="$(stat -c '%U:%G' /var/run/docker.sock 2>/dev/null || true)"
+
+      if [[ -n "${docker_sock_mode}" ]]; then
+        docker_sock_other="${docker_sock_mode: -1}"
+        if [[ "${docker_sock_other}" =~ ^[0-7]$ ]] && (( (10#${docker_sock_other} & 2) != 0 )); then
+          die "Post-check failed: /var/run/docker.sock is world-writable (mode ${docker_sock_mode})."
+        fi
+      fi
+
+      if [[ -n "${docker_sock_owner_group}" && ! "${docker_sock_owner_group}" =~ ^root: ]]; then
+        warn "Post-check: /var/run/docker.sock owner/group is ${docker_sock_owner_group}; expected root:*."
+      fi
+    else
+      warn "Post-check: /var/run/docker.sock missing; cannot validate Docker socket permissions."
+    fi
+
+    if getent group docker >/dev/null 2>&1; then
+      if id -nG "${ADMIN_USER}" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
+        warn "Post-check: admin user ${ADMIN_USER} is in docker group (root-equivalent Docker access)."
+      fi
+    fi
   fi
 
   if [[ "${DOCKER_PRESENT}" == "true" && -f "${DOCKER_DAEMON_JSON}" ]]; then
@@ -1751,6 +1776,8 @@ generate_report() {
   local fail2ban_active
   local banner_present
   local docker_ssh_cidrs_csv
+  local docker_sock_world_writable="false"
+  local admin_in_docker_group="false"
 
   tailscale_iface_present="$(bool_cmd ip link show "${TAILSCALE_IFACE}")"
   ufw_active="$(ufw status | grep -q "^Status: active$" && echo "true" || echo "false")"
@@ -1773,6 +1800,22 @@ generate_report() {
   fail2ban_active="$(systemctl is-active --quiet fail2ban && echo "true" || echo "false")"
   banner_present="$([[ -f /etc/issue.net ]] && echo "true" || echo "false")"
   docker_ssh_cidrs_csv="$(IFS=,; echo "${DOCKER_SSH_CIDRS[*]}")"
+
+  if [[ "${DOCKER_PRESENT}" == "true" ]]; then
+    if [[ -S /var/run/docker.sock ]]; then
+      local docker_sock_mode docker_sock_other
+      docker_sock_mode="$(stat -c '%a' /var/run/docker.sock 2>/dev/null || echo "")"
+      if [[ -n "${docker_sock_mode}" ]]; then
+        docker_sock_other="${docker_sock_mode: -1}"
+        if [[ "${docker_sock_other}" =~ ^[0-7]$ ]] && (( (10#${docker_sock_other} & 2) != 0 )); then
+          docker_sock_world_writable="true"
+        fi
+      fi
+    fi
+    if getent group docker >/dev/null 2>&1 && id -nG "${ADMIN_USER}" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
+      admin_in_docker_group="true"
+    fi
+  fi
 
   # Dashboard UFW restriction check (UFW-based; security enforced by UFW not socket binding)
   local coolify_dashboard_bound="false"
@@ -1817,6 +1860,8 @@ generate_report() {
     "audit_rules_loaded": ${audit_rules_loaded},
     "docker_user_drop_rule_v4": ${docker_drop_rule},
     "docker_user_drop_rule_v6": ${docker_drop_rule_v6},
+    "docker_sock_world_writable": ${docker_sock_world_writable},
+    "admin_user_in_docker_group": ${admin_in_docker_group},
     "sysctl_syncookies": ${sysctl_syncookies},
     "sysctl_bbr": ${sysctl_bbr},
     "timesync_ntp": ${timesync_ntp},

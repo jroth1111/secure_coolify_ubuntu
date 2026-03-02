@@ -1298,6 +1298,14 @@ allowusers testadmin"
   grep -q 'DOCKER_DAEMON_NEEDS_RESTART="true"' "${SCRIPT}"
 }
 
+@test "run_post_checks: guards against world-writable docker.sock" {
+  grep -q '/var/run/docker.sock is world-writable' "${SCRIPT}"
+}
+
+@test "run_post_checks: warns when admin user is in docker group" {
+  grep -q 'admin user .*docker group' "${SCRIPT}"
+}
+
 # ── daemon.json fallback removed ─────────────────────────────────────────────
 
 @test "configure_docker_daemon: sed fallback removed; uses die on merge failure" {

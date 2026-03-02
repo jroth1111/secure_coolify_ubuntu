@@ -817,6 +817,72 @@ docker_daemon_check() {
   fi
 }
 
+# ── Docker daemon trust-boundary checks ──
+
+docker_trust_boundary_check() {
+  local docker_sock="/var/run/docker.sock"
+
+  if ! command -v docker >/dev/null 2>&1; then
+    record "INFO" "docker-trust: docker" "Docker not installed; skipped"
+    return
+  fi
+
+  if [[ ! -S "${docker_sock}" ]]; then
+    record "INFO" "docker-trust: socket" "${docker_sock} not present; skipped"
+    return
+  fi
+
+  local mode owner group other
+  mode="$(stat -c '%a' "${docker_sock}" 2>/dev/null || echo "")"
+  owner="$(stat -c '%U' "${docker_sock}" 2>/dev/null || echo "")"
+  group="$(stat -c '%G' "${docker_sock}" 2>/dev/null || echo "")"
+
+  if [[ -n "${mode}" ]]; then
+    other="${mode: -1}"
+    if [[ "${other}" =~ ^[0-7]$ ]] && (( (10#${other} & 2) != 0 )); then
+      record "FAIL" "docker-trust: socket not world-writable" \
+        "${docker_sock} mode=${mode} allows world write"
+    else
+      record "PASS" "docker-trust: socket not world-writable"
+    fi
+  else
+    record "FAIL" "docker-trust: socket mode" "cannot read mode for ${docker_sock}"
+  fi
+
+  if [[ "${owner}" == "root" ]]; then
+    record "PASS" "docker-trust: socket owner is root"
+  else
+    record "FAIL" "docker-trust: socket owner" "expected root, got ${owner:-<unknown>}"
+  fi
+
+  if [[ "${group}" == "docker" || "${group}" == "root" ]]; then
+    record "PASS" "docker-trust: socket group is ${group}"
+  else
+    record "INFO" "docker-trust: socket group" \
+      "group=${group:-<unknown>} (verify intended access model)"
+  fi
+
+  if getent group docker >/dev/null 2>&1; then
+    local docker_members
+    docker_members="$(getent group docker | awk -F: '{print $4}')"
+
+    if [[ -z "${docker_members}" ]]; then
+      record "PASS" "docker-trust: docker group has no named members"
+    else
+      record "INFO" "docker-trust: docker group members" "${docker_members}"
+    fi
+
+    if [[ -n "${ADMIN_USER}" ]] && grep -qE "(^|,)$(regex_escape "${ADMIN_USER}")($|,)" <<< "${docker_members}"; then
+      record "FAIL" "docker-trust: admin user not in docker group" \
+        "${ADMIN_USER} is in docker group (root-equivalent Docker access)"
+    else
+      record "PASS" "docker-trust: admin user not in docker group"
+    fi
+  else
+    record "INFO" "docker-trust: docker group" "group not present"
+  fi
+}
+
 # ── AppArmor ──
 
 apparmor_check() {
@@ -1289,6 +1355,7 @@ ufw_check
 docker_user_check
 docker_user_lifecycle_check
 docker_daemon_check
+docker_trust_boundary_check
 sysctl_check
 fail2ban_check
 auditd_check
