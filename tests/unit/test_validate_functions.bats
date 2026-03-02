@@ -395,7 +395,8 @@ setup() {
 }
 
 @test "unattended_upgrades_check verifies Docker CE origin" {
-  grep -q '"Docker"' "${VALIDATE_SCRIPT}"
+  grep -q "origin=Docker,label=Docker CE,archive=" "${VALIDATE_SCRIPT}"
+  grep -q "component=stable" "${VALIDATE_SCRIPT}"
 }
 
 # ── coolify binding guard timer check ────────────────────────────────────────
