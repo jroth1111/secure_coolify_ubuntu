@@ -52,6 +52,22 @@ check() {
   fi
 }
 
+# ── auditd queue-loss conditional logic (extracted for unit testing) ───────────
+# Mirrors the queue-loss branch in auditd_check() in validate_hardening.sh.
+
+_auditd_queue_loss_record() {
+  local lost="${1-}"
+  if [[ "${lost:-0}" =~ ^[0-9]+$ ]] && [[ "${lost}" == "0" ]]; then
+    record "PASS" "auditd: queue loss (lost=0)"
+  elif [[ "${lost:-}" =~ ^[0-9]+$ ]] && (( lost > 100 )); then
+    record "FAIL" "auditd: queue loss" "lost=${lost} (>100 events dropped)"
+  elif [[ "${lost:-}" =~ ^[0-9]+$ ]]; then
+    record "INFO" "auditd: queue loss" "lost=${lost} (minor — below threshold)"
+  else
+    record "INFO" "auditd: queue loss" "unable to parse 'lost' from auditctl -s"
+  fi
+}
+
 setup() {
   PASS_COUNT=0
   FAIL_COUNT=0
@@ -493,4 +509,50 @@ setup() {
 
 @test "coolify_binding_check: documents why self-connect cannot validate public exposure" {
   grep -q "cannot validate public exposure" "${VALIDATE_SCRIPT}"
+}
+
+# ── auditd queue-loss branch logic ────────────────────────────────────────────
+
+@test "auditd queue-loss: lost=0 records PASS" {
+  _auditd_queue_loss_record "0"
+  [ "${PASS_COUNT}" -eq 1 ]
+  [ "${FAIL_COUNT}" -eq 0 ]
+  [ "${INFO_COUNT}" -eq 0 ]
+}
+
+@test "auditd queue-loss: lost=50 records INFO (minor, below threshold)" {
+  _auditd_queue_loss_record "50"
+  [ "${PASS_COUNT}" -eq 0 ]
+  [ "${FAIL_COUNT}" -eq 0 ]
+  [ "${INFO_COUNT}" -eq 1 ]
+  run record "INFO" "auditd: queue loss" "lost=50 (minor — below threshold)"
+  assert_output --partial "minor"
+}
+
+@test "auditd queue-loss: lost=200 records FAIL (above threshold)" {
+  _auditd_queue_loss_record "200"
+  [ "${PASS_COUNT}" -eq 0 ]
+  [ "${FAIL_COUNT}" -eq 1 ]
+  [ "${INFO_COUNT}" -eq 0 ]
+}
+
+@test "auditd queue-loss: lost=unset records INFO (unable to parse)" {
+  _auditd_queue_loss_record
+  [ "${PASS_COUNT}" -eq 0 ]
+  [ "${FAIL_COUNT}" -eq 0 ]
+  [ "${INFO_COUNT}" -eq 1 ]
+}
+
+@test "auditd queue-loss: lost=100 records INFO (at boundary, not above)" {
+  _auditd_queue_loss_record "100"
+  [ "${PASS_COUNT}" -eq 0 ]
+  [ "${FAIL_COUNT}" -eq 0 ]
+  [ "${INFO_COUNT}" -eq 1 ]
+}
+
+@test "auditd queue-loss: lost=101 records FAIL (just above threshold)" {
+  _auditd_queue_loss_record "101"
+  [ "${PASS_COUNT}" -eq 0 ]
+  [ "${FAIL_COUNT}" -eq 1 ]
+  [ "${INFO_COUNT}" -eq 0 ]
 }

@@ -1451,3 +1451,54 @@ allowusers testadmin"
   pc_line="$(grep -n "run_post_checks" "${SCRIPT}" | grep -v "run_post_checks()\|#" | head -1 | cut -d: -f1)"
   (( ws_line < pc_line ))
 }
+
+# ── set_auditd_conf_kv() ──────────────────────────────────────────────────────
+
+@test "set_auditd_conf_kv: returns 0 immediately when conf file does not exist" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="false"
+    AUDITD_CONF_FILE="/tmp/no-such-auditd-conf-$$"
+    set_auditd_conf_kv "max_log_file_action" "keep_logs"
+  '
+  assert_success
+}
+
+@test "set_auditd_conf_kv: updates existing key in-place" {
+  local tmpfile
+  tmpfile="$(mktemp)"
+  printf 'max_log_file_action = rotate\n' > "${tmpfile}"
+
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="false"
+    AUDITD_CONF_FILE="'"${tmpfile}"'"
+    set_auditd_conf_kv "max_log_file_action" "keep_logs"
+  '
+  assert_success
+  # updated value present
+  grep -q "max_log_file_action = keep_logs" "${tmpfile}"
+  # old value gone
+  ! grep -q "rotate" "${tmpfile}"
+
+  rm -f "${tmpfile}"
+}
+
+@test "set_auditd_conf_kv: appends key when absent" {
+  local tmpfile
+  tmpfile="$(mktemp)"
+  printf 'space_left = 100\n' > "${tmpfile}"
+
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="false"
+    AUDITD_CONF_FILE="'"${tmpfile}"'"
+    set_auditd_conf_kv "max_log_file_action" "keep_logs"
+  '
+  assert_success
+  grep -q "max_log_file_action = keep_logs" "${tmpfile}"
+  # pre-existing key untouched
+  grep -q "space_left = 100" "${tmpfile}"
+
+  rm -f "${tmpfile}"
+}
