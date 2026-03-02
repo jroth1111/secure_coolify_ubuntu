@@ -379,7 +379,7 @@ setup() {
 }
 
 @test "docker_trust_boundary_check validates docker.sock world-writable risk" {
-  grep -q "docker-trust: socket not world-writable" "${VALIDATE_SCRIPT}"
+  grep -q "docker-trust: socket world-writable check" "${VALIDATE_SCRIPT}"
 }
 
 @test "docker_trust_boundary_check checks admin docker group membership" {
