@@ -250,6 +250,22 @@ setup() {
   grep -q '\[pubkeyauthentication\]="yes"' "${VALIDATE_SCRIPT}"
 }
 
+@test "ssh_check enforces operator-mode Ciphers policy" {
+  grep -q "ssh: Ciphers policy uses operator mode" "${VALIDATE_SCRIPT}"
+}
+
+@test "ssh_check enforces operator-mode MACs policy" {
+  grep -q "ssh: MACs policy uses operator mode" "${VALIDATE_SCRIPT}"
+}
+
+@test "ssh_check enforces operator-mode KEX policy" {
+  grep -q "ssh: KexAlgorithms policy uses operator mode" "${VALIDATE_SCRIPT}"
+}
+
+@test "ssh_check enforces operator-mode hostkey policy" {
+  grep -q "ssh: HostKeyAlgorithms policy uses operator mode" "${VALIDATE_SCRIPT}"
+}
+
 # ── validate_hardening.sh sysctl check expectations ────────────────────────────
 
 @test "sysctl_check expects tcp_syncookies=1" {

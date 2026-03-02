@@ -192,6 +192,30 @@ ssh_check() {
     else
       record "FAIL" "ssh: Match Address block" "missing in ${ssh_dropin}"
     fi
+
+    if grep -q '^Ciphers \^' "${ssh_dropin}"; then
+      record "PASS" "ssh: Ciphers policy uses operator mode"
+    else
+      record "FAIL" "ssh: Ciphers policy mode" "expected '^' operator to preserve OpenSSH defaults"
+    fi
+
+    if grep -q '^MACs \^' "${ssh_dropin}"; then
+      record "PASS" "ssh: MACs policy uses operator mode"
+    else
+      record "FAIL" "ssh: MACs policy mode" "expected '^' operator to preserve OpenSSH defaults"
+    fi
+
+    if grep -q '^KexAlgorithms \^' "${ssh_dropin}"; then
+      record "PASS" "ssh: KexAlgorithms policy uses operator mode"
+    else
+      record "FAIL" "ssh: KexAlgorithms policy mode" "expected '^' operator to preserve OpenSSH defaults"
+    fi
+
+    if grep -q '^HostKeyAlgorithms \^' "${ssh_dropin}"; then
+      record "PASS" "ssh: HostKeyAlgorithms policy uses operator mode"
+    else
+      record "FAIL" "ssh: HostKeyAlgorithms policy mode" "expected '^' operator to preserve OpenSSH defaults"
+    fi
   else
     record "FAIL" "ssh: Match Address block" "${ssh_dropin} not found"
   fi
