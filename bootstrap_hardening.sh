@@ -1377,8 +1377,15 @@ DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
 configure_docker_daemon() {
   # Required settings for hardening
   # Note: log-driver uses json-file (same as Coolify) for compatibility.
-  # Hardening owns: log-driver, log-opts, live-restore. Coolify may add: default-address-pools.
-  local required_settings='{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"},"live-restore":true}'
+  # Hardening owns: log-driver, log-opts, live-restore, default-ipc-mode,
+  #   storage-driver, default-ulimits. Coolify may add: default-address-pools.
+  #
+  # Intentionally NOT added (verified against 344 Coolify service templates):
+  #   no-new-privileges  — breaks Glances, Home Assistant, Forgejo DinD
+  #   userns-remap       — breaks volume ownership + Docker socket mounting
+  #   icc: false          — breaks inter-container networking (app→PostgreSQL→Redis)
+  #   userland-proxy: false — risky for user service deployments
+  local required_settings='{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"},"live-restore":true,"default-ipc-mode":"private","storage-driver":"overlay2","default-ulimits":{"nofile":{"Name":"nofile","Hard":65536,"Soft":65536},"nproc":{"Name":"nproc","Hard":8192,"Soft":4096}}}'
 
   if [[ "${DOCKER_PRESENT}" != "true" ]]; then
     log "Docker not present; skipping daemon.json creation (will be needed post-install)."
@@ -1431,7 +1438,8 @@ configure_docker_daemon() {
 
   # File doesn't exist - create it
   # Note: log-driver uses json-file (same as Coolify) for compatibility.
-  # Hardening owns: log-driver, log-opts, live-restore. Coolify may add: default-address-pools.
+  # Hardening owns: log-driver, log-opts, live-restore, default-ipc-mode,
+  #   storage-driver, default-ulimits. Coolify may add: default-address-pools.
   write_file "${DOCKER_DAEMON_JSON}" "0644" "root" "root" <<'EOF'
 {
   "log-driver": "json-file",
@@ -1439,11 +1447,17 @@ configure_docker_daemon() {
     "max-size": "10m",
     "max-file": "3"
   },
-  "live-restore": true
+  "live-restore": true,
+  "default-ipc-mode": "private",
+  "storage-driver": "overlay2",
+  "default-ulimits": {
+    "nofile": { "Name": "nofile", "Hard": 65536, "Soft": 65536 },
+    "nproc": { "Name": "nproc", "Hard": 8192, "Soft": 4096 }
+  }
 }
 EOF
 
-  log "Docker daemon.json written with log rotation (json-file driver, 10m x 3) and live-restore."
+  log "Docker daemon.json written with log rotation, live-restore, IPC isolation, overlay2, and ulimits."
 }
 
 configure_journald() {
@@ -1708,6 +1722,9 @@ run_post_checks() {
   if [[ "${DOCKER_PRESENT}" == "true" && -f "${DOCKER_DAEMON_JSON}" ]]; then
     grep -q '"log-driver"' "${DOCKER_DAEMON_JSON}" || warn "Post-check: Docker daemon.json exists but log-driver not configured."
     grep -q '"live-restore"' "${DOCKER_DAEMON_JSON}" || warn "Post-check: Docker daemon.json exists but live-restore not configured."
+    grep -q '"default-ipc-mode"' "${DOCKER_DAEMON_JSON}" || warn "Post-check: Docker daemon.json exists but default-ipc-mode not configured."
+    grep -q '"storage-driver"' "${DOCKER_DAEMON_JSON}" || warn "Post-check: Docker daemon.json exists but storage-driver not configured."
+    grep -q '"default-ulimits"' "${DOCKER_DAEMON_JSON}" || warn "Post-check: Docker daemon.json exists but default-ulimits not configured."
   fi
 
   grep -q "^Storage=persistent$" "${JOURNALD_DROPIN_FILE}" || die "Post-check failed: journald persistence drop-in missing."

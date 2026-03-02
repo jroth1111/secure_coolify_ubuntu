@@ -786,7 +786,8 @@ admin_sudo_check() {
 }
 
 # ── Docker daemon.json ──
-# Hardening owns: log-driver, log-opts, live-restore. Coolify may add: default-address-pools.
+# Hardening owns: log-driver, log-opts, live-restore, default-ipc-mode,
+#   storage-driver, default-ulimits. Coolify may add: default-address-pools.
 # Using json-file driver to match Coolify's expectation for compatibility.
 
 docker_daemon_check() {
@@ -822,6 +823,32 @@ docker_daemon_check() {
     record "PASS" "docker-daemon: live-restore configured"
   else
     record "FAIL" "docker-daemon: live-restore" "not set in daemon.json"
+  fi
+
+  # CIS 5.19: isolate container IPC namespaces
+  local ipc_mode
+  ipc_mode="$(jq -r '.["default-ipc-mode"] // ""' "${daemon_json}" 2>/dev/null || true)"
+  if [[ "${ipc_mode}" == "private" ]]; then
+    record "PASS" "docker-daemon: default-ipc-mode is private"
+  else
+    record "FAIL" "docker-daemon: default-ipc-mode" "expected 'private', got '${ipc_mode:-<unset>}'"
+  fi
+
+  # Make overlay2 explicit to prevent regression
+  local storage
+  storage="$(jq -r '.["storage-driver"] // ""' "${daemon_json}" 2>/dev/null || true)"
+  if [[ "${storage}" == "overlay2" ]]; then
+    record "PASS" "docker-daemon: storage-driver is overlay2"
+  else
+    record "FAIL" "docker-daemon: storage-driver" "expected 'overlay2', got '${storage:-<unset>}'"
+  fi
+
+  # Prevent fork bombs / fd exhaustion
+  if jq -e '.["default-ulimits"]["nofile"]' "${daemon_json}" >/dev/null 2>&1 \
+    && jq -e '.["default-ulimits"]["nproc"]' "${daemon_json}" >/dev/null 2>&1; then
+    record "PASS" "docker-daemon: default-ulimits (nofile+nproc) configured"
+  else
+    record "FAIL" "docker-daemon: default-ulimits" "nofile and/or nproc not set in daemon.json"
   fi
 
   # Verify the RUNNING daemon matches the config file — daemon.json changes only take

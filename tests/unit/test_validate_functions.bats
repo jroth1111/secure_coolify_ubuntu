@@ -354,6 +354,22 @@ setup() {
   grep -q 'live-restore' "${VALIDATE_SCRIPT}"
 }
 
+@test "docker_daemon_check validates default-ipc-mode" {
+  grep -q 'default-ipc-mode' "${VALIDATE_SCRIPT}"
+  grep -q 'private' "${VALIDATE_SCRIPT}"
+}
+
+@test "docker_daemon_check validates storage-driver" {
+  grep -q 'storage-driver' "${VALIDATE_SCRIPT}"
+  grep -q 'overlay2' "${VALIDATE_SCRIPT}"
+}
+
+@test "docker_daemon_check validates default-ulimits" {
+  grep -q 'default-ulimits' "${VALIDATE_SCRIPT}"
+  grep -q 'nofile' "${VALIDATE_SCRIPT}"
+  grep -q 'nproc' "${VALIDATE_SCRIPT}"
+}
+
 @test "docker_trust_boundary_check validates docker.sock world-writable risk" {
   grep -q "docker-trust: socket not world-writable" "${VALIDATE_SCRIPT}"
 }

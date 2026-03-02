@@ -1313,6 +1313,36 @@ allowusers testadmin"
   assert_output "0"
 }
 
+@test "configure_docker_daemon: required_settings contains default-ipc-mode" {
+  grep -q '"default-ipc-mode"' "${SCRIPT}"
+}
+
+@test "configure_docker_daemon: required_settings contains storage-driver" {
+  grep -q '"storage-driver"' "${SCRIPT}"
+}
+
+@test "configure_docker_daemon: required_settings contains default-ulimits" {
+  grep -q '"default-ulimits"' "${SCRIPT}"
+}
+
+@test "configure_docker_daemon: required_settings JSON is valid" {
+  local json
+  json="$(grep 'local required_settings=' "${SCRIPT}" | sed "s/.*='//;s/'$//")"
+  echo "${json}" | jq . >/dev/null 2>&1
+}
+
+@test "run_post_checks: asserts default-ipc-mode in daemon.json" {
+  grep -q '"default-ipc-mode".*DOCKER_DAEMON_JSON' "${SCRIPT}"
+}
+
+@test "run_post_checks: asserts storage-driver in daemon.json" {
+  grep -q '"storage-driver".*DOCKER_DAEMON_JSON' "${SCRIPT}"
+}
+
+@test "run_post_checks: asserts default-ulimits in daemon.json" {
+  grep -q '"default-ulimits".*DOCKER_DAEMON_JSON' "${SCRIPT}"
+}
+
 # ── journald JOURNAL_MAX_USE ──────────────────────────────────────────────────
 
 @test "bootstrap script declares JOURNAL_MAX_USE global" {
