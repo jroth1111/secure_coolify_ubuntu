@@ -150,6 +150,12 @@ ssh_check() {
     record "FAIL" "ssh: cipher restrictions" "chacha20-poly1305 not in ciphers"
   fi
 
+  if grep -q "sntrup761x25519-sha512@openssh.com" <<< "${effective}"; then
+    record "PASS" "ssh: post-quantum KEX algorithm present"
+  else
+    record "FAIL" "ssh: post-quantum KEX algorithm" "sntrup761x25519-sha512@openssh.com not in kexalgorithms"
+  fi
+
   if [[ -n "${ADMIN_USER}" ]]; then
     if grep -qE "^allowusers .*\\b${ADMIN_USER}\\b" <<< "${effective}"; then
       record "PASS" "ssh: AllowUsers includes ${ADMIN_USER}"
@@ -898,10 +904,10 @@ docker_trust_boundary_check() {
   if [[ -n "${mode}" ]]; then
     other="${mode: -1}"
     if [[ "${other}" =~ ^[0-7]$ ]] && (( (10#${other} & 2) != 0 )); then
-      record "FAIL" "docker-trust: socket not world-writable" \
+      record "FAIL" "docker-trust: socket world-writable check" \
         "${docker_sock} mode=${mode} allows world write"
     else
-      record "PASS" "docker-trust: socket not world-writable"
+      record "PASS" "docker-trust: socket world-writable check"
     fi
   else
     record "FAIL" "docker-trust: socket mode" "cannot read mode for ${docker_sock}"
