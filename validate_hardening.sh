@@ -75,6 +75,8 @@ TAILSCALE_IFACE="tailscale0"
 BIND_DASHBOARD_TO_TAILSCALE="false"
 TAILSCALE_IP=""
 TAILSCALE_CIDR="100.64.0.0/10"
+STRICT_DOCKER_SSH_CIDRS="false"
+DOCKER_SSH_CIDRS="10.0.0.0/8"
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
 
 if [[ -f "${STATE_FILE}" ]]; then
@@ -88,6 +90,8 @@ if [[ -f "${STATE_FILE}" ]]; then
   BIND_DASHBOARD_TO_TAILSCALE="${bind_dashboard_to_tailscale:-false}"
   TAILSCALE_IP="${tailscale_ip:-}"
   TAILSCALE_CIDR="${tailscale_cidr:-100.64.0.0/10}"
+  STRICT_DOCKER_SSH_CIDRS="${strict_docker_ssh_cidrs:-false}"
+  DOCKER_SSH_CIDRS="${docker_ssh_cidrs:-10.0.0.0/8}"
 fi
 
 is_true() {
@@ -95,6 +99,23 @@ is_true() {
     1|true|yes|y|on) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+regex_escape() {
+  printf '%s' "$1" | sed -e 's/[.[\*^$()+?{|]/\\&/g' -e 's/\//\\\//g'
+}
+
+load_docker_ssh_cidrs() {
+  local raw="${DOCKER_SSH_CIDRS:-10.0.0.0/8}"
+  local item
+  local -a cidrs=()
+
+  IFS=',' read -r -a cidrs <<< "${raw}"
+  for item in "${cidrs[@]}"; do
+    item="${item//[[:space:]]/}"
+    [[ -n "${item}" ]] || continue
+    printf '%s\n' "${item}"
+  done
 }
 
 # ── SSH effective config ──
@@ -136,7 +157,7 @@ ssh_check() {
     fi
   fi
 
-  # Verify Match Address block: root key-only login from localhost/Docker bridge (10.0.0.0/8)
+  # Verify Match Address block: root key-only login from localhost/Docker bridge CIDRs
   local match_local
   match_local="$(sshd -T -C addr=127.0.0.1,user=root,host=localhost,laddr=127.0.0.1 2>/dev/null)" || true
   if [[ -n "${match_local}" ]]; then
@@ -155,18 +176,23 @@ ssh_check() {
     fi
   fi
 
-  # Verify Docker bridge address (10.0.0.0/8) also gets the Match block
-  local match_docker
-  match_docker="$(sshd -T -C addr=10.0.1.5,user=root,host=10.0.1.5,laddr=10.0.1.1 2>/dev/null)" || true
-  if [[ -n "${match_docker}" ]]; then
-    if grep -qE "^permitrootlogin (prohibit-password|without-password)$" <<< "${match_docker}"; then
-      record "PASS" "ssh: Match Docker bridge root=prohibit-password"
+  local ssh_dropin match_line cidr
+  ssh_dropin="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
+  if [[ -f "${ssh_dropin}" ]]; then
+    match_line="$(grep -m1 '^Match Address ' "${ssh_dropin}" || true)"
+    if [[ -n "${match_line}" ]]; then
+      while IFS= read -r cidr; do
+        if grep -qE "(^|,|[[:space:]])$(regex_escape "${cidr}")($|,|[[:space:]])" <<< "${match_line}"; then
+          record "PASS" "ssh: Match includes Docker CIDR ${cidr}"
+        else
+          record "FAIL" "ssh: Match Docker CIDR ${cidr}" "missing from sshd Match Address block"
+        fi
+      done < <(load_docker_ssh_cidrs)
     else
-      local docker_root_val
-      docker_root_val="$(grep -m1 "^permitrootlogin " <<< "${match_docker}" | awk '{print $2}')"
-      record "FAIL" "ssh: Match Docker bridge root" \
-        "expected prohibit-password, got ${docker_root_val:-<empty>} — Coolify SSH will be denied"
+      record "FAIL" "ssh: Match Address block" "missing in ${ssh_dropin}"
     fi
+  else
+    record "FAIL" "ssh: Match Address block" "${ssh_dropin} not found"
   fi
 
   # Verify external addresses still deny root
@@ -210,12 +236,16 @@ ufw_check() {
     record "FAIL" "ufw: SSH on ${TAILSCALE_IFACE}" "rule missing"
   fi
 
-  # Coolify SSHes from its Docker container (10.0.0.0/8) to the host.
-  if grep -qE "${SSH_PORT}.*ALLOW.*10\.0\.0\.0/8" <<< "${ufw_out}"; then
-    record "PASS" "ufw: SSH from Docker bridge (10.0.0.0/8)"
-  else
-    record "FAIL" "ufw: SSH from Docker bridge" "10.0.0.0/8 → port ${SSH_PORT} rule missing — Coolify cannot reach host"
-  fi
+  # Coolify SSHes from its Docker bridge CIDRs to the host.
+  local cidr escaped_cidr
+  while IFS= read -r cidr; do
+    escaped_cidr="$(regex_escape "${cidr}")"
+    if grep -qE "${SSH_PORT}.*ALLOW.*${escaped_cidr}" <<< "${ufw_out}"; then
+      record "PASS" "ufw: SSH from Docker bridge (${cidr})"
+    else
+      record "FAIL" "ufw: SSH from Docker bridge (${cidr})" "${cidr} → port ${SSH_PORT} rule missing — Coolify cannot reach host"
+    fi
+  done < <(load_docker_ssh_cidrs)
 
   # Coolify dashboard (8000), Soketi (6001), terminal (6002) on Tailscale only.
   for port_label in "8000:dashboard" "6001:soketi" "6002:terminal"; do
@@ -985,7 +1015,7 @@ coolify_ssh_check() {
   # Functional test 2: SSH from INSIDE the coolify container to host.docker.internal.
   # This is the exact path Coolify uses for 'This Machine'. Catches:
   #   - host.docker.internal not resolving (host-gateway bug on Linux Docker)
-  #   - UFW blocking port 22 from Docker bridge subnet (10.0.0.0/8)
+  #   - UFW blocking port 22 from Docker bridge subnets
   #   - sshd Match block not covering the Docker bridge address range
   if command -v docker >/dev/null 2>&1 && docker inspect coolify >/dev/null 2>&1; then
     local container_keyfile
@@ -998,7 +1028,7 @@ coolify_ssh_check() {
       record "PASS" "coolify: container→host SSH via host.docker.internal"
     else
       record "FAIL" "coolify: container→host SSH via host.docker.internal" \
-        "SSH from coolify container failed — check host.docker.internal in /etc/hosts, UFW 10.0.0.0/8 rule, and sshd Match block"
+        "SSH from coolify container failed — check host.docker.internal in /etc/hosts, UFW Docker-bridge SSH rules, and sshd Match block"
     fi
   else
     record "INFO" "coolify: container→host SSH" "coolify container not running; skipped"

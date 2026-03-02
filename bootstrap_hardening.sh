@@ -43,11 +43,13 @@ UPGRADE_MAIL="${UPGRADE_MAIL:-}"
 BIND_DASHBOARD_TO_TAILSCALE="${BIND_DASHBOARD_TO_TAILSCALE:-false}"
 INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-false}"
 TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
+STRICT_DOCKER_SSH_CIDRS="${STRICT_DOCKER_SSH_CIDRS:-false}"
 
 OS_VERSION=""
 DOCKER_PRESENT="false"
 DOCKER_RULES_APPLIED="false"
 DOCKER_DAEMON_NEEDS_RESTART="false"
+declare -a DOCKER_SSH_CIDRS=()
 
 log() {
   printf '[%s] %s\n' "$(date -Iseconds)" "$*"
@@ -103,6 +105,7 @@ Optional:
   --enable-auto-reboot <bool>   Enable unattended-upgrades reboot (default: false)
   --auto-reboot-time <HH:MM>    Reboot time for unattended-upgrades (default: 03:30)
   --journal-retention <span>   Journal retention period (default: 3month)
+  --strict-docker-ssh-cidrs   Use discovered Docker bridge CIDRs for SSH/UFW (least-privilege)
   --bind-dashboard-to-tailscale Bind Coolify dashboard to Tailscale IP only (split-horizon)
   --install-tailscale           Install Tailscale if not present (requires --tailscale-auth-key or interactive)
   --tailscale-auth-key <key>    Tailscale auth key for non-interactive setup (use with --install-tailscale)
@@ -235,6 +238,10 @@ parse_args() {
         JOURNAL_RETENTION="$2"
         shift 2
         ;;
+      --strict-docker-ssh-cidrs)
+        STRICT_DOCKER_SSH_CIDRS="true"
+        shift
+        ;;
       --swap-size)
         require_value "$1" "${2:-}"
         SWAP_SIZE="$2"
@@ -317,6 +324,11 @@ validate_inputs() {
   local reboot_lower="${ENABLE_AUTO_REBOOT,,}"
   if [[ "${reboot_lower}" != "true" && "${reboot_lower}" != "false" && "${reboot_lower}" != "1" && "${reboot_lower}" != "0" && "${reboot_lower}" != "yes" && "${reboot_lower}" != "no" ]]; then
     die "ENABLE_AUTO_REBOOT must be true/false (got: ${ENABLE_AUTO_REBOOT})."
+  fi
+
+  local strict_cidrs_lower="${STRICT_DOCKER_SSH_CIDRS,,}"
+  if [[ "${strict_cidrs_lower}" != "true" && "${strict_cidrs_lower}" != "false" && "${strict_cidrs_lower}" != "1" && "${strict_cidrs_lower}" != "0" && "${strict_cidrs_lower}" != "yes" && "${strict_cidrs_lower}" != "no" ]]; then
+    die "STRICT_DOCKER_SSH_CIDRS must be true/false (got: ${STRICT_DOCKER_SSH_CIDRS})."
   fi
 
   [[ "${JOURNAL_RETENTION}" =~ ^[0-9]+(us(ec)?|ms(ec)?|s(ec(ond)?s?)?|m(in(ute)?s?)?|h(our)?s?|d(ay)?s?|w(eek)?s?|month?s?|y(ear)?s?)$ ]] \
@@ -1040,9 +1052,68 @@ reload_ssh_service() {
   return 1
 }
 
+add_docker_ssh_cidr() {
+  local cidr="$1"
+  local existing
+
+  [[ -n "${cidr}" ]] || return 0
+  # SSH/UFW rules here are IPv4-focused.
+  [[ "${cidr}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]+$ ]] || return 0
+
+  for existing in "${DOCKER_SSH_CIDRS[@]}"; do
+    [[ "${existing}" == "${cidr}" ]] && return 0
+  done
+  DOCKER_SSH_CIDRS+=("${cidr}")
+}
+
+discover_docker_ssh_cidrs() {
+  local cidr
+  DOCKER_SSH_CIDRS=()
+
+  # Discovery source 1: active Docker bridge networks.
+  if command -v docker >/dev/null 2>&1; then
+    while IFS= read -r cidr; do
+      add_docker_ssh_cidr "${cidr}"
+    done < <(
+      docker network ls --filter driver=bridge -q 2>/dev/null \
+        | xargs -r docker network inspect --format '{{range .IPAM.Config}}{{.Subnet}}{{"\n"}}{{end}}' 2>/dev/null \
+        | awk 'NF' \
+        | sort -u
+    )
+  fi
+
+  # Discovery source 2: configured Docker default-address-pools.
+  if [[ -f "${DOCKER_DAEMON_JSON}" ]] && command -v jq >/dev/null 2>&1; then
+    while IFS= read -r cidr; do
+      add_docker_ssh_cidr "${cidr}"
+    done < <(
+      jq -r '.["default-address-pools"][]?.base // empty' "${DOCKER_DAEMON_JSON}" 2>/dev/null \
+        | awk 'NF' \
+        | sort -u
+    )
+  fi
+
+  if is_true "${STRICT_DOCKER_SSH_CIDRS}"; then
+    if [[ ${#DOCKER_SSH_CIDRS[@]} -eq 0 ]]; then
+      warn "STRICT_DOCKER_SSH_CIDRS enabled but no Docker bridge CIDRs discovered; falling back to compatibility ranges."
+      DOCKER_SSH_CIDRS=(10.0.0.0/8 172.16.0.0/12)
+    fi
+  else
+    DOCKER_SSH_CIDRS=(10.0.0.0/8 172.16.0.0/12)
+  fi
+
+  log "Docker SSH CIDRs: ${DOCKER_SSH_CIDRS[*]}"
+}
+
 configure_ssh() {
   local backup=""
   local effective=""
+  local match_addresses="127.0.0.1,::1"
+  local cidr
+
+  for cidr in "${DOCKER_SSH_CIDRS[@]}"; do
+    match_addresses+=",${cidr}"
+  done
 
   if ! is_true "${DRY_RUN}" && [[ ! -d /run/sshd ]]; then
     install -d -m 0755 /run/sshd
@@ -1078,9 +1149,9 @@ HostKeyAlgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256
 Banner /etc/issue.net
 
 # Coolify connects to its own host as root via localhost / Docker bridge.
-# Allow key-only root login from loopback and Docker address pool (10.0.0.0/8
-# configured in daemon.json) and RFC 1918 172.16/12 bridges.
-Match Address 127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8
+# Compatibility mode uses broad RFC1918 ranges; strict mode uses discovered
+# Docker bridge CIDRs with safe fallback if discovery fails.
+Match Address ${match_addresses}
     PermitRootLogin prohibit-password
     AllowUsers ${ADMIN_USER} root
 EOF
@@ -1114,6 +1185,8 @@ EOF
 }
 
 configure_ufw() {
+  local cidr
+
   run ufw --force reset
   run ufw default deny incoming
   run ufw default allow outgoing
@@ -1121,11 +1194,11 @@ configure_ufw() {
 
   run ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port "${SSH_PORT}" comment "coolify-hardening-ssh-tailscale"
 
-  # Allow Coolify to SSH to the host from inside its Docker container.
-  # Docker uses 10.0.0.0/8 as address pool (set in daemon.json). The container
-  # connects to host.docker.internal (= Docker bridge gateway) on port 22 to manage
-  # "This Machine". Key-only auth; the sshd Match block above restricts login to root.
-  run ufw allow in from 10.0.0.0/8 to any port "${SSH_PORT}" comment "coolify-hardening-ssh-docker-bridge"
+  # Allow Coolify to SSH to the host from Docker bridge CIDRs.
+  # Compatibility mode uses broad ranges; strict mode uses discovered bridge CIDRs.
+  for cidr in "${DOCKER_SSH_CIDRS[@]}"; do
+    run ufw allow in from "${cidr}" to any port "${SSH_PORT}" comment "coolify-hardening-ssh-docker-bridge"
+  done
 
   # Allow Coolify dashboard, Soketi, and terminal on Tailscale interface only.
   # UFW default deny blocks external access; these rules make them reachable via VPN.
@@ -1589,10 +1662,13 @@ run_post_checks() {
 }
 
 write_state() {
+  local cidr_csv=""
   if is_true "${DRY_RUN}"; then
     log "DRY-RUN: write ${STATE_FILE}"
     return 0
   fi
+
+  cidr_csv="$(IFS=,; echo "${DOCKER_SSH_CIDRS[*]}")"
 
   install -d -m 0750 "${STATE_DIR}"
   cat > "${STATE_FILE}" <<EOF
@@ -1605,6 +1681,8 @@ tailscale_cidr=${TAILSCALE_CIDR}
 tunnel_mode=${TUNNEL_MODE}
 swap_size=${SWAP_SIZE}
 journal_retention=${JOURNAL_RETENTION}
+strict_docker_ssh_cidrs=${STRICT_DOCKER_SSH_CIDRS}
+docker_ssh_cidrs=${cidr_csv}
 bind_dashboard_to_tailscale=${BIND_DASHBOARD_TO_TAILSCALE}
 install_tailscale=${INSTALL_TAILSCALE}
 EOF
@@ -1635,6 +1713,7 @@ generate_report() {
   local sysctl_syncookies
   local fail2ban_active
   local banner_present
+  local docker_ssh_cidrs_csv
 
   tailscale_iface_present="$(bool_cmd ip link show "${TAILSCALE_IFACE}")"
   ufw_active="$(ufw status | grep -q "^Status: active$" && echo "true" || echo "false")"
@@ -1656,6 +1735,7 @@ generate_report() {
   swap_active="$(swapon --show --noheadings 2>/dev/null | grep -q . && echo "true" || echo "false")"
   fail2ban_active="$(systemctl is-active --quiet fail2ban && echo "true" || echo "false")"
   banner_present="$([[ -f /etc/issue.net ]] && echo "true" || echo "false")"
+  docker_ssh_cidrs_csv="$(IFS=,; echo "${DOCKER_SSH_CIDRS[*]}")"
 
   # Dashboard UFW restriction check (UFW-based; security enforced by UFW not socket binding)
   local coolify_dashboard_bound="false"
@@ -1683,6 +1763,8 @@ generate_report() {
   "journal_retention": "${JOURNAL_RETENTION}",
   "auto_reboot_requested": $(is_true "${ENABLE_AUTO_REBOOT}" && echo true || echo false),
   "auto_reboot_time": "${AUTO_REBOOT_TIME}",
+  "strict_docker_ssh_cidrs": $(is_true "${STRICT_DOCKER_SSH_CIDRS}" && echo true || echo false),
+  "docker_ssh_cidrs": "${docker_ssh_cidrs_csv}",
   "bind_dashboard_to_tailscale": $(is_true "${BIND_DASHBOARD_TO_TAILSCALE}" && echo true || echo false),
   "install_tailscale": $(is_true "${INSTALL_TAILSCALE}" && echo true || echo false),
   "tailscale_ip": "${DETECTED_TAILSCALE_IP:-}",
@@ -1801,6 +1883,7 @@ main() {
   require_commands
   verify_tailscale_iface
   detect_docker
+  discover_docker_ssh_cidrs
 
   log "Configuring swap."
   configure_swap
