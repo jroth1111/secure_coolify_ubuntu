@@ -7,6 +7,7 @@ set -Eeuo pipefail
 
 STATE_FILE="/var/lib/bootstrap-hardening/state"
 JOURNALD_DROPIN="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
+AUDITD_CONF="/etc/audit/auditd.conf"
 JSON_MODE="false"
 HEALTH_CHECK_MODE="false"
 IS_CONTAINER="false"
@@ -517,6 +518,40 @@ auditd_check() {
     record "PASS" "auditd: sudoers rules loaded"
   else
     record "FAIL" "auditd: sudoers rules" "not loaded"
+  fi
+
+  if [[ -f "${AUDITD_CONF}" ]]; then
+    if grep -qE '^[[:space:]]*max_log_file_action[[:space:]]*=[[:space:]]*keep_logs' "${AUDITD_CONF}"; then
+      record "PASS" "auditd: max_log_file_action=keep_logs"
+    else
+      record "FAIL" "auditd: max_log_file_action" "expected keep_logs in ${AUDITD_CONF}"
+    fi
+
+    if grep -qE '^[[:space:]]*disk_full_action[[:space:]]*=[[:space:]]*suspend' "${AUDITD_CONF}" \
+      && grep -qE '^[[:space:]]*disk_error_action[[:space:]]*=[[:space:]]*suspend' "${AUDITD_CONF}"; then
+      record "PASS" "auditd: disk failure actions configured"
+    else
+      record "FAIL" "auditd: disk failure actions" "expected disk_full_action/disk_error_action=suspend"
+    fi
+  else
+    record "INFO" "auditd: policy config" "${AUDITD_CONF} not found"
+  fi
+
+  local audit_status lost backlog
+  audit_status="$(auditctl -s 2>/dev/null || true)"
+  if [[ -n "${audit_status}" ]]; then
+    lost="$(awk '/^lost[[:space:]]/ {print $2; exit}' <<< "${audit_status}")"
+    backlog="$(awk '/^backlog[[:space:]]/ {print $2; exit}' <<< "${audit_status}")"
+    if [[ "${lost:-0}" =~ ^[0-9]+$ ]] && [[ "${lost}" == "0" ]]; then
+      record "PASS" "auditd: queue loss (lost=0)"
+    elif [[ "${lost:-}" =~ ^[0-9]+$ ]]; then
+      record "FAIL" "auditd: queue loss" "lost=${lost} (events dropped)"
+    else
+      record "INFO" "auditd: queue loss" "unable to parse 'lost' from auditctl -s"
+    fi
+    [[ -n "${backlog}" ]] && record "INFO" "auditd: backlog" "backlog=${backlog}"
+  else
+    record "INFO" "auditd: queue status" "auditctl -s unavailable"
   fi
 }
 

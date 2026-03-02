@@ -12,6 +12,7 @@ STATE_FILE="${STATE_DIR}/state"
 SSH_DROPIN_FILE="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
 JOURNALD_DROPIN_FILE="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
 AUDIT_RULES_FILE="/etc/audit/rules.d/60-coolify-baseline.rules"
+AUDITD_CONF_FILE="/etc/audit/auditd.conf"
 DOCKER_USER_SCRIPT="/usr/local/sbin/docker-user-hardening.sh"
 DOCKER_USER_ENV_FILE="/etc/default/docker-user-hardening"
 DOCKER_USER_UNIT_FILE="/etc/systemd/system/docker-user-hardening.service"
@@ -1482,6 +1483,39 @@ EOF
   done
 }
 
+set_auditd_conf_kv() {
+  local key="$1"
+  local value="$2"
+
+  [[ -f "${AUDITD_CONF_FILE}" ]] || return 0
+
+  if grep -qE "^[[:space:]]*${key}[[:space:]]*=" "${AUDITD_CONF_FILE}"; then
+    run sed -i -E "s|^[[:space:]]*${key}[[:space:]]*=.*|${key} = ${value}|" "${AUDITD_CONF_FILE}"
+  else
+    if is_true "${DRY_RUN}"; then
+      log "DRY-RUN: append '${key} = ${value}' to ${AUDITD_CONF_FILE}"
+    else
+      printf '%s = %s\n' "${key}" "${value}" >> "${AUDITD_CONF_FILE}"
+    fi
+  fi
+}
+
+configure_auditd_policy() {
+  if [[ ! -f "${AUDITD_CONF_FILE}" ]]; then
+    warn "${AUDITD_CONF_FILE} not found; skipping auditd failure-policy tuning."
+    return 0
+  fi
+
+  # Preserve historical logs and avoid silent overwrite; pair with space thresholds.
+  set_auditd_conf_kv "max_log_file_action" "keep_logs"
+  set_auditd_conf_kv "space_left" "100"
+  set_auditd_conf_kv "space_left_action" "syslog"
+  set_auditd_conf_kv "admin_space_left" "50"
+  set_auditd_conf_kv "admin_space_left_action" "suspend"
+  set_auditd_conf_kv "disk_full_action" "suspend"
+  set_auditd_conf_kv "disk_error_action" "suspend"
+}
+
 configure_auditd() {
   local tmp
   tmp="$(mktemp)"
@@ -1498,6 +1532,8 @@ configure_auditd() {
 
   run systemctl enable --now auditd || warn "auditd could not be started (container/kernel limitation); rules file written."
   run augenrules --load
+  configure_auditd_policy
+  run systemctl restart auditd || warn "auditd restart failed after auditd.conf policy update."
 }
 
 configure_unattended_upgrades() {

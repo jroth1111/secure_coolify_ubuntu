@@ -203,6 +203,15 @@ setup() {
   grep -q "^auditd_check()" "${VALIDATE_SCRIPT}"
 }
 
+@test "auditd_check validates keep_logs policy" {
+  grep -q "max_log_file_action=keep_logs" "${VALIDATE_SCRIPT}"
+}
+
+@test "auditd_check inspects queue loss via auditctl -s" {
+  grep -q "auditctl -s" "${VALIDATE_SCRIPT}"
+  grep -q "lost=" "${VALIDATE_SCRIPT}"
+}
+
 @test "validate script contains journald_check function" {
   grep -q "^journald_check()" "${VALIDATE_SCRIPT}"
 }
