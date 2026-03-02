@@ -334,6 +334,16 @@ docker_user_check() {
     return
   fi
 
+  # Warn if Docker is using nftables backend (experimental in Docker 29+)
+  # DOCKER-USER chain behavior differs in nftables mode; iptables rules won't apply.
+  # See: https://docs.docker.com/engine/network/firewall-nftables/
+  if docker info 2>/dev/null | grep -qE 'iptables:\s*false|firewall:\s*nftables'; then
+    record "FAIL" "docker-user: backend" "Docker using nftables backend — DOCKER-USER iptables rules will NOT work"
+    return
+  else
+    record "PASS" "docker-user: iptables backend"
+  fi
+
   local rules
   rules="$(iptables -t filter -S DOCKER-USER 2>/dev/null)" || { record "FAIL" "docker-user: IPv4" "DOCKER-USER chain absent (Docker may need restart)"; return; }
 
@@ -544,6 +554,12 @@ auditd_check() {
     record "FAIL" "auditd: sudoers rules" "not loaded"
   fi
 
+  if grep -q "kernel-module" <<< "${rules}"; then
+    record "PASS" "auditd: kernel-module rules loaded"
+  else
+    record "FAIL" "auditd: kernel-module rules" "not loaded"
+  fi
+
   if [[ -f "${AUDITD_CONF}" ]]; then
     if grep -qE '^[[:space:]]*max_log_file_action[[:space:]]*=[[:space:]]*keep_logs' "${AUDITD_CONF}"; then
       record "PASS" "auditd: max_log_file_action=keep_logs"
@@ -583,9 +599,16 @@ auditd_check() {
 
 journald_check() {
   if [[ -f "${JOURNALD_DROPIN}" ]] && grep -q "^Storage=persistent$" "${JOURNALD_DROPIN}"; then
-    record "PASS" "journald: persistent storage"
+    record "PASS" "journald: persistent storage config"
   else
-    record "FAIL" "journald: persistent storage" "drop-in missing or not persistent"
+    record "FAIL" "journald: persistent storage config" "drop-in missing or not persistent"
+  fi
+
+  # Verify persistent storage directory exists (journald creates /var/log/journal when Storage=persistent)
+  if [[ -d /var/log/journal ]]; then
+    record "PASS" "journald: /var/log/journal directory exists"
+  else
+    record "FAIL" "journald: /var/log/journal" "directory missing — persistent storage not active"
   fi
 
   if [[ -f "${JOURNALD_DROPIN}" ]] && grep -q "^SystemKeepFree=500M$" "${JOURNALD_DROPIN}"; then
@@ -1053,6 +1076,18 @@ unattended_upgrades_check() {
       record "PASS" "auto-updates: ${timer} active"
     else
       record "FAIL" "auto-updates: ${timer}" "timer not active — unattended-upgrades will not run"
+    fi
+  done
+
+  # Verify apt timers have Persistent=false to prevent boot-time catch-up blocking package ops.
+  # See: https://documentation.ubuntu.com/server/how-to/software/automatic-updates/
+  for timer in apt-daily.timer apt-daily-upgrade.timer; do
+    local override_file="/etc/systemd/system/${timer}.d/override.conf"
+    if [[ -f "${override_file}" ]] && grep -q "Persistent=false" "${override_file}"; then
+      record "PASS" "auto-updates: ${timer} Persistent=false"
+    else
+      record "FAIL" "auto-updates: ${timer} Persistent" \
+        "override missing — boot-time catch-up may block package operations"
     fi
   done
 }

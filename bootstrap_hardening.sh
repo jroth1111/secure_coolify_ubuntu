@@ -1334,6 +1334,14 @@ detect_docker() {
   if command -v docker >/dev/null 2>&1; then
     DOCKER_PRESENT="true"
     log "Docker detected."
+
+    # Warn if Docker is using nftables backend (experimental in Docker 29+)
+    # DOCKER-USER chain behavior differs in nftables mode; iptables rules won't apply.
+    # See: https://docs.docker.com/engine/network/firewall-nftables/
+    if docker info 2>/dev/null | grep -qE 'iptables:\s*false|firewall:\s*nftables'; then
+      warn "Docker appears to be using nftables backend (experimental). DOCKER-USER iptables rules will NOT work."
+      warn "For nftables backend, firewall policy must be implemented via separate nftables chains."
+    fi
   else
     log "Docker not detected."
   fi
@@ -1449,6 +1457,23 @@ MaxRetentionSec=${JOURNAL_RETENTION}
 EOF
   run systemctl restart systemd-journald
   run journalctl --flush
+
+  # Verify persistent storage is active (journald should create /var/log/journal)
+  if ! is_true "${DRY_RUN}"; then
+    local flush_check=0
+    local max_wait=10
+    while (( flush_check < max_wait )); do
+      if [[ -d /var/log/journal ]]; then
+        log "Journald persistent storage verified (/var/log/journal exists)."
+        break
+      fi
+      sleep 1
+      ((++flush_check))
+    done
+    if (( flush_check >= max_wait )) && [[ ! -d /var/log/journal ]]; then
+      warn "Journald persistent storage directory /var/log/journal not found after ${max_wait}s. Verify with: journalctl --verify"
+    fi
+  fi
 }
 
 build_audit_rules() {
@@ -1467,6 +1492,11 @@ build_audit_rules() {
 -a always,exit -F arch=b32 -S sethostname,setdomainname -k system-locale
 -w /etc/sudoers -p wa -k sudoers-change
 -w /etc/sudoers.d/ -p wa -k sudoers-change
+# Kernel module loading (important for container hosts)
+-w /etc/modules -p wa -k kernel-module
+-w /etc/modprobe.d/ -p wa -k kernel-module
+-a always,exit -F arch=b64 -S init_module,finit_module,delete_module -F auid>=1000 -F auid!=unset -k kernel-module
+-a always,exit -F arch=b32 -S init_module,finit_module,delete_module -F auid>=1000 -F auid!=unset -k kernel-module
 EOF
 
   local bin
@@ -1569,6 +1599,26 @@ fi)
 EOF
 
   run systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
+
+  # Set Persistent=false to prevent boot-time catch-up blocking other package operations
+  # See: https://documentation.ubuntu.com/server/how-to/software/automatic-updates/
+  if ! is_true "${DRY_RUN}"; then
+    mkdir -p /etc/systemd/system/apt-daily.timer.d
+    cat > /etc/systemd/system/apt-daily.timer.d/override.conf <<'EOF'
+[Timer]
+Persistent=false
+EOF
+    mkdir -p /etc/systemd/system/apt-daily-upgrade.timer.d
+    cat > /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf <<'EOF'
+[Timer]
+Persistent=false
+EOF
+    systemctl daemon-reload
+    log "Configured apt timers with Persistent=false to prevent boot-time catch-up."
+  else
+    log "DRY-RUN: would configure apt timers with Persistent=false"
+  fi
+
   if ! is_true "${DRY_RUN}"; then
     unattended-upgrade --dry-run --debug >/tmp/unattended-upgrade-dryrun.log 2>&1 || warn "unattended-upgrade dry-run returned non-zero; see /tmp/unattended-upgrade-dryrun.log"
   fi
