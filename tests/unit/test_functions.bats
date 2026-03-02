@@ -696,16 +696,27 @@ allowusers testadmin"
 
 # ── build_audit_rules() ─────────────────────────────────────────────────────
 
-@test "build_audit_rules: includes identity watch" {
+@test "build_audit_rules: includes identity watch (syscall-form)" {
   run build_audit_rules
   assert_success
-  assert_output --partial "-w /etc/passwd -p wa -k identity"
+  assert_output --partial "-F path=/etc/passwd -F perm=wa -k identity"
 }
 
-@test "build_audit_rules: includes sudoers watch" {
+@test "build_audit_rules: includes sudoers watch (syscall-form)" {
   run build_audit_rules
   assert_success
-  assert_output --partial "-w /etc/sudoers -p wa -k sudoers-change"
+  assert_output --partial "-F path=/etc/sudoers -F perm=wa -k sudoers-change"
+}
+
+@test "build_audit_rules: no legacy -w /etc/ watches" {
+  run build_audit_rules
+  refute_output --regexp "^-w /etc/"
+}
+
+@test "build_audit_rules: includes user_commands execve rules" {
+  run build_audit_rules
+  assert_success
+  assert_output --partial "-S execve -F auid>=1000 -F auid!=unset -k user_commands"
 }
 
 # ── run() (via script_run after source_script) ────────────────────────────────
@@ -1130,14 +1141,14 @@ allowusers testadmin"
 
 # ── build_audit_rules() — completeness ────────────────────────────────────────
 
-@test "build_audit_rules: includes sshd_config watch" {
+@test "build_audit_rules: includes sshd_config watch (syscall-form)" {
   run build_audit_rules
-  assert_output --partial "-w /etc/ssh/sshd_config -p wa -k sshd-config"
+  assert_output --partial "-F path=/etc/ssh/sshd_config -F perm=wa -k sshd-config"
 }
 
-@test "build_audit_rules: includes sshd_config.d watch" {
+@test "build_audit_rules: includes sshd_config.d watch (syscall-form)" {
   run build_audit_rules
-  assert_output --partial "-w /etc/ssh/sshd_config.d/ -p wa -k sshd-config"
+  assert_output --partial "-F dir=/etc/ssh/sshd_config.d -F perm=wa -k sshd-config"
 }
 
 @test "build_audit_rules: includes time-change syscalls (b64)" {

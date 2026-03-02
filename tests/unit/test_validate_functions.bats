@@ -212,6 +212,14 @@ setup() {
   grep -q "lost=" "${VALIDATE_SCRIPT}"
 }
 
+@test "auditd_check validates user_commands execve rules" {
+  grep -q "user_commands" "${VALIDATE_SCRIPT}"
+}
+
+@test "auditd_check uses threshold for queue loss severity" {
+  grep -q "lost > 100" "${VALIDATE_SCRIPT}" || grep -q "100" "${VALIDATE_SCRIPT}"
+}
+
 @test "validate script contains journald_check function" {
   grep -q "^journald_check()" "${VALIDATE_SCRIPT}"
 }

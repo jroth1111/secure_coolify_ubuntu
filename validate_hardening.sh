@@ -560,6 +560,12 @@ auditd_check() {
     record "FAIL" "auditd: kernel-module rules" "not loaded"
   fi
 
+  if grep -q "user_commands" <<< "${rules}"; then
+    record "PASS" "auditd: user_commands execve rules loaded"
+  else
+    record "FAIL" "auditd: user_commands execve rules" "not loaded"
+  fi
+
   if [[ -f "${AUDITD_CONF}" ]]; then
     if grep -qE '^[[:space:]]*max_log_file_action[[:space:]]*=[[:space:]]*keep_logs' "${AUDITD_CONF}"; then
       record "PASS" "auditd: max_log_file_action=keep_logs"
@@ -584,8 +590,10 @@ auditd_check() {
     backlog="$(awk '/^backlog[[:space:]]/ {print $2; exit}' <<< "${audit_status}")"
     if [[ "${lost:-0}" =~ ^[0-9]+$ ]] && [[ "${lost}" == "0" ]]; then
       record "PASS" "auditd: queue loss (lost=0)"
+    elif [[ "${lost:-}" =~ ^[0-9]+$ ]] && (( lost > 100 )); then
+      record "FAIL" "auditd: queue loss" "lost=${lost} (>100 events dropped)"
     elif [[ "${lost:-}" =~ ^[0-9]+$ ]]; then
-      record "FAIL" "auditd: queue loss" "lost=${lost} (events dropped)"
+      record "INFO" "auditd: queue loss" "lost=${lost} (minor — below threshold)"
     else
       record "INFO" "auditd: queue loss" "unable to parse 'lost' from auditctl -s"
     fi

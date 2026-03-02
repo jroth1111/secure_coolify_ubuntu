@@ -1491,39 +1491,55 @@ EOF
 }
 
 build_audit_rules() {
+  # Modern syscall-form rules — higher performance than legacy -w syntax.
+  # File watches use: -a always,exit -F path=... -F perm=wa
+  # Dir  watches use: -a always,exit -F dir=...  -F perm=wa
+  # Exec watches use: -a always,exit -F path=... -F perm=x
   cat <<'EOF'
-# Managed by bootstrap hardening
--w /etc/passwd -p wa -k identity
--w /etc/shadow -p wa -k identity
--w /etc/group -p wa -k identity
--w /etc/gshadow -p wa -k identity
--w /etc/ssh/sshd_config -p wa -k sshd-config
--w /etc/ssh/sshd_config.d/ -p wa -k sshd-config
--w /etc/localtime -p wa -k time-change
+# Managed by bootstrap hardening (syscall-form)
+# Identity files
+-a always,exit -F path=/etc/passwd -F perm=wa -k identity
+-a always,exit -F path=/etc/shadow -F perm=wa -k identity
+-a always,exit -F path=/etc/group -F perm=wa -k identity
+-a always,exit -F path=/etc/gshadow -F perm=wa -k identity
+# SSH config
+-a always,exit -F path=/etc/ssh/sshd_config -F perm=wa -k sshd-config
+-a always,exit -F dir=/etc/ssh/sshd_config.d -F perm=wa -k sshd-config
+# Time
+-a always,exit -F path=/etc/localtime -F perm=wa -k time-change
 -a always,exit -F arch=b64 -S adjtimex,settimeofday,clock_settime -k time-change
 -a always,exit -F arch=b32 -S adjtimex,settimeofday,clock_settime -k time-change
+# Network / locale
 -a always,exit -F arch=b64 -S sethostname,setdomainname -k system-locale
 -a always,exit -F arch=b32 -S sethostname,setdomainname -k system-locale
--w /etc/sudoers -p wa -k sudoers-change
--w /etc/sudoers.d/ -p wa -k sudoers-change
+# Sudoers
+-a always,exit -F path=/etc/sudoers -F perm=wa -k sudoers-change
+-a always,exit -F dir=/etc/sudoers.d -F perm=wa -k sudoers-change
 # Kernel module loading (important for container hosts)
--w /etc/modules -p wa -k kernel-module
--w /etc/modprobe.d/ -p wa -k kernel-module
+-a always,exit -F path=/etc/modules -F perm=wa -k kernel-module
+-a always,exit -F dir=/etc/modprobe.d -F perm=wa -k kernel-module
 -a always,exit -F arch=b64 -S init_module,finit_module,delete_module -F auid>=1000 -F auid!=unset -k kernel-module
 -a always,exit -F arch=b32 -S init_module,finit_module,delete_module -F auid>=1000 -F auid!=unset -k kernel-module
+# User command tracking — forensic attribution via auid
+-a always,exit -F arch=b64 -S execve -F auid>=1000 -F auid!=unset -k user_commands
+-a always,exit -F arch=b32 -S execve -F auid>=1000 -F auid!=unset -k user_commands
 EOF
 
   local bin
   for bin in /usr/bin/docker /usr/bin/dockerd /usr/bin/containerd; do
     if [[ -e "${bin}" ]]; then
-      printf -- "-w %s -p x -k container-runtime\n" "${bin}"
+      printf -- "-a always,exit -F path=%s -F perm=x -k container-runtime\n" "${bin}"
     fi
   done
 
   local path
   for path in /var/run/docker.sock /etc/docker/; do
     if [[ -e "${path}" ]]; then
-      printf -- "-w %s -p wa -k docker-config\n" "${path}"
+      if [[ -d "${path}" ]]; then
+        printf -- "-a always,exit -F dir=%s -F perm=wa -k docker-config\n" "${path%/}"
+      else
+        printf -- "-a always,exit -F path=%s -F perm=wa -k docker-config\n" "${path}"
+      fi
     fi
   done
 }
@@ -1732,6 +1748,8 @@ run_post_checks() {
     || die "Post-check failed: audit rules not loaded."
   { auditctl -l 2>/dev/null || cat "${AUDIT_RULES_FILE}"; } | grep -q "sudoers-change" \
     || die "Post-check failed: sudoers audit rules not loaded."
+  { auditctl -l 2>/dev/null || cat "${AUDIT_RULES_FILE}"; } | grep -q "user_commands" \
+    || die "Post-check failed: execve user_commands audit rules not loaded."
   grep -q 'APT::Periodic::Unattended-Upgrade "1";' "${APT_AUTO_FILE}" || die "Post-check failed: unattended-upgrades periodic config missing."
 
   local syncookies ip_forward
