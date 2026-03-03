@@ -485,8 +485,11 @@ EOF
 
   run cat "${local_file}"
   assert_success
+  assert_output --partial 'origin=Ubuntu,codename=${distro_codename}-security,label=Ubuntu'
   assert_output --partial 'Unattended-Upgrade::Automatic-Reboot "false";'
   assert_output --partial 'Unattended-Upgrade::Automatic-Reboot-Time "04:45";'
+  refute_output --partial 'origin=Ubuntu,codename=${distro_codename}-updates,label=Ubuntu'
+  refute_output --partial 'origin=Docker,label=Docker CE,archive=${distro_codename},component=stable'
 
   run cat "${call_log}"
   assert_success
@@ -1215,6 +1218,12 @@ allowusers testadmin"
   assert_output --partial "05:00"
 }
 
+@test "parse_args: --update-profile sets value" {
+  run bash -c 'source "'"${SCRIPT}"'" && parse_args --update-profile balanced && echo "${UPDATE_PROFILE}"'
+  assert_success
+  assert_output --partial "balanced"
+}
+
 @test "parse_args: --help exits 0 and prints usage" {
   run bash -c 'source "'"${SCRIPT}"'" && parse_args --help'
   assert_success
@@ -1223,8 +1232,9 @@ allowusers testadmin"
 
 # ── configure_unattended_upgrades: Docker CE and MinimalSteps ─────────────────
 
-@test "configure_unattended_upgrades: includes Docker CE origin in script" {
+@test "configure_unattended_upgrades: supports balanced profile Docker CE origin" {
   grep -q '"origin=Docker,label=Docker CE"' "${SCRIPT}"
+  grep -q 'UPDATE_PROFILE="\${UPDATE_PROFILE:-security-only}"' "${SCRIPT}"
 }
 
 @test "configure_unattended_upgrades: includes MinimalSteps in script" {

@@ -349,10 +349,12 @@ teardown_file() {
 @test "upgrades: local policy has reboot and cleanup settings" {
   run cat "${APT_LOCAL_FILE}"
   assert_success
+  assert_output --partial 'origin=Ubuntu,codename=${distro_codename}-security,label=Ubuntu'
   assert_output --partial 'Unattended-Upgrade::Automatic-Reboot "false";'
   assert_output --partial 'Unattended-Upgrade::Automatic-Reboot-Time "03:30";'
   assert_output --partial 'Unattended-Upgrade::Remove-Unused-Dependencies "true";'
-  assert_output --partial 'origin=Docker,label=Docker CE,archive=${distro_codename},component=stable'
+  refute_output --partial 'origin=Ubuntu,codename=${distro_codename}-updates,label=Ubuntu'
+  refute_output --partial 'origin=Docker,label=Docker CE,archive=${distro_codename},component=stable'
 }
 
 # ── Banner ───────────────────────────────────────────────────────────────────
@@ -373,6 +375,7 @@ teardown_file() {
   assert_output --partial "ssh_port=${TEST_PORT}"
   assert_output --partial "wan_iface=${TEST_WAN}"
   assert_output --partial "tunnel_mode=false"
+  assert_output --partial "update_profile=security-only"
 }
 
 @test "state: JSON report written" {

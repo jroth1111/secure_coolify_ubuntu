@@ -466,7 +466,9 @@ setup() {
   grep -q "^unattended_upgrades_check()" "${VALIDATE_SCRIPT}"
 }
 
-@test "unattended_upgrades_check verifies Docker CE origin" {
+@test "unattended_upgrades_check supports profile-aware origins" {
+  grep -q "^infer_update_profile()" "${VALIDATE_SCRIPT}"
+  grep -q "profile is security-only" "${VALIDATE_SCRIPT}"
   grep -q "origin=Docker,label=Docker CE,archive=" "${VALIDATE_SCRIPT}"
   grep -q "component=stable" "${VALIDATE_SCRIPT}"
 }

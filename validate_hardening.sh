@@ -78,6 +78,7 @@ TAILSCALE_IP=""
 TAILSCALE_CIDR="100.64.0.0/10"
 STRICT_DOCKER_SSH_CIDRS="false"
 DOCKER_SSH_CIDRS="10.0.0.0/8,172.16.0.0/12"
+UPDATE_PROFILE=""
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
 
 if [[ -f "${STATE_FILE}" ]]; then
@@ -93,6 +94,7 @@ if [[ -f "${STATE_FILE}" ]]; then
   TAILSCALE_CIDR="${tailscale_cidr:-100.64.0.0/10}"
   STRICT_DOCKER_SSH_CIDRS="${strict_docker_ssh_cidrs:-false}"
   DOCKER_SSH_CIDRS="${docker_ssh_cidrs:-10.0.0.0/8,172.16.0.0/12}"
+  UPDATE_PROFILE="${update_profile:-}"
 fi
 
 is_true() {
@@ -117,6 +119,18 @@ load_docker_ssh_cidrs() {
     [[ -n "${item}" ]] || continue
     printf '%s\n' "${item}"
   done
+}
+
+infer_update_profile() {
+  local apt_local="$1"
+  local updates_origin='origin=Ubuntu,codename=${distro_codename}-updates,label=Ubuntu'
+  local docker_origin='origin=Docker,label=Docker CE,archive=${distro_codename},component=stable'
+
+  if grep -qF "${updates_origin}" "${apt_local}" || grep -qF "${docker_origin}" "${apt_local}"; then
+    printf 'balanced\n'
+  else
+    printf 'security-only\n'
+  fi
 }
 
 # ── SSH effective config ──
@@ -1086,23 +1100,61 @@ coolify_binding_check() {
 
 unattended_upgrades_check() {
   local apt_local="/etc/apt/apt.conf.d/52unattended-upgrades-local"
+  local security_origin='origin=Ubuntu,codename=${distro_codename}-security,label=Ubuntu'
+  local updates_origin='origin=Ubuntu,codename=${distro_codename}-updates,label=Ubuntu'
+  local docker_origin='origin=Docker,label=Docker CE,archive=${distro_codename},component=stable'
+  local profile="${UPDATE_PROFILE:-}"
+
   if [[ ! -f "${apt_local}" ]]; then
     record "FAIL" "auto-updates: local config" "not found at ${apt_local}"
     return
   fi
 
-  if grep -q "Ubuntu" "${apt_local}"; then
-    record "PASS" "auto-updates: Ubuntu origin covered"
-  else
-    record "FAIL" "auto-updates: Ubuntu origin" "not in origins pattern"
+  if [[ -z "${profile}" ]]; then
+    profile="$(infer_update_profile "${apt_local}")"
+    record "INFO" "auto-updates: profile" "state missing update_profile; inferred ${profile} from local config"
   fi
 
-  if grep -q "origin=Docker,label=Docker CE,archive=\${distro_codename},component=stable" "${apt_local}"; then
-    record "PASS" "auto-updates: Docker CE origin pinned to stable"
-  elif grep -q "origin=Docker,label=Docker CE" "${apt_local}"; then
-    record "FAIL" "auto-updates: Docker CE origin" "present but not pinned to archive/component=stable"
+  case "${profile}" in
+    security-only|balanced) ;;
+    *)
+      record "FAIL" "auto-updates: profile" "unsupported profile '${profile}'"
+      return
+      ;;
+  esac
+
+  if grep -qF "${security_origin}" "${apt_local}"; then
+    record "PASS" "auto-updates: Ubuntu security origin covered"
   else
-    record "FAIL" "auto-updates: Docker CE origin" "missing — Docker packages not auto-updated"
+    record "FAIL" "auto-updates: Ubuntu security origin" "not in origins pattern"
+  fi
+
+  if [[ "${profile}" == "balanced" ]]; then
+    if grep -qF "${updates_origin}" "${apt_local}"; then
+      record "PASS" "auto-updates: Ubuntu updates origin covered"
+    else
+      record "FAIL" "auto-updates: Ubuntu updates origin" "missing for balanced profile"
+    fi
+
+    if grep -qF "${docker_origin}" "${apt_local}"; then
+      record "PASS" "auto-updates: Docker CE origin pinned to stable"
+    elif grep -q "origin=Docker,label=Docker CE" "${apt_local}"; then
+      record "FAIL" "auto-updates: Docker CE origin" "present but not pinned to archive/component=stable"
+    else
+      record "FAIL" "auto-updates: Docker CE origin" "missing for balanced profile"
+    fi
+  else
+    if grep -qF "${updates_origin}" "${apt_local}"; then
+      record "FAIL" "auto-updates: Ubuntu updates origin" "present but profile is security-only"
+    else
+      record "PASS" "auto-updates: Ubuntu updates origin excluded (security-only)"
+    fi
+
+    if grep -qF "${docker_origin}" "${apt_local}" || grep -q "origin=Docker,label=Docker CE" "${apt_local}"; then
+      record "FAIL" "auto-updates: Docker CE origin" "present but profile is security-only"
+    else
+      record "PASS" "auto-updates: Docker CE origin excluded (security-only)"
+    fi
   fi
 
   if grep -q 'Unattended-Upgrade::Automatic-Reboot' "${apt_local}"; then

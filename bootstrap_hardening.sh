@@ -34,6 +34,7 @@ SSH_PORT="${SSH_PORT:-22}"
 WAN_IFACE="${WAN_IFACE:-}"
 ENABLE_AUTO_REBOOT="${ENABLE_AUTO_REBOOT:-false}"
 AUTO_REBOOT_TIME="${AUTO_REBOOT_TIME:-03:30}"
+UPDATE_PROFILE="${UPDATE_PROFILE:-security-only}"
 JOURNAL_RETENTION="${JOURNAL_RETENTION:-3month}"
 JOURNAL_MAX_USE="${JOURNAL_MAX_USE:-2G}"
 TUNNEL_MODE="${TUNNEL_MODE:-false}"
@@ -105,6 +106,7 @@ Optional:
   --swap-size <size>            Swap file size (default: 2G; format: <N>G or <N>M; 0 to skip)
   --enable-auto-reboot <bool>   Enable unattended-upgrades reboot (default: false)
   --auto-reboot-time <HH:MM>    Reboot time for unattended-upgrades (default: 03:30)
+  --update-profile <name>       unattended-upgrades profile: security-only|balanced (default: security-only)
   --journal-retention <span>   Journal retention period (default: 3month)
   --strict-docker-ssh-cidrs   Use discovered Docker bridge CIDRs for SSH/UFW (default)
   --compat-docker-ssh-cidrs   Use broad compatibility ranges (10.0.0.0/8, 172.16.0.0/12)
@@ -235,6 +237,11 @@ parse_args() {
         AUTO_REBOOT_TIME="$2"
         shift 2
         ;;
+      --update-profile)
+        require_value "$1" "${2:-}"
+        UPDATE_PROFILE="$2"
+        shift 2
+        ;;
       --journal-retention)
         require_value "$1" "${2:-}"
         JOURNAL_RETENTION="$2"
@@ -336,6 +343,11 @@ validate_inputs() {
   if [[ "${strict_cidrs_lower}" != "true" && "${strict_cidrs_lower}" != "false" && "${strict_cidrs_lower}" != "1" && "${strict_cidrs_lower}" != "0" && "${strict_cidrs_lower}" != "yes" && "${strict_cidrs_lower}" != "no" ]]; then
     die "STRICT_DOCKER_SSH_CIDRS must be true/false (got: ${STRICT_DOCKER_SSH_CIDRS})."
   fi
+
+  case "${UPDATE_PROFILE}" in
+    security-only|balanced) ;;
+    *) die "UPDATE_PROFILE must be one of: security-only, balanced (got: ${UPDATE_PROFILE})." ;;
+  esac
 
   [[ "${JOURNAL_RETENTION}" =~ ^[0-9]+(us(ec)?|ms(ec)?|s(ec(ond)?s?)?|m(in(ute)?s?)?|h(our)?s?|d(ay)?s?|w(eek)?s?|month?s?|y(ear)?s?)$ ]] \
     || die "JOURNAL_RETENTION must be a valid systemd time span (e.g. 3month, 4w, 90d)."
@@ -1620,6 +1632,8 @@ configure_unattended_upgrades() {
     reboot_bool="true"
   fi
 
+  log "Configuring unattended-upgrades profile: ${UPDATE_PROFILE}"
+
   write_file "${APT_AUTO_FILE}" "0644" "root" "root" <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Download-Upgradeable-Packages "1";
@@ -1629,9 +1643,20 @@ EOF
 
   write_file "${APT_LOCAL_FILE}" "0644" "root" "root" <<EOF
 Unattended-Upgrade::Origins-Pattern {
-    "origin=Ubuntu,codename=\${distro_codename}-security,label=Ubuntu";
-    "origin=Ubuntu,codename=\${distro_codename}-updates,label=Ubuntu";
-    "origin=Docker,label=Docker CE,archive=\${distro_codename},component=stable";
+$(case "${UPDATE_PROFILE}" in
+  security-only)
+    cat <<'PROFILEEOF'
+    "origin=Ubuntu,codename=${distro_codename}-security,label=Ubuntu";
+PROFILEEOF
+    ;;
+  balanced)
+    cat <<'PROFILEEOF'
+    "origin=Ubuntu,codename=${distro_codename}-security,label=Ubuntu";
+    "origin=Ubuntu,codename=${distro_codename}-updates,label=Ubuntu";
+    "origin=Docker,label=Docker CE,archive=${distro_codename},component=stable";
+PROFILEEOF
+    ;;
+esac)
 };
 Unattended-Upgrade::MinimalSteps "true";
 Unattended-Upgrade::Automatic-Reboot "${reboot_bool}";
@@ -1844,6 +1869,7 @@ tailscale_cidr=${TAILSCALE_CIDR}
 tunnel_mode=${TUNNEL_MODE}
 swap_size=${SWAP_SIZE}
 journal_retention=${JOURNAL_RETENTION}
+update_profile=${UPDATE_PROFILE}
 strict_docker_ssh_cidrs=${STRICT_DOCKER_SSH_CIDRS}
 docker_ssh_cidrs=${cidr_csv}
 bind_dashboard_to_tailscale=${BIND_DASHBOARD_TO_TAILSCALE}
@@ -1942,6 +1968,7 @@ generate_report() {
   "tunnel_mode": $(is_true "${TUNNEL_MODE}" && echo true || echo false),
   "swap_size": "${SWAP_SIZE:-2G}",
   "journal_retention": "${JOURNAL_RETENTION}",
+  "update_profile": "${UPDATE_PROFILE}",
   "auto_reboot_requested": $(is_true "${ENABLE_AUTO_REBOOT}" && echo true || echo false),
   "auto_reboot_time": "${AUTO_REBOOT_TIME}",
   "strict_docker_ssh_cidrs": $(is_true "${STRICT_DOCKER_SSH_CIDRS}" && echo true || echo false),
