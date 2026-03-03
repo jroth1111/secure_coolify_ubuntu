@@ -1524,3 +1524,13 @@ allowusers testadmin"
 
   rm -f "${tmpfile}"
 }
+
+# ── IPv6 DOCKER-USER bridge RETURN rules ──────────────────────────────────────
+
+@test "bootstrap: IPv6 DOCKER-USER includes docker0 bridge RETURN rule" {
+  grep -q "coolify-hardening-bridge-docker06" "${SCRIPT}"
+}
+
+@test "bootstrap: IPv6 DOCKER-USER includes br+ bridge RETURN rule" {
+  grep -q "coolify-hardening-bridge-user6" "${SCRIPT}"
+}

@@ -1322,6 +1322,8 @@ if command -v ip6tables >/dev/null 2>&1; then
 
   ipt6 -t filter -A DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment "coolify-hardening-estab6" -j RETURN
   ipt6 -t filter -A DOCKER-USER -i "${TAILSCALE_IFACE}" -m comment --comment "coolify-hardening-tailscale6" -j ACCEPT
+  ipt6 -t filter -A DOCKER-USER -i docker0 -m comment --comment "coolify-hardening-bridge-docker06" -j RETURN
+  ipt6 -t filter -A DOCKER-USER -i "br+" -m comment --comment "coolify-hardening-bridge-user6" -j RETURN
   if ! is_true "${TUNNEL_MODE}"; then
     ipt6 -t filter -A DOCKER-USER -i "${WAN_IFACE}" -p tcp -m multiport --dports 80,443 -m comment --comment "coolify-hardening-wan-web6" -j ACCEPT
   fi
