@@ -23,6 +23,9 @@ FAIL2BAN_JAIL_FILE="/etc/fail2ban/jail.d/coolify-hardening.local"
 COOLIFY_BINDING_GUARD_SCRIPT="/usr/local/sbin/coolify-binding-guard.sh"
 COOLIFY_BINDING_GUARD_SERVICE="/etc/systemd/system/coolify-binding-guard.service"
 COOLIFY_BINDING_GUARD_TIMER="/etc/systemd/system/coolify-binding-guard.timer"
+DOCKER_SSH_CIDR_SYNC_SCRIPT="/usr/local/sbin/docker-ssh-cidr-sync.sh"
+DOCKER_SSH_CIDR_SYNC_SERVICE="/etc/systemd/system/docker-ssh-cidr-sync.service"
+DOCKER_SSH_CIDR_SYNC_TIMER="/etc/systemd/system/docker-ssh-cidr-sync.timer"
 
 TAILSCALE_IFACE="tailscale0"
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
@@ -47,6 +50,8 @@ INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-false}"
 TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
 TAILSCALE_DIRECT_WAN="${TAILSCALE_DIRECT_WAN:-false}"
 STRICT_DOCKER_SSH_CIDRS="${STRICT_DOCKER_SSH_CIDRS:-true}"
+DOCKER_NPROC_HARD="${DOCKER_NPROC_HARD:-8192}"
+DOCKER_NPROC_SOFT="${DOCKER_NPROC_SOFT:-4096}"
 
 OS_VERSION=""
 DOCKER_PRESENT="false"
@@ -111,6 +116,8 @@ Optional:
   --journal-retention <span>   Journal retention period (default: 3month)
   --strict-docker-ssh-cidrs   Use discovered Docker bridge CIDRs for SSH/UFW (default)
   --compat-docker-ssh-cidrs   Use broad compatibility ranges (10.0.0.0/8, 172.16.0.0/12)
+  --docker-nproc-hard <num>   Docker default nproc hard limit (default: 8192)
+  --docker-nproc-soft <num>   Docker default nproc soft limit (default: 4096)
   --bind-dashboard-to-tailscale Bind Coolify dashboard to Tailscale IP only (split-horizon)
   --install-tailscale           Install Tailscale if not present (requires --tailscale-auth-key or interactive)
   --tailscale-auth-key <key>    Tailscale auth key for non-interactive setup (use with --install-tailscale)
@@ -257,6 +264,16 @@ parse_args() {
         STRICT_DOCKER_SSH_CIDRS="false"
         shift
         ;;
+      --docker-nproc-hard)
+        require_value "$1" "${2:-}"
+        DOCKER_NPROC_HARD="$2"
+        shift 2
+        ;;
+      --docker-nproc-soft)
+        require_value "$1" "${2:-}"
+        DOCKER_NPROC_SOFT="$2"
+        shift 2
+        ;;
       --swap-size)
         require_value "$1" "${2:-}"
         SWAP_SIZE="$2"
@@ -353,6 +370,10 @@ validate_inputs() {
   if [[ "${strict_cidrs_lower}" != "true" && "${strict_cidrs_lower}" != "false" && "${strict_cidrs_lower}" != "1" && "${strict_cidrs_lower}" != "0" && "${strict_cidrs_lower}" != "yes" && "${strict_cidrs_lower}" != "no" ]]; then
     die "STRICT_DOCKER_SSH_CIDRS must be true/false (got: ${STRICT_DOCKER_SSH_CIDRS})."
   fi
+
+  [[ "${DOCKER_NPROC_HARD}" =~ ^[1-9][0-9]*$ ]] || die "DOCKER_NPROC_HARD must be a positive integer."
+  [[ "${DOCKER_NPROC_SOFT}" =~ ^[1-9][0-9]*$ ]] || die "DOCKER_NPROC_SOFT must be a positive integer."
+  (( DOCKER_NPROC_SOFT <= DOCKER_NPROC_HARD )) || die "DOCKER_NPROC_SOFT must be <= DOCKER_NPROC_HARD."
 
   local tailscale_direct_wan_lower="${TAILSCALE_DIRECT_WAN,,}"
   if [[ "${tailscale_direct_wan_lower}" != "true" && "${tailscale_direct_wan_lower}" != "false" && "${tailscale_direct_wan_lower}" != "1" && "${tailscale_direct_wan_lower}" != "0" && "${tailscale_direct_wan_lower}" != "yes" && "${tailscale_direct_wan_lower}" != "no" ]]; then
@@ -1433,7 +1454,21 @@ configure_docker_daemon() {
   #   userns-remap       — breaks volume ownership + Docker socket mounting
   #   icc: false          — breaks inter-container networking (app→PostgreSQL→Redis)
   #   userland-proxy: false — risky for user service deployments
-  local required_settings='{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"},"live-restore":true,"default-ipc-mode":"private","storage-driver":"overlay2","default-ulimits":{"nofile":{"Name":"nofile","Hard":65536,"Soft":65536},"nproc":{"Name":"nproc","Hard":8192,"Soft":4096}}}'
+  local required_settings
+  required_settings="$(jq -nc \
+    --argjson nproc_hard "${DOCKER_NPROC_HARD}" \
+    --argjson nproc_soft "${DOCKER_NPROC_SOFT}" \
+    '{
+      "log-driver":"json-file",
+      "log-opts":{"max-size":"10m","max-file":"3"},
+      "live-restore":true,
+      "default-ipc-mode":"private",
+      "storage-driver":"overlay2",
+      "default-ulimits":{
+        "nofile":{"Name":"nofile","Hard":65536,"Soft":65536},
+        "nproc":{"Name":"nproc","Hard":$nproc_hard,"Soft":$nproc_soft}
+      }
+    }')"
 
   if [[ "${DOCKER_PRESENT}" != "true" ]]; then
     log "Docker not present; skipping daemon.json creation (will be needed post-install)."
@@ -1488,7 +1523,7 @@ configure_docker_daemon() {
   # Note: log-driver uses json-file (same as Coolify) for compatibility.
   # Hardening owns: log-driver, log-opts, live-restore, default-ipc-mode,
   #   storage-driver, default-ulimits. Coolify may add: default-address-pools.
-  write_file "${DOCKER_DAEMON_JSON}" "0644" "root" "root" <<'EOF'
+  write_file "${DOCKER_DAEMON_JSON}" "0644" "root" "root" <<EOF
 {
   "log-driver": "json-file",
   "log-opts": {
@@ -1500,7 +1535,7 @@ configure_docker_daemon() {
   "storage-driver": "overlay2",
   "default-ulimits": {
     "nofile": { "Name": "nofile", "Hard": 65536, "Soft": 65536 },
-    "nproc": { "Name": "nproc", "Hard": 8192, "Soft": 4096 }
+    "nproc": { "Name": "nproc", "Hard": ${DOCKER_NPROC_HARD}, "Soft": ${DOCKER_NPROC_SOFT} }
   }
 }
 EOF
@@ -1816,6 +1851,12 @@ run_post_checks() {
     grep -q '"default-ulimits"' "${DOCKER_DAEMON_JSON}" || warn "Post-check: Docker daemon.json exists but default-ulimits not configured."
   fi
 
+  if is_true "${STRICT_DOCKER_SSH_CIDRS}"; then
+    if ! systemctl is-active --quiet docker-ssh-cidr-sync.timer 2>/dev/null; then
+      warn "Post-check: docker-ssh-cidr-sync.timer is not active; Docker CIDR drift auto-reconcile is disabled."
+    fi
+  fi
+
   grep -q "^Storage=persistent$" "${JOURNALD_DROPIN_FILE}" || die "Post-check failed: journald persistence drop-in missing."
   { auditctl -l 2>/dev/null || cat "${AUDIT_RULES_FILE}"; } | grep -q "identity" \
     || die "Post-check failed: audit rules not loaded."
@@ -1904,6 +1945,8 @@ journal_retention=${JOURNAL_RETENTION}
 update_profile=${UPDATE_PROFILE}
 strict_docker_ssh_cidrs=${STRICT_DOCKER_SSH_CIDRS}
 docker_ssh_cidrs=${cidr_csv}
+docker_nproc_hard=${DOCKER_NPROC_HARD}
+docker_nproc_soft=${DOCKER_NPROC_SOFT}
 tailscale_direct_wan=${TAILSCALE_DIRECT_WAN}
 bind_dashboard_to_tailscale=${BIND_DASHBOARD_TO_TAILSCALE}
 install_tailscale=${INSTALL_TAILSCALE}
@@ -2005,6 +2048,8 @@ generate_report() {
     --arg auto_reboot_time "${AUTO_REBOOT_TIME}" \
     --argjson strict_docker_ssh_cidrs "$(is_true "${STRICT_DOCKER_SSH_CIDRS}" && echo true || echo false)" \
     --arg docker_ssh_cidrs "${docker_ssh_cidrs_csv}" \
+    --argjson docker_nproc_hard "${DOCKER_NPROC_HARD}" \
+    --argjson docker_nproc_soft "${DOCKER_NPROC_SOFT}" \
     --argjson tailscale_direct_wan "$(is_true "${TAILSCALE_DIRECT_WAN}" && echo true || echo false)" \
     --argjson bind_dashboard_to_tailscale "$(is_true "${BIND_DASHBOARD_TO_TAILSCALE}" && echo true || echo false)" \
     --argjson install_tailscale "$(is_true "${INSTALL_TAILSCALE}" && echo true || echo false)" \
@@ -2046,6 +2091,8 @@ generate_report() {
       auto_reboot_time: $auto_reboot_time,
       strict_docker_ssh_cidrs: $strict_docker_ssh_cidrs,
       docker_ssh_cidrs: $docker_ssh_cidrs,
+      docker_nproc_hard: $docker_nproc_hard,
+      docker_nproc_soft: $docker_nproc_soft,
       tailscale_direct_wan: $tailscale_direct_wan,
       bind_dashboard_to_tailscale: $bind_dashboard_to_tailscale,
       install_tailscale: $install_tailscale,
@@ -2139,6 +2186,188 @@ TIMEREOF
   log "hardening-validate.timer enabled (runs validate_hardening.sh daily)."
 }
 
+configure_docker_ssh_cidr_sync_timer() {
+  if ! is_true "${STRICT_DOCKER_SSH_CIDRS}"; then
+    if is_true "${DRY_RUN}"; then
+      log "DRY-RUN: would disable docker-ssh-cidr-sync.timer in compatibility CIDR mode."
+      return 0
+    fi
+    systemctl disable --now docker-ssh-cidr-sync.timer 2>/dev/null || true
+    rm -f "${DOCKER_SSH_CIDR_SYNC_SERVICE}" "${DOCKER_SSH_CIDR_SYNC_TIMER}" "${DOCKER_SSH_CIDR_SYNC_SCRIPT}" 2>/dev/null || true
+    run systemctl daemon-reload
+    return 0
+  fi
+
+  if is_true "${DRY_RUN}"; then
+    log "DRY-RUN: would install docker-ssh-cidr-sync.timer."
+    return 0
+  fi
+
+  write_file "${DOCKER_SSH_CIDR_SYNC_SCRIPT}" "0750" "root" "root" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+STATE_FILE="/var/lib/bootstrap-hardening/state"
+SSH_DROPIN_FILE="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
+RULE_COMMENT="coolify-hardening-ssh-docker-bridge"
+
+[[ -f "${STATE_FILE}" ]] || exit 0
+# shellcheck disable=SC1090
+source "${STATE_FILE}"
+
+is_true() {
+  case "${1,,}" in
+    1|true|yes|y|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if ! is_true "${strict_docker_ssh_cidrs:-false}"; then
+  exit 0
+fi
+
+admin_user="${admin_user:-}"
+ssh_port="${ssh_port:-22}"
+[[ -n "${admin_user}" ]] || exit 0
+[[ "${ssh_port}" =~ ^[0-9]+$ ]] || ssh_port="22"
+
+is_valid_cidr() {
+  [[ "$1" =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/([0-9]|[12][0-9]|3[0-2])$ ]]
+}
+
+declare -a cidrs=()
+declare -A seen=()
+
+add_cidr() {
+  local cidr="$1"
+  [[ -n "${cidr}" ]] || return 0
+  is_valid_cidr "${cidr}" || return 0
+  if [[ -z "${seen[${cidr}]:-}" ]]; then
+    cidrs+=("${cidr}")
+    seen["${cidr}"]=1
+  fi
+}
+
+if command -v docker >/dev/null 2>&1; then
+  while IFS= read -r cidr; do
+    add_cidr "${cidr}"
+  done < <(
+    docker network ls --filter driver=bridge -q 2>/dev/null \
+      | xargs -r docker network inspect --format '{{range .IPAM.Config}}{{.Subnet}}{{"\n"}}{{end}}' 2>/dev/null \
+      | awk 'NF' \
+      | sort -u
+  )
+fi
+
+if command -v ip >/dev/null 2>&1; then
+  while IFS= read -r cidr; do
+    add_cidr "${cidr}"
+  done < <(
+    ip -o -4 addr show 2>/dev/null \
+      | awk '$2 ~ /^docker0$/ || $2 ~ /^br-[[:alnum:]]+$/ { print $4 }' \
+      | awk 'NF' \
+      | sort -u
+  )
+fi
+
+if [[ ${#cidrs[@]} -eq 0 ]]; then
+  IFS=',' read -r -a previous_cidrs <<< "${docker_ssh_cidrs:-10.0.0.0/8,172.16.0.0/12}"
+  for cidr in "${previous_cidrs[@]}"; do
+    cidr="${cidr//[[:space:]]/}"
+    add_cidr "${cidr}"
+  done
+fi
+
+[[ ${#cidrs[@]} -gt 0 ]] || exit 0
+
+match_addresses="127.0.0.1,::1"
+for cidr in "${cidrs[@]}"; do
+  match_addresses+=",${cidr}"
+done
+
+if [[ -f "${SSH_DROPIN_FILE}" ]] && grep -q '^Match Address ' "${SSH_DROPIN_FILE}"; then
+  desired_line="Match Address ${match_addresses}"
+  current_line="$(grep -m1 '^Match Address ' "${SSH_DROPIN_FILE}" || true)"
+  if [[ "${current_line}" != "${desired_line}" ]]; then
+    tmp_dropin="$(mktemp)"
+    backup_dropin="${SSH_DROPIN_FILE}.bak.$(date +%s)"
+    cp -a "${SSH_DROPIN_FILE}" "${backup_dropin}"
+    sed "0,/^Match Address /s|^Match Address .*|${desired_line}|" "${SSH_DROPIN_FILE}" > "${tmp_dropin}"
+    install -m 0644 "${tmp_dropin}" "${SSH_DROPIN_FILE}"
+    rm -f "${tmp_dropin}"
+    if ! sshd -t; then
+      cp -a "${backup_dropin}" "${SSH_DROPIN_FILE}"
+      exit 1
+    fi
+    if systemctl is-active --quiet ssh 2>/dev/null; then
+      systemctl reload ssh || systemctl restart ssh
+    elif systemctl is-active --quiet sshd 2>/dev/null; then
+      systemctl reload sshd || systemctl restart sshd
+    fi
+  fi
+fi
+
+# Reconcile UFW Docker bridge SSH rules to current CIDRs.
+if command -v ufw >/dev/null 2>&1; then
+  IFS=',' read -r -a old_cidrs <<< "${docker_ssh_cidrs:-}"
+  for old_cidr in "${old_cidrs[@]}"; do
+    old_cidr="${old_cidr//[[:space:]]/}"
+    [[ -n "${old_cidr}" ]] || continue
+    ufw --force delete allow in from "${old_cidr}" to any port "${ssh_port}" comment "${RULE_COMMENT}" >/dev/null 2>&1 || true
+  done
+  for cidr in "${cidrs[@]}"; do
+    ufw allow in from "${cidr}" to any port "${ssh_port}" comment "${RULE_COMMENT}" >/dev/null 2>&1 || true
+  done
+fi
+
+cidr_csv="$(IFS=,; echo "${cidrs[*]}")"
+tmp_state="$(mktemp)"
+awk -v cidr_csv="${cidr_csv}" '
+  BEGIN { updated=0 }
+  /^docker_ssh_cidrs=/ {
+    print "docker_ssh_cidrs=" cidr_csv
+    updated=1
+    next
+  }
+  { print }
+  END {
+    if (!updated) print "docker_ssh_cidrs=" cidr_csv
+  }
+' "${STATE_FILE}" > "${tmp_state}"
+install -m 0640 "${tmp_state}" "${STATE_FILE}"
+rm -f "${tmp_state}"
+EOF
+
+  write_file "${DOCKER_SSH_CIDR_SYNC_SERVICE}" "0644" "root" "root" <<EOF
+[Unit]
+Description=Reconcile Docker bridge CIDRs in SSH/UFW hardening rules
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=${DOCKER_SSH_CIDR_SYNC_SCRIPT}
+EOF
+
+  write_file "${DOCKER_SSH_CIDR_SYNC_TIMER}" "0644" "root" "root" <<'EOF'
+[Unit]
+Description=Periodic Docker bridge CIDR reconciliation for SSH hardening
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+  run systemctl daemon-reload
+  run systemctl enable --now docker-ssh-cidr-sync.timer
+  run systemctl start docker-ssh-cidr-sync.service
+  log "docker-ssh-cidr-sync.timer enabled (strict Docker SSH CIDR auto-reconcile)."
+}
+
 main() {
   parse_args "$@"
   require_root
@@ -2224,6 +2453,7 @@ main() {
   fi
 
   write_state
+  configure_docker_ssh_cidr_sync_timer
 
   log "Running post-apply checks."
   run_post_checks

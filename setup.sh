@@ -173,8 +173,21 @@ reconcile_docker_daemon_local() {
   # Hardening owns: log-driver, log-opts, live-restore. Coolify may add: default-address-pools.
   # Using json-file driver to match Coolify's expectation for compatibility.
   local daemon_json="/etc/docker/daemon.json"
+  local state_file="/var/lib/bootstrap-hardening/state"
+  local nproc_hard="8192"
+  local nproc_soft="4096"
   local tmp
   tmp="$(mktemp)"
+
+  if [[ -f "${state_file}" ]]; then
+    nproc_hard="$(grep -m1 '^docker_nproc_hard=' "${state_file}" | cut -d= -f2- || echo "8192")"
+    nproc_soft="$(grep -m1 '^docker_nproc_soft=' "${state_file}" | cut -d= -f2- || echo "4096")"
+  fi
+  [[ "${nproc_hard}" =~ ^[1-9][0-9]*$ ]] || nproc_hard="8192"
+  [[ "${nproc_soft}" =~ ^[1-9][0-9]*$ ]] || nproc_soft="4096"
+  if (( nproc_soft > nproc_hard )); then
+    nproc_soft="${nproc_hard}"
+  fi
 
   # Drift detection: warn if hardening keys were changed (e.g., by Coolify update)
   if [[ -f "${daemon_json}" ]]; then
@@ -199,9 +212,35 @@ reconcile_docker_daemon_local() {
   fi
 
   if [[ -f "${daemon_json}" ]]; then
-    jq '. + {"log-driver":"json-file","log-opts":((.["log-opts"] // {}) + {"max-size":"10m","max-file":"3"}),"live-restore":true,"default-ipc-mode":"private","storage-driver":"overlay2"}' "${daemon_json}" > "${tmp}"
+    jq \
+      --argjson nproc_hard "${nproc_hard}" \
+      --argjson nproc_soft "${nproc_soft}" \
+      '. + {
+        "log-driver":"json-file",
+        "log-opts":((.["log-opts"] // {}) + {"max-size":"10m","max-file":"3"}),
+        "live-restore":true,
+        "default-ipc-mode":"private",
+        "storage-driver":"overlay2",
+        "default-ulimits":((.["default-ulimits"] // {}) + {
+          "nofile":{"Name":"nofile","Hard":65536,"Soft":65536},
+          "nproc":{"Name":"nproc","Hard":$nproc_hard,"Soft":$nproc_soft}
+        })
+      }' "${daemon_json}" > "${tmp}"
   else
-    jq -n '{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"},"live-restore":true,"default-ipc-mode":"private","storage-driver":"overlay2"}' > "${tmp}"
+    jq -n \
+      --argjson nproc_hard "${nproc_hard}" \
+      --argjson nproc_soft "${nproc_soft}" \
+      '{
+        "log-driver":"json-file",
+        "log-opts":{"max-size":"10m","max-file":"3"},
+        "live-restore":true,
+        "default-ipc-mode":"private",
+        "storage-driver":"overlay2",
+        "default-ulimits":{
+          "nofile":{"Name":"nofile","Hard":65536,"Soft":65536},
+          "nproc":{"Name":"nproc","Hard":$nproc_hard,"Soft":$nproc_soft}
+        }
+      }' > "${tmp}"
   fi
 
   if [[ -f "${daemon_json}" ]] && cmp -s "${tmp}" "${daemon_json}"; then
