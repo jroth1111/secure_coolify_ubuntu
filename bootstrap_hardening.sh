@@ -561,7 +561,7 @@ install_tailscale() {
   fi
 
   log "Installing Tailscale..."
-  run curl -fsSL https://tailscale.com/install.sh | sh
+  run bash -o pipefail -c 'curl -fsSL https://tailscale.com/install.sh | sh'
 
   # Authenticate Tailscale
   if [[ -n "${TAILSCALE_AUTH_KEY}" ]]; then
