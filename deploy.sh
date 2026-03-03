@@ -387,19 +387,23 @@ phase1_upload_harden() {
   # Write env file on server (avoids quoting issues with SSH pubkey)
   local tunnel_flag="false"
   [[ "${DEPLOY_MODE}" == "tunnel" ]] && tunnel_flag="true"
-
-  ssh_root "cat > /root/deploy.env" <<EOF
-ADMIN_USER=${ADMIN_USER}
-ADMIN_PUBKEY="${ADMIN_PUBKEY}"
-TAILSCALE_CIDR=100.64.0.0/10
-SSH_PORT=22
-TUNNEL_MODE=${tunnel_flag}
-SWAP_SIZE=${SWAP_SIZE}
-INSTALL_TAILSCALE=true
-TAILSCALE_AUTH_KEY=${TAILSCALE_AUTH_KEY}
-TAILSCALE_DIRECT_WAN=${TAILSCALE_DIRECT_WAN}
-BIND_DASHBOARD_TO_TAILSCALE=false
-EOF
+  local deploy_env_tmp
+  deploy_env_tmp="$(mktemp)"
+  {
+    printf 'ADMIN_USER=%q\n' "${ADMIN_USER}"
+    printf 'ADMIN_PUBKEY=%q\n' "${ADMIN_PUBKEY}"
+    printf 'TAILSCALE_CIDR=%q\n' "100.64.0.0/10"
+    printf 'SSH_PORT=%q\n' "22"
+    printf 'TUNNEL_MODE=%q\n' "${tunnel_flag}"
+    printf 'SWAP_SIZE=%q\n' "${SWAP_SIZE}"
+    printf 'INSTALL_TAILSCALE=%q\n' "true"
+    printf 'TAILSCALE_AUTH_KEY=%q\n' "${TAILSCALE_AUTH_KEY}"
+    printf 'TAILSCALE_DIRECT_WAN=%q\n' "${TAILSCALE_DIRECT_WAN}"
+    printf 'BIND_DASHBOARD_TO_TAILSCALE=%q\n' "false"
+  } > "${deploy_env_tmp}"
+  chmod 600 "${deploy_env_tmp}"
+  scp_root "${deploy_env_tmp}" "root@${SERVER_IP}:/root/deploy.env"
+  rm -f "${deploy_env_tmp}"
   ssh_root "chmod 600 /root/deploy.env"
   pass "Environment file written"
 
@@ -419,10 +423,10 @@ EOF
   fi
   pass "Hardening completed"
 
-  # Extract Tailscale IP from captured bootstrap output (sentinel line)
-  TS_IP="$(grep '^HARDEN_RESULT_TAILSCALE_IP=' "${harden_tmp}" | cut -d= -f2 | tr -d '[:space:]')"
+  # Extract Tailscale IP from captured bootstrap output (sentinel line).
+  TS_IP="$(awk -F= '/^HARDEN_RESULT_TAILSCALE_IP=/{ip=$2} END{gsub(/[[:space:]]/,"",ip); print ip}' "${harden_tmp}")"
   rm -f "${harden_tmp}"
-  [[ -n "${TS_IP}" ]] || die "Failed to get Tailscale IP from bootstrap output."
+  [[ "${TS_IP}" =~ ${IPV4_RE} ]] || die "Failed to get a valid Tailscale IP from bootstrap output."
   pass "Server Tailscale IP: ${TS_IP}"
 
   # Note: deploy.env cleanup is deferred to phase2_gates (ssh_admin_sudo after Gate B),
