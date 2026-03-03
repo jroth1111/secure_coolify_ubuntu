@@ -12,21 +12,26 @@ JSON_MODE="false"
 HEALTH_CHECK_MODE="false"
 IS_CONTAINER="false"
 
-for arg in "$@"; do
-  case "${arg}" in
-    --json) JSON_MODE="true" ;;
-    --health-check) HEALTH_CHECK_MODE="true" ;;
-  esac
-done
+parse_cli_args() {
+  local arg
+  for arg in "$@"; do
+    case "${arg}" in
+      --json) JSON_MODE="true" ;;
+      --health-check) HEALTH_CHECK_MODE="true" ;;
+    esac
+  done
 
-if [[ "${JSON_MODE}" == "true" && "${HEALTH_CHECK_MODE}" == "true" ]]; then
-  printf 'Error: --json and --health-check are mutually exclusive.\n' >&2
-  exit 1
-fi
+  if [[ "${JSON_MODE}" == "true" && "${HEALTH_CHECK_MODE}" == "true" ]]; then
+    printf 'Error: --json and --health-check are mutually exclusive.\n' >&2
+    exit 1
+  fi
+}
 
-if [[ -f /.dockerenv || "${container:-}" == "docker" ]]; then
-  IS_CONTAINER="true"
-fi
+detect_container_runtime() {
+  if [[ -f /.dockerenv || "${container:-}" == "docker" ]]; then
+    IS_CONTAINER="true"
+  fi
+}
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -82,7 +87,8 @@ TAILSCALE_DIRECT_WAN="auto"
 UPDATE_PROFILE=""
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
 
-if [[ -f "${STATE_FILE}" ]]; then
+load_state_context() {
+  [[ -f "${STATE_FILE}" ]] || return 0
   # shellcheck disable=SC1090
   source "${STATE_FILE}"
   ADMIN_USER="${admin_user:-}"
@@ -97,7 +103,7 @@ if [[ -f "${STATE_FILE}" ]]; then
   DOCKER_SSH_CIDRS="${docker_ssh_cidrs:-10.0.0.0/8,172.16.0.0/12}"
   TAILSCALE_DIRECT_WAN="${tailscale_direct_wan:-auto}"
   UPDATE_PROFILE="${update_profile:-}"
-fi
+}
 
 is_true() {
   case "${1,,}" in
@@ -1566,64 +1572,72 @@ validate_timer_check() {
 
 # ── Run all checks ──
 
-[[ "$(id -u)" -eq 0 ]] || { echo "Run as root." >&2; exit 1; }
+main() {
+  parse_cli_args "$@"
+  detect_container_runtime
+  load_state_context
 
-if [[ "${JSON_MODE}" == "false" && "${HEALTH_CHECK_MODE}" != "true" ]]; then
-  printf '%-6s %-45s %s\n' "STATUS" "CHECK" "DETAIL"
-  printf '%s\n' "--------------------------------------------------------------"
-fi
+  [[ "$(id -u)" -eq 0 ]] || { echo "Run as root." >&2; exit 1; }
 
-ssh_check
-ufw_check
-docker_user_check
-docker_user_lifecycle_check
-docker_daemon_check
-docker_trust_boundary_check
-sysctl_check
-fail2ban_check
-auditd_check
-unattended_upgrades_check
-journald_check
-timesync_check
-swap_check
-banner_check
-admin_sudo_check
-apparmor_check
-disabled_services_check
-tailscale_check
-coolify_binding_check
-coolify_ssh_check
-coolify_container_check
-validate_timer_check
-listening_ports_info
-cloudflared_check
+  if [[ "${JSON_MODE}" == "false" && "${HEALTH_CHECK_MODE}" != "true" ]]; then
+    printf '%-6s %-45s %s\n' "STATUS" "CHECK" "DETAIL"
+    printf '%s\n' "--------------------------------------------------------------"
+  fi
 
-# ── Summary ──
+  ssh_check
+  ufw_check
+  docker_user_check
+  docker_user_lifecycle_check
+  docker_daemon_check
+  docker_trust_boundary_check
+  sysctl_check
+  fail2ban_check
+  auditd_check
+  unattended_upgrades_check
+  journald_check
+  timesync_check
+  swap_check
+  banner_check
+  admin_sudo_check
+  apparmor_check
+  disabled_services_check
+  tailscale_check
+  coolify_binding_check
+  coolify_ssh_check
+  coolify_container_check
+  validate_timer_check
+  listening_ports_info
+  cloudflared_check
 
-if [[ "${HEALTH_CHECK_MODE}" == "true" ]]; then
+  if [[ "${HEALTH_CHECK_MODE}" == "true" ]]; then
+    if ((FAIL_COUNT > 0)); then
+      echo "UNHEALTHY"
+      exit 1
+    fi
+    echo "HEALTHY"
+    exit 0
+  elif [[ "${JSON_MODE}" == "true" ]]; then
+    checks_json='[]'
+    if ((${#RESULTS[@]} > 0)); then
+      checks_json="$(printf '%s\n' "${RESULTS[@]}" | jq -s '.')"
+    fi
+    jq -nc \
+      --argjson pass "${PASS_COUNT}" \
+      --argjson fail "${FAIL_COUNT}" \
+      --argjson info "${INFO_COUNT}" \
+      --argjson checks "${checks_json}" \
+      '{pass:$pass,fail:$fail,info:$info,checks:$checks}'
+  else
+    printf '%s\n' "--------------------------------------------------------------"
+    printf 'Summary: %d PASS, %d FAIL, %d INFO\n' "${PASS_COUNT}" "${FAIL_COUNT}" "${INFO_COUNT}"
+  fi
+
   if ((FAIL_COUNT > 0)); then
-    echo "UNHEALTHY"
     exit 1
   fi
-  echo "HEALTHY"
   exit 0
-elif [[ "${JSON_MODE}" == "true" ]]; then
-  checks_json='[]'
-  if ((${#RESULTS[@]} > 0)); then
-    checks_json="$(printf '%s\n' "${RESULTS[@]}" | jq -s '.')"
-  fi
-  jq -nc \
-    --argjson pass "${PASS_COUNT}" \
-    --argjson fail "${FAIL_COUNT}" \
-    --argjson info "${INFO_COUNT}" \
-    --argjson checks "${checks_json}" \
-    '{pass:$pass,fail:$fail,info:$info,checks:$checks}'
-else
-  printf '%s\n' "--------------------------------------------------------------"
-  printf 'Summary: %d PASS, %d FAIL, %d INFO\n' "${PASS_COUNT}" "${FAIL_COUNT}" "${INFO_COUNT}"
-fi
+}
 
-if ((FAIL_COUNT > 0)); then
-  exit 1
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
 fi
-exit 0
