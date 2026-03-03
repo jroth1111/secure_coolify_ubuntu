@@ -238,7 +238,8 @@ ssh_admin() {
 }
 
 ssh_admin_sudo() {
-  ssh "${SSH_OPTS[@]}" -i "${PRIVATE_KEY}" "${ADMIN_USER}@${TS_IP}" "sudo $*"
+  [[ $# -eq 1 ]] || die "ssh_admin_sudo expects exactly one remote command string."
+  ssh "${SSH_OPTS[@]}" -i "${PRIVATE_KEY}" "${ADMIN_USER}@${TS_IP}" "sudo $1"
 }
 
 # Upload companion scripts to /root/ on the server using admin key + sudo.
