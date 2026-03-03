@@ -819,7 +819,8 @@ configure_swap() {
   run mkswap "${swap_file}"
   run swapon "${swap_file}"
 
-  if ! grep -qxF "${swap_file} none swap sw 0 0" /etc/fstab; then
+  # Accept any existing /swapfile entry to avoid duplicate lines across distro formats.
+  if ! grep -qE '^/swapfile[[:space:]]' /etc/fstab; then
     echo "${swap_file} none swap sw 0 0" >> /etc/fstab
   fi
 
