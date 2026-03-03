@@ -716,7 +716,7 @@ PUSHER_EOF
       || {
         # Fallback: add Cloudflare repo and install
         log "Trying Cloudflare repository..."
-        ssh_admin_sudo 'bash -c "curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null"' \
+        ssh_admin_sudo 'bash -o pipefail -c "curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null"' \
           || die "Failed to add Cloudflare GPG key"
         ssh_admin_sudo 'bash -c "echo \"deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared \$(lsb_release -cs) main\" | tee /etc/apt/sources.list.d/cloudflared.list"' \
           || die "Failed to add Cloudflare repository"
