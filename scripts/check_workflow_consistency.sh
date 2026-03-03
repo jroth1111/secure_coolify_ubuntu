@@ -12,7 +12,6 @@ die() {
 
 [[ -f "${CONTRACT_FILE}" ]] || die "Contract file not found: ${CONTRACT_FILE}"
 
-section=""
 step_count=0
 check_count=0
 error_count=0
@@ -57,34 +56,54 @@ assert_test_exists() {
   fi
 }
 
-while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
-  case "${raw_line}" in
-    steps:)
-      section="steps"
-      continue
-      ;;
-    consistency_checks:)
-      section="checks"
-      continue
-      ;;
-  esac
+emit_contract_entries() {
+  python3 - "${CONTRACT_FILE}" <<'PY'
+import sys
+try:
+    import yaml
+except ModuleNotFoundError:
+    print("ERROR: python3 package 'yaml' (PyYAML) is required to parse workflow_contract.yaml", file=sys.stderr)
+    sys.exit(2)
 
-  if [[ "${raw_line}" =~ ^[[:space:]]*-[[:space:]]\".*\"[[:space:]]*$ ]]; then
-    if [[ "${section}" != "steps" && "${section}" != "checks" ]]; then
-      report_error "list entry outside recognized section: ${raw_line}"
-      continue
-    fi
-    entry="$(printf '%s' "${raw_line}" | sed -E 's/^[[:space:]]*-[[:space:]]*"//; s/"[[:space:]]*$//')"
-  else
-    if [[ "${section}" == "steps" || "${section}" == "checks" ]]; then
-      if [[ -n "${raw_line//[[:space:]]/}" && ! "${raw_line}" =~ ^[[:space:]]*# ]]; then
-        report_error "unparseable line in ${section} section: ${raw_line}"
-      fi
-    fi
-    continue
-  fi
+path = sys.argv[1]
+try:
+    with open(path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+except Exception as exc:
+    print(f"ERROR: failed to parse YAML: {exc}", file=sys.stderr)
+    sys.exit(2)
 
-  if [[ "${section}" == "steps" ]]; then
+if not isinstance(data, dict):
+    print("ERROR: workflow contract root must be a YAML mapping/object", file=sys.stderr)
+    sys.exit(2)
+
+steps = data.get("steps")
+checks = data.get("consistency_checks")
+if not isinstance(steps, list):
+    print("ERROR: 'steps' must be a YAML list", file=sys.stderr)
+    sys.exit(2)
+if not isinstance(checks, list):
+    print("ERROR: 'consistency_checks' must be a YAML list", file=sys.stderr)
+    sys.exit(2)
+
+for entry in steps:
+    if not isinstance(entry, str):
+        print(f"ERROR: non-string entry in steps: {entry!r}", file=sys.stderr)
+        sys.exit(2)
+    print(f"STEP\t{entry}")
+
+for entry in checks:
+    if not isinstance(entry, str):
+        print(f"ERROR: non-string entry in consistency_checks: {entry!r}", file=sys.stderr)
+        sys.exit(2)
+    print(f"CHECK\t{entry}")
+PY
+}
+
+contract_entries="$(emit_contract_entries)" || die "Failed to parse ${CONTRACT_FILE}"
+
+while IFS=$'\t' read -r entry_type entry || [[ -n "${entry_type}" ]]; do
+  if [[ "${entry_type}" == "STEP" ]]; then
     step_count=$((step_count + 1))
     IFS='|' read -r step_id workflow_id script_path script_anchor doc_path doc_anchor test_refs <<< "${entry}"
 
@@ -116,7 +135,7 @@ while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
       fi
       assert_test_exists "${test_file}" "${test_title}"
     done
-  elif [[ "${section}" == "checks" ]]; then
+  elif [[ "${entry_type}" == "CHECK" ]]; then
     check_count=$((check_count + 1))
     IFS='|' read -r target_path expected_text <<< "${entry}"
     if [[ -z "${target_path}" || -z "${expected_text}" ]]; then
@@ -124,8 +143,10 @@ while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
       continue
     fi
     assert_file_contains "${target_path}" "${expected_text}"
+  else
+    report_error "unexpected parser record type '${entry_type}'"
   fi
-done < "${CONTRACT_FILE}"
+done <<< "${contract_entries}"
 
 if [[ ${step_count} -ne ${EXPECTED_STEP_COUNT} ]]; then
   report_error "expected exactly ${EXPECTED_STEP_COUNT} contract step entries; found ${step_count}"
