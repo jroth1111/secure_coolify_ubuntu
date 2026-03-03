@@ -79,6 +79,14 @@ if ! (( ip_o1 == 100 && ip_o2 >= 64 && ip_o2 <= 127 )); then
 fi
 unset ip_o1 ip_o2 _ip_o3 _ip_o4
 
+command -v tailscale >/dev/null 2>&1 || die "tailscale command not found. Install Tailscale before binding."
+host_tailscale_ip="$(tailscale ip -4 2>/dev/null || true)"
+[[ -n "${host_tailscale_ip}" ]] || die "Unable to detect host Tailscale IPv4 address."
+if [[ "${TAILSCALE_IP}" != "${host_tailscale_ip}" ]]; then
+  die "Provided Tailscale IP (${TAILSCALE_IP}) does not match host address (${host_tailscale_ip})."
+fi
+unset host_tailscale_ip
+
 log "Using Tailscale IP: ${TAILSCALE_IP}"
 
 # Check Coolify env file exists
@@ -98,15 +106,24 @@ fi
 # defense-in-depth: dashboard reachable via Tailscale, blocked from public interfaces.
 
 log "Ensuring UFW rules allow dashboard on Tailscale interface..."
-if command -v ufw >/dev/null 2>&1; then
-  # Idempotent — ufw silently skips duplicate rules
-  ufw allow in on tailscale0 proto tcp to any port 8000 comment "coolify-hardening-dashboard-tailscale" 2>/dev/null || true
-  ufw allow in on tailscale0 proto tcp to any port 6001 comment "coolify-hardening-soketi-tailscale" 2>/dev/null || true
-  ufw allow in on tailscale0 proto tcp to any port 6002 comment "coolify-hardening-terminal-tailscale" 2>/dev/null || true
-  log "UFW rules applied for ports 8000, 6001, and 6002 on tailscale0."
-else
-  warn "ufw not found — skipping UFW rule check."
-fi
+command -v ufw >/dev/null 2>&1 || die "ufw not found. This script requires ufw to enforce dashboard restrictions."
+
+# Idempotent — ufw silently skips duplicate rules
+ufw allow in on tailscale0 proto tcp to any port 8000 comment "coolify-hardening-dashboard-tailscale" >/dev/null 2>&1 \
+  || die "Failed to apply UFW rule for port 8000 on tailscale0."
+ufw allow in on tailscale0 proto tcp to any port 6001 comment "coolify-hardening-soketi-tailscale" >/dev/null 2>&1 \
+  || die "Failed to apply UFW rule for port 6001 on tailscale0."
+ufw allow in on tailscale0 proto tcp to any port 6002 comment "coolify-hardening-terminal-tailscale" >/dev/null 2>&1 \
+  || die "Failed to apply UFW rule for port 6002 on tailscale0."
+
+ufw_status="$(ufw status 2>/dev/null || true)"
+for port in 8000 6001 6002; do
+  if ! grep -qiE "${port}/tcp.*ALLOW IN.*tailscale0|tailscale0.*ALLOW IN.*${port}/tcp" <<< "${ufw_status}"; then
+    die "UFW rule missing for ${port}/tcp on tailscale0 after apply."
+  fi
+done
+unset ufw_status port
+log "UFW rules verified for ports 8000, 6001, and 6002 on tailscale0."
 
 # Wait for Coolify to start (up to 60s)
 log "Waiting for Coolify to bind port 8000 (up to 60s)..."
