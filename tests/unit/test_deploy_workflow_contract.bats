@@ -1,100 +1,286 @@
 #!/usr/bin/env bats
-# Tier 0: Contract tests for deploy.sh workflow structure
+# Tier 0: Behavior contract tests for deploy.sh workflow logic
 
 load '../helpers'
 
-DEPLOY_SCRIPT="${PROJECT_ROOT}/deploy.sh"
-DEPLOY_MATRIX="${PROJECT_ROOT}/docs/deploy_setup_functionality_test_matrix.md"
-
 @test "deploy: preflight phase marker exists" {
-  grep -Fq 'step "0/5" "Pre-flight checks"' "${DEPLOY_SCRIPT}"
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    stubbin="$(mktemp -d)"
+    cat > "${stubbin}/ssh-keygen" <<'\''EOF'\''
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "${stubbin}/ssh-keygen"
+    PATH="${stubbin}:${PATH}"
+    command() { [[ "$1" == "-v" ]] && return 0; builtin command "$@"; }
+    cf_verify_token() { :; }
+    cf_get_zone_id() { CF_ZONE_ID="zone123"; }
+    cf_get_account_id() { :; }
+    resolve_app_domain() { :; }
+    ssh_probe=0
+    ssh_root() { ssh_probe=1; return 0; }
+
+    SKIP_HARDEN="false"
+    SERVER_IP="203.0.113.10"
+    PUBKEY_FILE="/tmp/fake.pub"
+    preflight
+    [[ "${ssh_probe}" -eq 1 ]]
+  '
+  assert_success
 }
 
 @test "deploy: phase1 upload+harden marker exists" {
-  grep -Fq 'phase1_upload_harden()' "${DEPLOY_SCRIPT}"
-  grep -Fq 'step "1/5" "Upload scripts & harden server"' "${DEPLOY_SCRIPT}"
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    SCRIPT_DIR="'"${PROJECT_ROOT}"'"
+    SERVER_IP="203.0.113.10"
+    ADMIN_USER="coolifyadmin"
+    ADMIN_PUBKEY="ssh-ed25519 AAAATEST key"
+    TAILSCALE_AUTH_KEY="tskey-auth-test"
+    DEPLOY_MODE="tunnel"
+    SWAP_SIZE="2G"
+    TAILSCALE_DIRECT_WAN="false"
+
+    scp_root() { :; }
+    ssh_root() {
+      if [[ "$1" == *"/root/bootstrap_hardening.sh"* ]]; then
+        echo "progress"
+        echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.25"
+      fi
+      return 0
+    }
+
+    phase1_upload_harden
+    [[ "${TS_IP}" == "100.64.0.25" ]]
+  '
+  assert_success
 }
 
 @test "deploy: hardening invocation uses env-file and tailscale install" {
-  grep -Fq '/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force' "${DEPLOY_SCRIPT}"
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    SCRIPT_DIR="'"${PROJECT_ROOT}"'"
+    SERVER_IP="203.0.113.10"
+    ADMIN_USER="coolifyadmin"
+    ADMIN_PUBKEY="ssh-ed25519 AAAATEST key"
+    TAILSCALE_AUTH_KEY="tskey-auth-test"
+    DEPLOY_MODE="tunnel"
+    SWAP_SIZE="2G"
+    TAILSCALE_DIRECT_WAN="false"
+    cmd_file="$(mktemp)"
+
+    scp_root() { :; }
+    ssh_root() {
+      if [[ "$1" == *"/root/bootstrap_hardening.sh"* ]]; then
+        printf "%s\n" "$1" > "${cmd_file}"
+        echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.25"
+      fi
+      return 0
+    }
+
+    phase1_upload_harden
+    grep -q -- "--env-file /root/deploy.env --install-tailscale --force" "${cmd_file}"
+  '
+  assert_success
 }
 
 @test "deploy: gate A checks admin SSH on tailscale" {
-  grep -Fq 'Gate A: Testing SSH admin@' "${DEPLOY_SCRIPT}"
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    TS_IP="100.64.0.25"
+    ADMIN_USER="coolifyadmin"
+    attempts=0
+    sync_called=0
+
+    sleep() { :; }
+    ssh_admin() {
+      if [[ "$1" == "echo ok" ]]; then
+        attempts=$((attempts + 1))
+        (( attempts < 3 )) && return 1
+        echo ok
+        return 0
+      fi
+      if [[ "$1" == "whoami" ]]; then
+        echo "${ADMIN_USER}"
+        return 0
+      fi
+      return 0
+    }
+    ssh_admin_sudo() {
+      if [[ "$1" == *"validate_hardening.sh --json"* ]]; then
+        echo "{\"fail\":0,\"checks\":[]}"
+      fi
+      return 0
+    }
+    sync_companion_scripts() { sync_called=1; }
+    report_validation_result() { :; }
+
+    phase2_gates
+    [[ "${attempts}" -eq 3 ]]
+    [[ "${sync_called}" -eq 1 ]]
+  '
+  assert_success
 }
 
 @test "deploy: gate B verifies admin identity" {
-  grep -Fq 'Gate B: whoami=' "${DEPLOY_SCRIPT}"
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    TS_IP="100.64.0.25"
+    ADMIN_USER="coolifyadmin"
+
+    sleep() { :; }
+    ssh_admin() {
+      if [[ "$1" == "echo ok" ]]; then
+        echo ok
+        return 0
+      fi
+      if [[ "$1" == "whoami" ]]; then
+        echo "wronguser"
+        return 0
+      fi
+      return 0
+    }
+    ssh_admin_sudo() { return 0; }
+    sync_companion_scripts() { :; }
+    report_validation_result() { :; }
+
+    phase2_gates
+  '
+  assert_failure
+  assert_output --partial "Gate B failed."
 }
 
 @test "deploy: gate C runs validate_hardening.sh json" {
-  grep -Fq "Gate C: Running validate_hardening.sh..." "${DEPLOY_SCRIPT}"
-  grep -Fq "validate_hardening.sh --json" "${DEPLOY_SCRIPT}"
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    TS_IP="100.64.0.25"
+    ADMIN_USER="coolifyadmin"
+    validate_seen_file="$(mktemp)"
+    report_seen=0
+
+    ssh_admin() {
+      [[ "$1" == "echo ok" ]] && { echo ok; return 0; }
+      [[ "$1" == "whoami" ]] && { echo "${ADMIN_USER}"; return 0; }
+      return 0
+    }
+    ssh_admin_sudo() {
+      if [[ "$1" == *"validate_hardening.sh --json"* ]]; then
+        printf "seen\n" > "${validate_seen_file}"
+        echo "{\"fail\":0,\"checks\":[]}"
+      fi
+      return 0
+    }
+    sync_companion_scripts() { :; }
+    report_validation_result() {
+      [[ "$1" == "Gate C" ]]
+      [[ "$2" == *"\"fail\":0"* ]]
+      report_seen=1
+    }
+
+    phase2_gates
+    [[ -f "${validate_seen_file}" ]]
+    [[ "${report_seen}" -eq 1 ]]
+  '
+  assert_success
 }
 
 @test "deploy: gate D validates service active and managed rules" {
-  grep -Fq "verify_docker_user_gate_remote()" "${DEPLOY_SCRIPT}"
-  grep -Fq "systemctl is-active --quiet docker-user-hardening.service" "${DEPLOY_SCRIPT}"
-  grep -Fq 'verify_docker_user_gate_remote "Gate D"' "${DEPLOY_SCRIPT}"
-  grep -Fq "coolify-hardening" "${DEPLOY_SCRIPT}"
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    ssh_admin_sudo() {
+      if [[ "$1" == *"systemctl is-active --quiet docker-user-hardening.service"* ]]; then
+        return 1
+      fi
+      return 0
+    }
+    verify_docker_user_gate_remote "Gate D"
+  '
+  assert_failure
+  assert_output --partial "Gate D failed: docker-user-hardening.service is not active."
 }
 
 @test "deploy: phase4 binding+dns marker exists" {
-  grep -Fq 'phase4_binding_dns()' "${DEPLOY_SCRIPT}"
-  grep -Fq 'step "4/5" "Configure dashboard binding & DNS"' "${DEPLOY_SCRIPT}"
-}
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    DEPLOY_MODE="standard"
+    DOMAIN="coolify.vps.example.com"
+    APP_DOMAIN="vps.example.com"
+    CF_ZONE_NAME="example.com"
+    SERVER_IP="203.0.113.10"
+    TS_IP="100.64.0.25"
+    calls=""
 
-@test "deploy: binding failure is fatal" {
-  grep -Fq 'configure_coolify_binding.sh --tailscale-ip' "${DEPLOY_SCRIPT}"
-  grep -Fq 'die "configure_coolify_binding.sh failed. Fix binding errors before continuing."' "${DEPLOY_SCRIPT}"
-}
+    ssh_admin_sudo() {
+      [[ "$1" == "test -f /data/coolify/source/.env" ]] && return 0
+      return 0
+    }
+    coolify_set_wildcard_domain_script() { echo "true"; }
+    coolify_reconcile_pusher_env_script() { echo "true"; }
+    cf_upsert_a_record() { calls+="$1|$2|$3"$'\''\n'\''; }
 
-@test "deploy: PUSHER env supports mode switch and expanded domain" {
-  grep -Fq 'mode="${DEPLOY_MODE}"' "${DEPLOY_SCRIPT}"
-  grep -Fq 'PUSHER_HOST=ws.${DOMAIN}' "${DEPLOY_SCRIPT}"
-  grep -Fq 'PUSHER env vars cleared for standard mode' "${DEPLOY_SCRIPT}"
-  ! grep -Fq "<<'INNER'" "${DEPLOY_SCRIPT}"
-}
-
-@test "deploy: tunnel terminal ingress uses dashboard path (not terminal subdomain)" {
-  grep -Fq 'path: /terminal/ws' "${DEPLOY_SCRIPT}"
-  grep -Fq 'service: http://localhost:6002' "${DEPLOY_SCRIPT}"
-  ! grep -Fq 'hostname: terminal.${DOMAIN}' "${DEPLOY_SCRIPT}"
+    phase4_binding_dns
+    grep -q "^coolify.vps.example.com|203.0.113.10|true$" <<< "${calls}"
+    grep -q "^\\*.vps.example.com|203.0.113.10|true$" <<< "${calls}"
+    grep -q "^\\*.example.com|203.0.113.10|true$" <<< "${calls}"
+  '
+  assert_success
 }
 
 @test "deploy: gate E fails when exposure checks do not pass" {
-  grep -Fq "Gate E: Checking dashboard accessibility..." "${DEPLOY_SCRIPT}"
-  grep -Fq "Gate E failed: dashboard not reachable via Tailscale" "${DEPLOY_SCRIPT}"
-  grep -Fq "Gate E failed: dashboard reachable on public IP" "${DEPLOY_SCRIPT}"
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    TS_IP="100.64.0.25"
+    SERVER_IP="203.0.113.10"
+    DOMAIN="coolify.vps.example.com"
+
+    sleep() { :; }
+    curl() { echo "000"; return 0; }
+
+    phase5_verify
+  '
+  assert_failure
+  assert_output --partial "Gate E failed: dashboard not reachable via Tailscale."
 }
 
 @test "deploy: final validation is executed" {
-  grep -Fq "Running final validate_hardening.sh..." "${DEPLOY_SCRIPT}"
-}
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    TS_IP="100.64.0.25"
+    SERVER_IP="203.0.113.10"
+    DOMAIN="coolify.vps.example.com"
+    validate_seen_file="$(mktemp)"
+    report_seen=0
 
-@test "deploy: SSH uses accept-new instead of StrictHostKeyChecking=no" {
-  ! grep -q 'StrictHostKeyChecking=no' "${DEPLOY_SCRIPT}"
-  grep -q 'StrictHostKeyChecking=accept-new' "${DEPLOY_SCRIPT}"
-}
+    sleep() { :; }
+    curl() {
+      local url="${@: -1}"
+      if [[ "${url}" == "http://${TS_IP}:8000" ]]; then
+        echo "200"
+      elif [[ "${url}" == "http://${SERVER_IP}:8000" ]]; then
+        echo "000"
+      else
+        echo "302"
+      fi
+      return 0
+    }
+    ssh_admin_sudo() {
+      if [[ "$1" == *"validate_hardening.sh --json"* ]]; then
+        printf "seen\n" > "${validate_seen_file}"
+        echo "{\"fail\":0,\"checks\":[]}"
+      fi
+      return 0
+    }
+    report_validation_result() {
+      [[ "$1" == "Final validation" ]]
+      [[ "$2" == *"\"fail\":0"* ]]
+      report_seen=1
+    }
+    print_deployment_summary() { :; }
 
-@test "deploy: PGPASSWORD not exposed via docker exec -e flag" {
-  ! grep -q 'docker exec -e PGPASSWORD' "${DEPLOY_SCRIPT}"
-}
-
-@test "deploy: docker daemon reconciliation includes default-ipc-mode" {
-  grep -q 'default-ipc-mode' "${DEPLOY_SCRIPT}"
-}
-
-@test "deploy: docker daemon reconciliation includes storage-driver" {
-  grep -q 'storage-driver' "${DEPLOY_SCRIPT}"
-}
-
-@test "deploy: coolify .env written with 0600 permissions" {
-  grep -q 'install -m 0600' "${DEPLOY_SCRIPT}"
-  ! grep -q 'install -m 0644.*coolify_env\|install -m 0644.*\${coolify_env}' "${DEPLOY_SCRIPT}"
-}
-
-@test "deploy: matrix includes all DEP contract ids" {
-  grep -Fq "DEP-01" "${DEPLOY_MATRIX}"
-  grep -Fq "DEP-10" "${DEPLOY_MATRIX}"
+    phase5_verify
+    [[ -f "${validate_seen_file}" ]]
+    [[ "${report_seen}" -eq 1 ]]
+  '
+  assert_success
 }

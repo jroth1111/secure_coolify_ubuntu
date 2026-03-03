@@ -70,6 +70,6 @@ These IDs are the canonical hardening workflow contract IDs used by `docs/workfl
 | Docker user service wiring check (`docker_user_lifecycle_check`) | `tests/unit/test_validate_functions.bats`: `PartOf=docker.service`; `WantedBy=docker.service` | Sufficient |
 | Unattended-upgrades Docker CE origin check (`unattended_upgrades_check`) | `tests/unit/test_validate_functions.bats`: Docker CE origin present in upgrades config | Sufficient |
 | Coolify binding guard timer check (`coolify_binding_check`) | `tests/unit/test_validate_functions.bats`: binding-guard timer active | Sufficient |
-| Deploy orchestrator input validation (`deploy.sh` `validate_inputs`, `parse_args`) | `tests/integration/test_deploy.bats`: IP regex validation; username validation; domain validation; swap size validation; Tailscale key format; mode validation; argument parsing | Sufficient |
-| Deploy orchestrator Cloudflare API interaction (`deploy.sh` `cf_*` functions) | `tests/integration/test_deploy.bats`: token verification; zone lookup; tunnel creation; record upsert idempotency | Sufficient |
-| Deploy orchestrator gate logic (`deploy.sh` gate A-E) | `tests/integration/test_deploy.bats`: verify_docker_user_gate_remote mock tests; phase/gate label consistency | Sufficient |
+| Deploy orchestrator input validation (`deploy.sh` `validate_inputs`, `parse_args`) | `tests/unit/test_deploy_workflow_contract.bats`: preflight + phase1 + gate behavior tests with mocked outcomes | Sufficient |
+| Deploy orchestrator Cloudflare/API and DNS flow (`deploy.sh` phase4) | `tests/unit/test_deploy_workflow_contract.bats`: phase4 standard-mode DNS behavior assertion | Sufficient |
+| Deploy orchestrator gate logic (`deploy.sh` gate A-E/F + final validation) | `tests/unit/test_deploy_workflow_contract.bats`: gate retry/fail paths and final validation execution assertions | Sufficient |

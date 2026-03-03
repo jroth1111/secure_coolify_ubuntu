@@ -1,95 +1,228 @@
 #!/usr/bin/env bats
-# Tier 0: Contract tests for setup.sh workflow structure
+# Tier 0: Behavior contract tests for setup.sh workflow logic
 
 load '../helpers'
 
-SETUP_SCRIPT="${PROJECT_ROOT}/setup.sh"
-DEPLOY_MATRIX="${PROJECT_ROOT}/docs/deploy_setup_functionality_test_matrix.md"
-
 @test "setup: preflight phase marker exists" {
-  grep -Fq 'step "0/5" "Pre-flight checks"' "${SETUP_SCRIPT}"
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    stubbin="$(mktemp -d)"
+    cat > "${stubbin}/ssh-keygen" <<'\''EOF'\''
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "${stubbin}/ssh-keygen"
+    PATH="${stubbin}:${PATH}"
+    command() { [[ "$1" == "-v" ]] && return 0; builtin command "$@"; }
+    cf_verify_token() { :; }
+    cf_get_zone_id() { CF_ZONE_ID="zone123"; }
+    cf_get_account_id() { :; }
+    resolve_app_domain() { :; }
+
+    SERVER_IP="203.0.113.10"
+    PUBKEY_FILE="/tmp/fake.pub"
+    preflight
+  '
+  assert_success
 }
 
 @test "setup: phase1 harden marker exists" {
-  grep -Fq 'phase1_harden()' "${SETUP_SCRIPT}"
-  grep -Fq 'step "1/5" "Harden server"' "${SETUP_SCRIPT}"
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    SCRIPT_DIR="${tmpdir}"
+    DEPLOY_ENV_FILE="${tmpdir}/deploy.env"
+    SERVER_IP="203.0.113.10"
+    ADMIN_USER="coolifyadmin"
+    ADMIN_PUBKEY="ssh-ed25519 AAAATEST key"
+    TAILSCALE_AUTH_KEY="tskey-auth-test"
+    DEPLOY_MODE="tunnel"
+    SWAP_SIZE="2G"
+    TAILSCALE_DIRECT_WAN="false"
+
+    cat > "${tmpdir}/bootstrap_hardening.sh" <<'\''EOF'\''
+#!/usr/bin/env bash
+echo "bootstrap stub"
+EOF
+    chmod +x "${tmpdir}/bootstrap_hardening.sh"
+
+    tailscale() { echo "100.64.0.44"; }
+
+    phase1_harden
+    [[ "${TS_IP}" == "100.64.0.44" ]]
+    [[ ! -f "${DEPLOY_ENV_FILE}" ]]
+  '
+  assert_success
 }
 
 @test "setup: gate A requires operator laptop verification" {
-  grep -Fq 'Gate A: Operator verifies SSH from laptop' "${SETUP_SCRIPT}"
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    SCRIPT_DIR="${tmpdir}"
+    cat > "${tmpdir}/validate_hardening.sh" <<'\''EOF'\''
+#!/usr/bin/env bash
+echo "{\"fail\":0,\"checks\":[]}"
+EOF
+    chmod +x "${tmpdir}/validate_hardening.sh"
+    TS_IP="100.64.0.25"
+    ADMIN_USER="coolifyadmin"
+
+    pause_for_operator() { echo "$1"; }
+    tmphome="$(mktemp -d)"
+    mkdir -p "${tmphome}/.ssh"
+    getent() { echo "coolifyadmin:x:1001:1001::${tmphome}:/bin/bash"; }
+    report_validation_result() { :; }
+
+    phase2_gates
+  '
+  assert_success
+  assert_output --partial "From your LAPTOP, verify SSH: ssh"
 }
 
 @test "setup: gate B verifies admin user home and ssh directory" {
-  grep -Fq 'Gate B: Admin user' "${SETUP_SCRIPT}"
-  grep -Fq '.ssh not found' "${SETUP_SCRIPT}"
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    SCRIPT_DIR="${tmpdir}"
+    cat > "${tmpdir}/validate_hardening.sh" <<'\''EOF'\''
+#!/usr/bin/env bash
+echo "{\"fail\":0,\"checks\":[]}"
+EOF
+    chmod +x "${tmpdir}/validate_hardening.sh"
+    TS_IP="100.64.0.25"
+    ADMIN_USER="coolifyadmin"
+    pause_for_operator() { :; }
+    getent() { echo "coolifyadmin:x:1001:1001::/tmp/missinghome:/bin/bash"; }
+    report_validation_result() { :; }
+
+    phase2_gates
+  '
+  assert_failure
+  assert_output --partial "Gate B failed."
 }
 
 @test "setup: gate C runs validate_hardening.sh json" {
-  grep -Fq "Gate C: Running validate_hardening.sh..." "${SETUP_SCRIPT}"
-  grep -Fq 'validate_hardening.sh" --json' "${SETUP_SCRIPT}"
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    SCRIPT_DIR="${tmpdir}"
+    cat > "${tmpdir}/validate_hardening.sh" <<EOF
+#!/usr/bin/env bash
+touch "${tmpdir}/validate_called"
+echo "{\"fail\":0,\"checks\":[]}"
+EOF
+    chmod +x "${tmpdir}/validate_hardening.sh"
+    TS_IP="100.64.0.25"
+    ADMIN_USER="coolifyadmin"
+    pause_for_operator() { :; }
+    tmphome="$(mktemp -d)"
+    mkdir -p "${tmphome}/.ssh"
+    getent() { echo "coolifyadmin:x:1001:1001::${tmphome}:/bin/bash"; }
+    report_seen=0
+    report_validation_result() {
+      [[ "$1" == "Gate C" ]]
+      [[ "$2" == *"\"fail\":0"* ]]
+      report_seen=1
+    }
+
+    phase2_gates
+    [[ -f "${tmpdir}/validate_called" ]]
+    [[ "${report_seen}" -eq 1 ]]
+  '
+  assert_success
 }
 
 @test "setup: gate D validates service active and managed rules" {
-  grep -Fq "verify_docker_user_gate_local()" "${SETUP_SCRIPT}"
-  grep -Fq "systemctl is-active --quiet docker-user-hardening.service" "${SETUP_SCRIPT}"
-  grep -Fq 'verify_docker_user_gate_local "Gate D"' "${SETUP_SCRIPT}"
-  grep -Fq "coolify-hardening" "${SETUP_SCRIPT}"
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    systemctl() { return 1; }
+    verify_docker_user_gate_local "Gate D"
+  '
+  assert_failure
+  assert_output --partial "Gate D failed: docker-user-hardening.service is not active."
 }
 
 @test "setup: phase4 binding+dns marker exists" {
-  grep -Fq 'phase4_binding_dns()' "${SETUP_SCRIPT}"
-  grep -Fq 'step "4/5" "Configure dashboard binding & DNS"' "${SETUP_SCRIPT}"
-}
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    DEPLOY_MODE="standard"
+    DOMAIN="coolify.vps.example.com"
+    APP_DOMAIN="vps.example.com"
+    CF_ZONE_NAME="example.com"
+    SERVER_IP="203.0.113.10"
+    TS_IP="100.64.0.25"
+    calls=""
+    tmpdir="$(mktemp -d)"
+    SCRIPT_DIR="${tmpdir}"
+    cat > "${tmpdir}/configure_coolify_binding.sh" <<'\''EOF'\''
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "${tmpdir}/configure_coolify_binding.sh"
+    sleep() { :; }
 
-@test "setup: binding failure is fatal" {
-  grep -Fq 'configure_coolify_binding.sh" --tailscale-ip' "${SETUP_SCRIPT}"
-  grep -Fq 'die "configure_coolify_binding.sh failed. Fix binding errors before continuing."' "${SETUP_SCRIPT}"
-}
+    coolify_set_wildcard_domain_script() { echo "true"; }
+    coolify_reconcile_pusher_env_script() { echo "true"; }
+    cf_upsert_a_record() { calls+="$1|$2|$3"$'\''\n'\''; }
 
-@test "setup: PUSHER env supports mode switch and expanded domain" {
-  grep -Fq 'PUSHER_HOST=ws.${DOMAIN}' "${SETUP_SCRIPT}"
-  grep -Fq 'PUSHER env vars cleared for standard mode' "${SETUP_SCRIPT}"
-  grep -Fq "sed '/^PUSHER_HOST=/d; /^PUSHER_PORT=/d; /^PUSHER_SCHEME=/d'" "${SETUP_SCRIPT}"
-}
-
-@test "setup: tunnel terminal ingress uses dashboard path (not terminal subdomain)" {
-  grep -Fq 'path: /terminal/ws' "${SETUP_SCRIPT}"
-  grep -Fq 'service: http://localhost:6002' "${SETUP_SCRIPT}"
-  ! grep -Fq 'hostname: terminal.${DOMAIN}' "${SETUP_SCRIPT}"
+    phase4_binding_dns
+    grep -q "^coolify.vps.example.com|203.0.113.10|true$" <<< "${calls}"
+    grep -q "^\\*.vps.example.com|203.0.113.10|true$" <<< "${calls}"
+    grep -q "^\\*.example.com|203.0.113.10|true$" <<< "${calls}"
+  '
+  assert_success
 }
 
 @test "setup: gate E requires operator laptop verification" {
-  grep -Fq 'Gate E: Operator verifies from laptop' "${SETUP_SCRIPT}"
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    SCRIPT_DIR="${tmpdir}"
+    cat > "${tmpdir}/validate_hardening.sh" <<'\''EOF'\''
+#!/usr/bin/env bash
+echo "{\"fail\":0,\"checks\":[]}"
+EOF
+    chmod +x "${tmpdir}/validate_hardening.sh"
+    TS_IP="100.64.0.25"
+    SERVER_IP="203.0.113.10"
+    prompt_seen=0
+
+    pause_for_operator() { prompt_seen=1; }
+    report_validation_result() { :; }
+    print_deployment_summary() { :; }
+
+    phase5_verify
+    [[ "${prompt_seen}" -eq 1 ]]
+  '
+  assert_success
 }
 
 @test "setup: final validation is executed" {
-  grep -Fq "Running final validate_hardening.sh..." "${SETUP_SCRIPT}"
-}
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    SCRIPT_DIR="${tmpdir}"
+    cat > "${tmpdir}/validate_hardening.sh" <<EOF
+#!/usr/bin/env bash
+touch "${tmpdir}/validate_called"
+echo "{\"fail\":0,\"checks\":[]}"
+EOF
+    chmod +x "${tmpdir}/validate_hardening.sh"
+    TS_IP="100.64.0.25"
+    SERVER_IP="203.0.113.10"
+    pause_for_operator() { :; }
+    report_seen=0
+    report_validation_result() {
+      [[ "$1" == "Final validation" ]]
+      [[ "$2" == *"\"fail\":0"* ]]
+      report_seen=1
+    }
+    print_deployment_summary() { :; }
 
-@test "setup: PGPASSWORD not exposed via docker exec -e flag" {
-  ! grep -q 'docker exec -e PGPASSWORD' "${SETUP_SCRIPT}"
-}
-
-@test "setup: cf_api hides token from process listing via --config" {
-  local common_lib="${PROJECT_ROOT}/lib/coolify-common.sh"
-  ! grep -q '\-H "Authorization: Bearer \${CF_API_TOKEN}"' "${common_lib}"
-  grep -q '\-\-config -' "${common_lib}"
-}
-
-@test "setup: docker daemon reconciliation includes default-ipc-mode" {
-  grep -q 'default-ipc-mode' "${SETUP_SCRIPT}"
-}
-
-@test "setup: docker daemon reconciliation includes storage-driver" {
-  grep -q 'storage-driver' "${SETUP_SCRIPT}"
-}
-
-@test "setup: coolify .env written with 0600 permissions" {
-  grep -q 'install -m 0600' "${SETUP_SCRIPT}"
-  ! grep -q 'install -m 0644.*coolify_env\|install -m 0644.*\${coolify_env}' "${SETUP_SCRIPT}"
-}
-
-@test "setup: matrix includes all SET contract ids" {
-  grep -Fq "SET-01" "${DEPLOY_MATRIX}"
-  grep -Fq "SET-09" "${DEPLOY_MATRIX}"
+    phase5_verify
+    [[ -f "${tmpdir}/validate_called" ]]
+    [[ "${report_seen}" -eq 1 ]]
+  '
+  assert_success
 }

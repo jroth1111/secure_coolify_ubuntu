@@ -6,6 +6,10 @@ load '../helpers'
 
 setup() {
   source_script
+
+  # Avoid BW01 warnings in dry-run tests by stubbing user-management commands.
+  useradd() { :; }
+  usermod() { :; }
 }
 
 # ── Admin user creation ─────────────────────────────────────────────────────────

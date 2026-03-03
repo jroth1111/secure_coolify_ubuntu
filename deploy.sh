@@ -8,8 +8,8 @@ set -Eeuo pipefail
 # Non-interactive:   ./deploy.sh --server-ip 1.2.3.4 --root-pass-file /path/root.pass --yes
 # Mixed:             ./deploy.sh --server-ip 1.2.3.4  (prompted for the rest)
 
-SCRIPT_NAME="$(basename "$0")"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=lib/coolify-common.sh
 source "${SCRIPT_DIR}/lib/coolify-common.sh"

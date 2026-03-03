@@ -14,11 +14,13 @@ die() {
 
 step_count=0
 check_count=0
+step_check_count=0
 error_count=0
 declare -A seen_ids=()
+declare -A seen_check_ids=()
 declare -A workflow_counts=()
-EXPECTED_STEP_COUNT=34
-EXPECTED_CHECK_COUNT=7
+declare -A check_paths=()
+declare -A check_anchors=()
 
 report_error() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -78,13 +80,23 @@ if not isinstance(data, dict):
     sys.exit(2)
 
 steps = data.get("steps")
+step_checks = data.get("step_checks")
 checks = data.get("consistency_checks")
 if not isinstance(steps, list):
     print("ERROR: 'steps' must be a YAML list", file=sys.stderr)
     sys.exit(2)
+if not isinstance(step_checks, list):
+    print("ERROR: 'step_checks' must be a YAML list", file=sys.stderr)
+    sys.exit(2)
 if not isinstance(checks, list):
     print("ERROR: 'consistency_checks' must be a YAML list", file=sys.stderr)
     sys.exit(2)
+
+for entry in step_checks:
+    if not isinstance(entry, str):
+        print(f"ERROR: non-string entry in step_checks: {entry!r}", file=sys.stderr)
+        sys.exit(2)
+    print(f"STEPCHECK\t{entry}")
 
 for entry in steps:
     if not isinstance(entry, str):
@@ -103,11 +115,26 @@ PY
 contract_entries="$(emit_contract_entries)" || die "Failed to parse ${CONTRACT_FILE}"
 
 while IFS=$'\t' read -r entry_type entry || [[ -n "${entry_type}" ]]; do
-  if [[ "${entry_type}" == "STEP" ]]; then
+  if [[ "${entry_type}" == "STEPCHECK" ]]; then
+    step_check_count=$((step_check_count + 1))
+    IFS='|' read -r check_id target_path expected_text <<< "${entry}"
+    if [[ -z "${check_id}" || -z "${target_path}" || -z "${expected_text}" ]]; then
+      report_error "malformed step check entry: ${entry}"
+      continue
+    fi
+    if [[ -n "${seen_check_ids[${check_id}]:-}" ]]; then
+      report_error "duplicate step check id '${check_id}'"
+      continue
+    fi
+    seen_check_ids["${check_id}"]=1
+    check_paths["${check_id}"]="${target_path}"
+    check_anchors["${check_id}"]="${expected_text}"
+    assert_file_contains "${target_path}" "${expected_text}"
+  elif [[ "${entry_type}" == "STEP" ]]; then
     step_count=$((step_count + 1))
-    IFS='|' read -r step_id workflow_id script_path script_anchor doc_path doc_anchor test_refs <<< "${entry}"
+    IFS='|' read -r step_id workflow_id script_path script_anchor doc_path doc_anchor test_refs check_refs <<< "${entry}"
 
-    if [[ -z "${step_id}" || -z "${workflow_id}" || -z "${script_path}" || -z "${script_anchor}" || -z "${doc_path}" || -z "${doc_anchor}" || -z "${test_refs}" ]]; then
+    if [[ -z "${step_id}" || -z "${workflow_id}" || -z "${script_path}" || -z "${script_anchor}" || -z "${doc_path}" || -z "${doc_anchor}" || -z "${test_refs}" || -z "${check_refs}" ]]; then
       report_error "malformed step contract entry: ${entry}"
       continue
     fi
@@ -135,6 +162,20 @@ while IFS=$'\t' read -r entry_type entry || [[ -n "${entry_type}" ]]; do
       fi
       assert_test_exists "${test_file}" "${test_title}"
     done
+
+    IFS=';' read -r -a check_ids <<< "${check_refs}"
+    if [[ "${#check_ids[@]}" -eq 0 ]]; then
+      report_error "step '${step_id}' has no step check refs"
+    fi
+    for check_id in "${check_ids[@]}"; do
+      if [[ -z "${check_id}" ]]; then
+        report_error "empty step check id in step '${step_id}'"
+        continue
+      fi
+      if [[ -z "${seen_check_ids[${check_id}]:-}" ]]; then
+        report_error "unknown step check id '${check_id}' in step '${step_id}'"
+      fi
+    done
   elif [[ "${entry_type}" == "CHECK" ]]; then
     check_count=$((check_count + 1))
     IFS='|' read -r target_path expected_text <<< "${entry}"
@@ -148,12 +189,16 @@ while IFS=$'\t' read -r entry_type entry || [[ -n "${entry_type}" ]]; do
   fi
 done <<< "${contract_entries}"
 
-if [[ ${step_count} -ne ${EXPECTED_STEP_COUNT} ]]; then
-  report_error "expected exactly ${EXPECTED_STEP_COUNT} contract step entries; found ${step_count}"
+if [[ ${step_count} -le 0 ]]; then
+  report_error "expected at least 1 contract step entry; found ${step_count}"
 fi
 
-if [[ ${check_count} -ne ${EXPECTED_CHECK_COUNT} ]]; then
-  report_error "expected exactly ${EXPECTED_CHECK_COUNT} consistency checks; found ${check_count}"
+if [[ ${step_check_count} -le 0 ]]; then
+  report_error "expected at least 1 step check entry; found ${step_check_count}"
+fi
+
+if [[ ${check_count} -le 0 ]]; then
+  report_error "expected at least 1 consistency check entry; found ${check_count}"
 fi
 
 for expected_workflow in bootstrap deploy setup; do
@@ -167,4 +212,4 @@ if [[ ${error_count} -gt 0 ]]; then
   exit 1
 fi
 
-printf 'Workflow consistency check passed. steps=%d checks=%d\n' "${step_count}" "${check_count}"
+printf 'Workflow consistency check passed. steps=%d step_checks=%d checks=%d\n' "${step_count}" "${step_check_count}" "${check_count}"

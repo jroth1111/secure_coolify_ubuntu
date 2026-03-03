@@ -8,8 +8,8 @@ set -Eeuo pipefail
 # Non-interactive:   sudo ./setup.sh --server-ip 1.2.3.4 --admin-user ... --yes
 # Mixed:             sudo ./setup.sh --server-ip 1.2.3.4  (prompted for the rest)
 
-SCRIPT_NAME="$(basename "$0")"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=lib/coolify-common.sh
 source "${SCRIPT_DIR}/lib/coolify-common.sh"
@@ -205,12 +205,13 @@ preflight() {
 
 phase1_harden() {
   step "1/5" "Harden server"
+  local deploy_env_file="${DEPLOY_ENV_FILE:-/root/deploy.env}"
 
   local tunnel_flag="false"
   [[ "${DEPLOY_MODE}" == "tunnel" ]] && tunnel_flag="true"
 
   # Write env file (avoids quoting issues with pubkey)
-  cat > /root/deploy.env <<EOF
+  cat > "${deploy_env_file}" <<EOF
 ADMIN_USER=${ADMIN_USER}
 ADMIN_PUBKEY="${ADMIN_PUBKEY}"
 TAILSCALE_CIDR=100.64.0.0/10
@@ -222,12 +223,12 @@ TAILSCALE_AUTH_KEY=${TAILSCALE_AUTH_KEY}
 TAILSCALE_DIRECT_WAN=${TAILSCALE_DIRECT_WAN}
 BIND_DASHBOARD_TO_TAILSCALE=false
 EOF
-  chmod 600 /root/deploy.env
+  chmod 600 "${deploy_env_file}"
   pass "Environment file written"
 
   # Run hardening
   log "Running bootstrap_hardening.sh (this may take a few minutes)..."
-  "${SCRIPT_DIR}/bootstrap_hardening.sh" --env-file /root/deploy.env --install-tailscale --force \
+  "${SCRIPT_DIR}/bootstrap_hardening.sh" --env-file "${deploy_env_file}" --install-tailscale --force \
     || die "bootstrap_hardening.sh failed. Check: /var/log/bootstrap-hardening.log"
   pass "Hardening completed"
 
@@ -237,7 +238,7 @@ EOF
   pass "Server Tailscale IP: ${TS_IP}"
 
   # Clean up sensitive env file
-  rm -f /root/deploy.env
+  rm -f "${deploy_env_file}"
 }
 
 # ── Phase 2: Gate checks ───────────────────────────────────────────────────
