@@ -811,8 +811,9 @@ phase5_verify() {
     # Ensure we have a 3-char code; default to "000" on empty output
     https_code="${https_code:-000}"
     https_code="${https_code:0:3}"
-    # Accept any non-zero HTTP response — even a 302/401 proves the tunnel and DNS work
-    if [[ "${https_code}" != "000" && -n "${https_code}" ]]; then
+    # Require a successful HTTP response class.
+    # 2xx: upstream served content; 3xx: routing/TLS works and redirect happened.
+    if [[ "${https_code}" =~ ^[23][0-9][0-9]$ ]]; then
       gate_f_passed=true
       break
     fi
@@ -825,7 +826,8 @@ phase5_verify() {
   if [[ "${gate_f_passed}" == "true" ]]; then
     pass "Gate F: https://${DOMAIN} reachable (HTTP ${https_code})"
   else
-    warn "Gate F: https://${DOMAIN} not reachable after $((attempts * delay))s — DNS propagation may still be in progress"
+    fail "Gate F: https://${DOMAIN} not reachable with success response (last HTTP ${https_code})"
+    die "Gate F failed: external HTTPS endpoint check did not pass."
   fi
 
   # Final validation run
