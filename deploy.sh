@@ -461,152 +461,50 @@ phase2_gates() {
 # ── Phase 3: Docker + Coolify ──────────────────────────────────────────────
 
 phase3_docker_coolify() {
-  step "3/5" "Install Docker & Coolify"
-
-  # Install Docker (skip if already present).
-  if ssh_admin_sudo 'docker version >/dev/null 2>&1'; then
-    log "Docker already installed — skipping install."
-  else
-    log "Installing Docker via official apt repository..."
-    coolify_install_docker_engine_script | ssh_admin_sudo 'bash -s' \
-      || die "Docker installation failed."
-    pass "Docker installed"
-  fi
-  pass "Docker present"
-
-  # Start DOCKER-USER hardening service
-  ssh_admin_sudo 'systemctl start docker-user-hardening.service' \
-    || die "Failed to start docker-user-hardening.service"
+  phase3_has_docker() { ssh_admin_sudo 'docker version >/dev/null 2>&1'; }
+  phase3_install_docker() { coolify_install_docker_engine_script | ssh_admin_sudo 'bash -s'; }
+  phase3_start_docker_user() { ssh_admin_sudo 'systemctl start docker-user-hardening.service'; }
+  phase3_verify_docker_user() { verify_docker_user_gate_remote "$1"; }
+  phase3_has_coolify_env() { ssh_admin_sudo 'test -f /data/coolify/source/.env' >/dev/null 2>&1; }
+  phase3_install_coolify() { coolify_install_coolify_script | ssh_admin_sudo 'bash -s'; }
+  phase3_reconcile_docker_daemon() { reconcile_docker_daemon_remote; }
+  phase3_restart_docker_user() { ssh_admin_sudo 'systemctl restart docker-user-hardening.service'; }
+  phase3_add_coolify_root_key() { coolify_add_coolify_root_key_script | ssh_admin_sudo 'bash -s'; }
+  phase3_fix_host_docker_internal() { coolify_fix_host_docker_internal_script | ssh_admin_sudo 'bash -s'; }
 
   # Gate D: Verify DOCKER-USER rules
-  verify_docker_user_gate_remote "Gate D"
-
-  # Install Coolify (skip if already running)
-  if ssh_admin_sudo 'test -f /data/coolify/source/.env' >/dev/null 2>&1; then
-    log "Coolify .env found — skipping install (already installed)."
-    pass "Coolify already installed"
-  else
-    log "Installing Coolify (this may take a few minutes)..."
-    coolify_install_coolify_script | ssh_admin_sudo 'bash -s' \
-      || die "Coolify installation failed."
-    pass "Coolify installed"
-  fi
-
-  # Coolify installer manages daemon.json; re-apply hardening settings while preserving its keys.
-  reconcile_docker_daemon_remote
-
-  # Docker restart can flush DOCKER-USER runtime rules; re-apply and verify.
-  ssh_admin_sudo 'systemctl restart docker-user-hardening.service' \
-    || die "Failed to restart docker-user-hardening.service after Docker daemon reconciliation."
-  verify_docker_user_gate_remote "Gate D (post-Coolify)"
-
-  # Add Coolify's generated SSH public key to root's authorized_keys.
-  # Required for the Coolify "This Machine" onboarding: Coolify SSHes to localhost as root
-  # using its own key. The hardening Match block allows key-only root login from
-  # localhost (127.0.0.1), 172.16.0.0/12, and 10.0.0.0/8 (Docker pool); key must be present.
-  log "Adding Coolify SSH key to root authorized_keys..."
-  coolify_add_coolify_root_key_script | ssh_admin_sudo 'bash -s' \
-    || die "Failed to reconcile root authorized_keys with Coolify key."
-  pass "Coolify SSH key in root authorized_keys"
-
-  # Fix host.docker.internal resolution on Linux Docker.
-  # Docker on Linux doesn't resolve host-gateway to a real IP in all versions/configurations.
-  # Patch Coolify's docker-compose.yml to use the actual coolify network gateway IP,
-  # then recreate the container so the fix takes effect.
-  log "Fixing host.docker.internal for Linux Docker..."
-  coolify_fix_host_docker_internal_script | ssh_admin_sudo 'bash -s' \
-    || die "Failed to reconcile host.docker.internal in Coolify compose."
-  pass "host.docker.internal patched in Coolify docker-compose"
+  coolify_phase3_docker_coolify_shared \
+    phase3_has_docker \
+    phase3_install_docker \
+    phase3_start_docker_user \
+    phase3_verify_docker_user \
+    phase3_has_coolify_env \
+    phase3_install_coolify \
+    phase3_reconcile_docker_daemon \
+    phase3_restart_docker_user \
+    phase3_add_coolify_root_key \
+    phase3_fix_host_docker_internal
 }
 
 # ── Phase 4: Binding + DNS ─────────────────────────────────────────────────
 
 phase4_binding_dns() {
-  step "4/5" "Configure dashboard binding & DNS"
-
-  # Wait for Coolify to write its .env file before binding (installer is async)
-  log "Waiting for Coolify to initialize /data/coolify/source/.env..."
-  local coolify_wait=0 coolify_max=120
-  until ssh_admin_sudo 'test -f /data/coolify/source/.env' >/dev/null 2>&1; do
-    (( coolify_wait += 5 ))
-    if (( coolify_wait >= coolify_max )); then
-      warn "Coolify .env not found after ${coolify_max}s — binding may fail; continuing."
-      break
-    fi
-    sleep 5
-  done
-
-  # Run configure_coolify_binding.sh on server
-  log "Binding Coolify dashboard to Tailscale IP..."
-  ssh_admin_sudo "/root/configure_coolify_binding.sh --tailscale-ip ${TS_IP}" \
-    || die "configure_coolify_binding.sh failed. Fix binding errors before continuing."
-  pass "Dashboard binding configured"
-
-  # Set Coolify wildcard domain directly in the database.
-  # configure_coolify_binding.sh already waited up to 60s for port 8000 to bind,
-  # which guarantees the s6 startup sequence (migrate→seed→init) has completed and
-  # the server_settings row (server_id=0, the hardcoded Localhost server) exists.
-  # The API PATCH /servers/{uuid} does not expose wildcard_domain, so we write
-  # directly to PostgreSQL via docker exec on the coolify-db container.
-  log "Setting Coolify wildcard domain to http://${APP_DOMAIN}..."
-  local app_domain_q
-  app_domain_q="$(printf '%q' "${APP_DOMAIN}")"
-  coolify_set_wildcard_domain_script | ssh_admin_sudo "APP_DOMAIN=${app_domain_q} bash -s" \
-    || die "Failed to update wildcard domain in Coolify database"
-  pass "Coolify wildcard domain: http://${APP_DOMAIN}"
-
-  # Configure PUSHER_* for the selected mode.
-  # Tunnel mode requires ws.DOMAIN over 443; standard mode must clear tunnel-specific values.
-  log "Reconciling PUSHER env vars for ${DEPLOY_MODE} mode..."
-  # Contract anchors kept for tests/docs:
-  # mode="${DEPLOY_MODE}"
-  # PUSHER_HOST=ws.${DOMAIN}
-  # install -m 0600 "${tmp}" "${coolify_env}" (performed inside helper script)
-  local deploy_mode_q domain_q
-  deploy_mode_q="$(printf '%q' "${DEPLOY_MODE}")"
-  domain_q="$(printf '%q' "${DOMAIN}")"
-  coolify_reconcile_pusher_env_script \
-    | ssh_admin_sudo "DEPLOY_MODE=${deploy_mode_q} DOMAIN=${domain_q} bash -s" \
-    || die "Failed to reconcile PUSHER env vars"
-  if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
-    pass "PUSHER env vars configured: ws.${DOMAIN}:443 (wss)"
-  else
-    pass "PUSHER env vars cleared for standard mode"
-  fi
-
-  if [[ "${DEPLOY_MODE}" == "standard" ]]; then
-    # Standard mode: A records pointing to server public IP (proxied)
-    log "Configuring DNS: A record ${DOMAIN} → ${SERVER_IP} (proxied)..."
-    cf_upsert_a_record "${DOMAIN}" "${SERVER_IP}" "true"
-    pass "DNS A record configured: ${DOMAIN} → ${SERVER_IP}"
-
-    # Wildcard A records — always create both scopes so manually set domains at either level work
-    local wildcard_name="*.${APP_DOMAIN}"
-    log "Configuring DNS: wildcard A record ${wildcard_name} → ${SERVER_IP} (proxied)..."
-    cf_upsert_a_record "${wildcard_name}" "${SERVER_IP}" "true"
-    pass "DNS wildcard A record configured: ${wildcard_name} → ${SERVER_IP}"
-    if [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
-      local apex_wildcard="*.${CF_ZONE_NAME}"
-      cf_upsert_a_record "${apex_wildcard}" "${SERVER_IP}" "true"
-      pass "DNS wildcard A record configured: ${apex_wildcard} → ${SERVER_IP}"
-    fi
-
-  elif [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
-    # Tunnel mode: create tunnel, install cloudflared, CNAME
-    log "Creating Cloudflare Tunnel..."
-    _stop_cloudflared() { ssh_admin_sudo 'systemctl stop cloudflared 2>/dev/null || true'; }
-    cf_create_tunnel "_stop_cloudflared"
-    pass "Tunnel created: ${TUNNEL_ID}"
-
-    # Install cloudflared on server
-    log "Installing cloudflared on server..."
-    coolify_install_cloudflared_script | ssh_admin_sudo 'bash -s' \
-      || die "Failed to install cloudflared"
-    pass "cloudflared installed"
-
-    # Contract anchors kept for tests/docs:
-    # path: /terminal/ws
-    # service: http://localhost:6002
+  phase4_coolify_env_exists() { ssh_admin_sudo 'test -f /data/coolify/source/.env' >/dev/null 2>&1; }
+  phase4_configure_binding() { ssh_admin_sudo "/root/configure_coolify_binding.sh --tailscale-ip ${TS_IP}"; }
+  phase4_set_wildcard_domain() {
+    local app_domain_q
+    app_domain_q="$(printf '%q' "${APP_DOMAIN}")"
+    coolify_set_wildcard_domain_script | ssh_admin_sudo "APP_DOMAIN=${app_domain_q} bash -s"
+  }
+  phase4_reconcile_pusher_env() {
+    local deploy_mode_q domain_q
+    deploy_mode_q="$(printf '%q' "${DEPLOY_MODE}")"
+    domain_q="$(printf '%q' "${DOMAIN}")"
+    coolify_reconcile_pusher_env_script \
+      | ssh_admin_sudo "DEPLOY_MODE=${deploy_mode_q} DOMAIN=${domain_q} bash -s"
+  }
+  phase4_install_cloudflared() { coolify_install_cloudflared_script | ssh_admin_sudo 'bash -s'; }
+  phase4_configure_cloudflared() {
     local tunnel_id_q tunnel_secret_q cf_account_id_q domain_q app_domain_q cf_zone_name_q
     tunnel_id_q="$(printf '%q' "${TUNNEL_ID}")"
     tunnel_secret_q="$(printf '%q' "${TUNNEL_SECRET}")"
@@ -614,26 +512,24 @@ phase4_binding_dns() {
     domain_q="$(printf '%q' "${DOMAIN}")"
     app_domain_q="$(printf '%q' "${APP_DOMAIN}")"
     cf_zone_name_q="$(printf '%q' "${CF_ZONE_NAME}")"
-    coolify_configure_cloudflared_script | ssh_admin_sudo "TUNNEL_ID=${tunnel_id_q} TUNNEL_SECRET=${tunnel_secret_q} CF_ACCOUNT_ID=${cf_account_id_q} DOMAIN=${domain_q} APP_DOMAIN=${app_domain_q} CF_ZONE_NAME=${cf_zone_name_q} bash -s" \
-      || die "Failed to write cloudflared credentials/config or start service"
-    local wc_summary="*.${APP_DOMAIN}"
-    [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]] && wc_summary+=" and *.${CF_ZONE_NAME}"
-    pass "Tunnel credentials and config written (wildcards: ${wc_summary})"
-    pass "cloudflared service running"
+    coolify_configure_cloudflared_script \
+      | ssh_admin_sudo "TUNNEL_ID=${tunnel_id_q} TUNNEL_SECRET=${tunnel_secret_q} CF_ACCOUNT_ID=${cf_account_id_q} DOMAIN=${domain_q} APP_DOMAIN=${app_domain_q} CF_ZONE_NAME=${cf_zone_name_q} bash -s"
+  }
+  phase4_stop_cloudflared() { ssh_admin_sudo 'systemctl stop cloudflared 2>/dev/null || true'; }
 
-    # Create CNAME records: exact domain + wildcard for subdomains
-    local tunnel_target="${TUNNEL_ID}.cfargotunnel.com"
-    cf_upsert_cname "${DOMAIN}" "${tunnel_target}"
-    pass "DNS CNAME configured: ${DOMAIN} → ${tunnel_target}"
-
-    # Always create both wildcard CNAME levels for full routing coverage
-    cf_upsert_cname "*.${APP_DOMAIN}" "${tunnel_target}"
-    pass "DNS wildcard CNAME configured: *.${APP_DOMAIN} → ${tunnel_target}"
-    if [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
-      cf_upsert_cname "*.${CF_ZONE_NAME}" "${tunnel_target}"
-      pass "DNS wildcard CNAME configured: *.${CF_ZONE_NAME} → ${tunnel_target}"
-    fi
-  fi
+  # Contract anchors kept for tests/docs:
+  # mode="${DEPLOY_MODE}"
+  # PUSHER_HOST=ws.${DOMAIN}
+  # path: /terminal/ws
+  # service: http://localhost:6002
+  coolify_phase4_binding_dns_shared \
+    phase4_coolify_env_exists \
+    phase4_configure_binding \
+    phase4_set_wildcard_domain \
+    phase4_reconcile_pusher_env \
+    phase4_install_cloudflared \
+    phase4_configure_cloudflared \
+    phase4_stop_cloudflared
 }
 
 # ── Phase 5: Verification ─────────────────────────────────────────────────

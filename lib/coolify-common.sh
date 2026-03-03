@@ -267,6 +267,190 @@ report_validation_result() {
   fi
 }
 
+# coolify_phase3_docker_coolify_shared — Shared phase 3 orchestration used by
+# deploy.sh and setup.sh. Transport-specific behavior is injected via callbacks.
+# Callback signatures:
+#   has_docker_fn()
+#   install_docker_fn()
+#   start_docker_user_fn()
+#   verify_docker_user_fn <gate-label>
+#   has_coolify_env_fn()
+#   install_coolify_fn()
+#   reconcile_docker_daemon_fn()
+#   restart_docker_user_fn()
+#   add_coolify_root_key_fn()
+#   fix_host_docker_internal_fn()
+coolify_phase3_docker_coolify_shared() {
+  local has_docker_fn="$1"
+  local install_docker_fn="$2"
+  local start_docker_user_fn="$3"
+  local verify_docker_user_fn="$4"
+  local has_coolify_env_fn="$5"
+  local install_coolify_fn="$6"
+  local reconcile_docker_daemon_fn="$7"
+  local restart_docker_user_fn="$8"
+  local add_coolify_root_key_fn="$9"
+  local fix_host_docker_internal_fn="${10}"
+
+  step "3/5" "Install Docker & Coolify"
+
+  # Install Docker (skip if already present).
+  if "${has_docker_fn}"; then
+    log "Docker already installed — skipping install."
+  else
+    log "Installing Docker via official apt repository..."
+    "${install_docker_fn}" || die "Docker installation failed."
+    pass "Docker installed"
+  fi
+  pass "Docker present"
+
+  # Start DOCKER-USER hardening service
+  "${start_docker_user_fn}" || die "Failed to start docker-user-hardening.service"
+
+  # Gate D: Verify DOCKER-USER rules
+  "${verify_docker_user_fn}" "Gate D"
+
+  # Install Coolify (skip if already running)
+  if "${has_coolify_env_fn}"; then
+    log "Coolify .env found — skipping install (already installed)."
+    pass "Coolify already installed"
+  else
+    log "Installing Coolify (this may take a few minutes)..."
+    "${install_coolify_fn}" || die "Coolify installation failed."
+    pass "Coolify installed"
+  fi
+
+  # Coolify installer manages daemon.json; re-apply hardening settings while preserving its keys.
+  "${reconcile_docker_daemon_fn}"
+
+  # Docker restart can flush DOCKER-USER runtime rules; re-apply and verify.
+  "${restart_docker_user_fn}" \
+    || die "Failed to restart docker-user-hardening.service after Docker daemon reconciliation."
+  "${verify_docker_user_fn}" "Gate D (post-Coolify)"
+
+  # Add Coolify's generated SSH public key to root's authorized_keys.
+  # Required for the Coolify "This Machine" onboarding: Coolify SSHes to localhost as root
+  # using its own key. The hardening Match block allows key-only root login from
+  # localhost (127.0.0.1), 172.16.0.0/12, and 10.0.0.0/8 (Docker pool); key must be present.
+  log "Adding Coolify SSH key to root authorized_keys..."
+  "${add_coolify_root_key_fn}" || die "Failed to reconcile root authorized_keys with Coolify key."
+  pass "Coolify SSH key in root authorized_keys"
+
+  # Fix host.docker.internal resolution on Linux Docker.
+  # Docker on Linux doesn't resolve host-gateway to a real IP in all versions/configurations.
+  # Patch Coolify's docker-compose.yml to use the actual coolify network gateway IP,
+  # then recreate the container so the fix takes effect.
+  log "Fixing host.docker.internal for Linux Docker..."
+  "${fix_host_docker_internal_fn}" || die "Failed to reconcile host.docker.internal in Coolify compose."
+  pass "host.docker.internal patched in Coolify docker-compose"
+}
+
+# coolify_phase4_binding_dns_shared — Shared phase 4 orchestration used by
+# deploy.sh and setup.sh. Transport-specific behavior is injected via callbacks.
+# Callback signatures:
+#   coolify_env_exists_fn()
+#   configure_binding_fn()
+#   set_wildcard_domain_fn()
+#   reconcile_pusher_fn()
+#   install_cloudflared_fn()
+#   configure_cloudflared_fn()
+#   stop_cloudflared_fn()
+coolify_phase4_binding_dns_shared() {
+  local coolify_env_exists_fn="$1"
+  local configure_binding_fn="$2"
+  local set_wildcard_domain_fn="$3"
+  local reconcile_pusher_fn="$4"
+  local install_cloudflared_fn="$5"
+  local configure_cloudflared_fn="$6"
+  local stop_cloudflared_fn="$7"
+
+  step "4/5" "Configure dashboard binding & DNS"
+
+  # Wait for Coolify to write its .env file before binding (installer is async)
+  log "Waiting for Coolify to initialize /data/coolify/source/.env..."
+  local coolify_wait=0 coolify_max=120
+  until "${coolify_env_exists_fn}"; do
+    (( coolify_wait += 5 ))
+    if (( coolify_wait >= coolify_max )); then
+      warn "Coolify .env not found after ${coolify_max}s — binding may fail; continuing."
+      break
+    fi
+    sleep 5
+  done
+
+  log "Binding Coolify dashboard to Tailscale IP..."
+  "${configure_binding_fn}" || die "configure_coolify_binding.sh failed. Fix binding errors before continuing."
+  pass "Dashboard binding configured"
+
+  # Set Coolify wildcard domain directly in the database.
+  # configure_coolify_binding.sh already waited up to 60s for port 8000 to bind,
+  # which guarantees the s6 startup sequence (migrate→seed→init) has completed and
+  # the server_settings row (server_id=0, the hardcoded Localhost server) exists.
+  # The API PATCH /servers/{uuid} does not expose wildcard_domain, so we write
+  # directly to PostgreSQL via docker exec on the coolify-db container.
+  log "Setting Coolify wildcard domain to http://${APP_DOMAIN}..."
+  "${set_wildcard_domain_fn}" || die "Failed to update wildcard domain in Coolify database"
+  pass "Coolify wildcard domain: http://${APP_DOMAIN}"
+
+  # Configure PUSHER_* for the selected mode.
+  # Tunnel mode requires ws.DOMAIN over 443; standard mode must clear tunnel-specific values.
+  log "Reconciling PUSHER env vars for ${DEPLOY_MODE} mode..."
+  "${reconcile_pusher_fn}" || die "Failed to reconcile PUSHER env vars"
+  if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
+    pass "PUSHER env vars configured: ws.${DOMAIN}:443 (wss)"
+  else
+    pass "PUSHER env vars cleared for standard mode"
+  fi
+
+  if [[ "${DEPLOY_MODE}" == "standard" ]]; then
+    # Standard mode: A records pointing to server public IP (proxied)
+    log "Configuring DNS: A record ${DOMAIN} → ${SERVER_IP} (proxied)..."
+    cf_upsert_a_record "${DOMAIN}" "${SERVER_IP}" "true"
+    pass "DNS A record configured: ${DOMAIN} → ${SERVER_IP}"
+
+    # Wildcard A records — always create both scopes so manually set domains at either level work
+    local wildcard_name="*.${APP_DOMAIN}"
+    log "Configuring DNS: wildcard A record ${wildcard_name} → ${SERVER_IP} (proxied)..."
+    cf_upsert_a_record "${wildcard_name}" "${SERVER_IP}" "true"
+    pass "DNS wildcard A record configured: ${wildcard_name} → ${SERVER_IP}"
+    if [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
+      local apex_wildcard="*.${CF_ZONE_NAME}"
+      cf_upsert_a_record "${apex_wildcard}" "${SERVER_IP}" "true"
+      pass "DNS wildcard A record configured: ${apex_wildcard} → ${SERVER_IP}"
+    fi
+    return 0
+  fi
+
+  # Tunnel mode: create tunnel, install cloudflared, CNAME
+  log "Creating Cloudflare Tunnel..."
+  cf_create_tunnel "${stop_cloudflared_fn}"
+  pass "Tunnel created: ${TUNNEL_ID}"
+
+  log "Installing cloudflared..."
+  "${install_cloudflared_fn}" || die "Failed to install cloudflared"
+  pass "cloudflared installed"
+
+  "${configure_cloudflared_fn}" \
+    || die "Failed to write cloudflared credentials/config or start service"
+  local wc_summary="*.${APP_DOMAIN}"
+  [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]] && wc_summary+=" and *.${CF_ZONE_NAME}"
+  pass "Tunnel credentials and config written (wildcards: ${wc_summary})"
+  pass "cloudflared service running"
+
+  # Create CNAME records: exact domain + wildcard for subdomains
+  local tunnel_target="${TUNNEL_ID}.cfargotunnel.com"
+  cf_upsert_cname "${DOMAIN}" "${tunnel_target}"
+  pass "DNS CNAME configured: ${DOMAIN} → ${tunnel_target}"
+
+  # Always create both wildcard CNAME levels for full routing coverage
+  cf_upsert_cname "*.${APP_DOMAIN}" "${tunnel_target}"
+  pass "DNS wildcard CNAME configured: *.${APP_DOMAIN} → ${tunnel_target}"
+  if [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
+    cf_upsert_cname "*.${CF_ZONE_NAME}" "${tunnel_target}"
+    pass "DNS wildcard CNAME configured: *.${CF_ZONE_NAME} → ${tunnel_target}"
+  fi
+}
+
 # coolify_install_docker_engine_script — Emit host-side script to install Docker
 # via the official apt repository (no convenience curl|sh installer).
 coolify_install_docker_engine_script() {

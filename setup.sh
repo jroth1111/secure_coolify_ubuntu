@@ -270,173 +270,65 @@ phase2_gates() {
 # ── Phase 3: Docker + Coolify ──────────────────────────────────────────────
 
 phase3_docker_coolify() {
-  step "3/5" "Install Docker & Coolify"
-
-  # Install Docker (skip if already present).
-  if docker version >/dev/null 2>&1; then
-    log "Docker already installed — skipping install."
-  else
-    log "Installing Docker via official apt repository..."
-    coolify_install_docker_engine_script | bash -s \
-      || die "Docker installation failed."
-    pass "Docker installed"
-  fi
-  pass "Docker present"
-
-  # Start DOCKER-USER hardening service
-  systemctl start docker-user-hardening.service \
-    || die "Failed to start docker-user-hardening.service"
+  phase3_has_docker() { docker version >/dev/null 2>&1; }
+  phase3_install_docker() { coolify_install_docker_engine_script | bash -s; }
+  phase3_start_docker_user() { systemctl start docker-user-hardening.service; }
+  phase3_verify_docker_user() { verify_docker_user_gate_local "$1"; }
+  phase3_has_coolify_env() { [[ -f /data/coolify/source/.env ]]; }
+  phase3_install_coolify() { coolify_install_coolify_script | bash -s; }
+  phase3_reconcile_docker_daemon() { reconcile_docker_daemon_local; }
+  phase3_restart_docker_user() { systemctl restart docker-user-hardening.service; }
+  phase3_add_coolify_root_key() { coolify_add_coolify_root_key_script | bash -s; }
+  phase3_fix_host_docker_internal() { coolify_fix_host_docker_internal_script | bash -s; }
 
   # Gate D: Verify DOCKER-USER rules
-  verify_docker_user_gate_local "Gate D"
-
-  # Install Coolify (skip if already installed)
-  if [[ -f /data/coolify/source/.env ]]; then
-    log "Coolify .env found — skipping install (already installed)."
-    pass "Coolify already installed"
-  else
-    log "Installing Coolify (this may take a few minutes)..."
-    coolify_install_coolify_script | bash -s \
-      || die "Coolify installation failed."
-    pass "Coolify installed"
-  fi
-
-  # Coolify installer manages daemon.json; re-apply hardening settings while preserving its keys.
-  reconcile_docker_daemon_local
-
-  # Docker restart can flush DOCKER-USER runtime rules; re-apply and verify.
-  systemctl restart docker-user-hardening.service \
-    || die "Failed to restart docker-user-hardening.service after Docker daemon reconciliation."
-  verify_docker_user_gate_local "Gate D (post-Coolify)"
-
-  # Add Coolify's generated SSH public key to root's authorized_keys.
-  # Required for the Coolify "This Machine" onboarding: Coolify SSHes to localhost as root
-  # using its own key. The hardening Match block allows key-only root login from
-  # localhost (127.0.0.1), 172.16.0.0/12, and 10.0.0.0/8 (Docker pool); key must be present.
-  log "Adding Coolify SSH key to root authorized_keys..."
-  coolify_add_coolify_root_key_script | bash -s \
-    || die "Failed to reconcile root authorized_keys with Coolify key."
-  pass "Coolify SSH key in root authorized_keys"
-
-  # Fix host.docker.internal resolution on Linux Docker.
-  # Docker on Linux doesn't resolve host-gateway to a real IP in all versions/configurations.
-  # Patch Coolify's docker-compose.yml to use the actual coolify network gateway IP,
-  # then recreate the container so the fix takes effect.
-  log "Fixing host.docker.internal for Linux Docker..."
-  coolify_fix_host_docker_internal_script | bash -s \
-    || die "Failed to reconcile host.docker.internal in Coolify compose."
-  pass "host.docker.internal patched in Coolify docker-compose"
+  coolify_phase3_docker_coolify_shared \
+    phase3_has_docker \
+    phase3_install_docker \
+    phase3_start_docker_user \
+    phase3_verify_docker_user \
+    phase3_has_coolify_env \
+    phase3_install_coolify \
+    phase3_reconcile_docker_daemon \
+    phase3_restart_docker_user \
+    phase3_add_coolify_root_key \
+    phase3_fix_host_docker_internal
 }
 
 # ── Phase 4: Binding + DNS ─────────────────────────────────────────────────
 
 phase4_binding_dns() {
-  step "4/5" "Configure dashboard binding & DNS"
-
-  # Wait for Coolify to write its .env file before binding (installer is async)
-  log "Waiting for Coolify to initialize /data/coolify/source/.env..."
-  local coolify_wait=0 coolify_max=120
-  until [[ -f /data/coolify/source/.env ]]; do
-    (( coolify_wait += 5 ))
-    if (( coolify_wait >= coolify_max )); then
-      warn "Coolify .env not found after ${coolify_max}s — binding may fail; continuing."
-      break
-    fi
-    sleep 5
-  done
-
-  # Run configure_coolify_binding.sh directly
-  log "Binding Coolify dashboard to Tailscale IP..."
-  "${SCRIPT_DIR}/configure_coolify_binding.sh" --tailscale-ip "${TS_IP}" \
-    || die "configure_coolify_binding.sh failed. Fix binding errors before continuing."
-  pass "Dashboard binding configured"
-
-  # Set Coolify wildcard domain directly in the database.
-  # configure_coolify_binding.sh already waited up to 60s for port 8000 to bind,
-  # which guarantees the s6 startup sequence (migrate→seed→init) has completed and
-  # the server_settings row (server_id=0, the hardcoded Localhost server) exists.
-  # The API PATCH /servers/{uuid} does not expose wildcard_domain, so we write
-  # directly to PostgreSQL via docker exec on the coolify-db container.
-  log "Setting Coolify wildcard domain to http://${APP_DOMAIN}..."
-  APP_DOMAIN="${APP_DOMAIN}" coolify_set_wildcard_domain_script | bash -s \
-    || die "Failed to update wildcard domain in Coolify database"
-  pass "Coolify wildcard domain: http://${APP_DOMAIN}"
-
-  # Configure PUSHER_* for the selected mode.
-  # Tunnel mode requires ws.DOMAIN over 443; standard mode must clear tunnel-specific values.
-  log "Reconciling PUSHER env vars for ${DEPLOY_MODE} mode..."
-  # Contract anchors kept for tests/docs:
-  # sed '/^PUSHER_HOST=/d; /^PUSHER_PORT=/d; /^PUSHER_SCHEME=/d'
-  # PUSHER_HOST=ws.${DOMAIN}
-  # install -m 0600 "${tmp}" "${coolify_env}" (performed inside helper script)
-  DEPLOY_MODE="${DEPLOY_MODE}" DOMAIN="${DOMAIN}" coolify_reconcile_pusher_env_script | bash -s \
-    || die "Failed to reconcile PUSHER env vars"
-
-  if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
-    pass "PUSHER env vars configured: ws.${DOMAIN}:443 (wss)"
-  else
-    pass "PUSHER env vars cleared for standard mode"
-  fi
-
-  if [[ "${DEPLOY_MODE}" == "standard" ]]; then
-    # Standard mode: A records pointing to server public IP (proxied)
-    log "Configuring DNS: A record ${DOMAIN} → ${SERVER_IP} (proxied)..."
-    cf_upsert_a_record "${DOMAIN}" "${SERVER_IP}" "true"
-    pass "DNS A record configured: ${DOMAIN} → ${SERVER_IP}"
-
-    # Wildcard A records — always create both scopes so manually set domains at either level work
-    local wildcard_name="*.${APP_DOMAIN}"
-    log "Configuring DNS: wildcard A record ${wildcard_name} → ${SERVER_IP} (proxied)..."
-    cf_upsert_a_record "${wildcard_name}" "${SERVER_IP}" "true"
-    pass "DNS wildcard A record configured: ${wildcard_name} → ${SERVER_IP}"
-    if [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
-      local apex_wildcard="*.${CF_ZONE_NAME}"
-      cf_upsert_a_record "${apex_wildcard}" "${SERVER_IP}" "true"
-      pass "DNS wildcard A record configured: ${apex_wildcard} → ${SERVER_IP}"
-    fi
-
-  elif [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
-    # Tunnel mode: create tunnel, install cloudflared, CNAME
-    log "Creating Cloudflare Tunnel..."
-    _stop_cloudflared() { systemctl stop cloudflared 2>/dev/null || true; }
-    cf_create_tunnel "_stop_cloudflared"
-    pass "Tunnel created: ${TUNNEL_ID}"
-
-    # Install cloudflared
-    log "Installing cloudflared..."
-    coolify_install_cloudflared_script | bash -s \
-      || die "Failed to install cloudflared"
-    pass "cloudflared installed"
-
-    # Contract anchors kept for tests/docs:
-    # path: /terminal/ws
-    # service: http://localhost:6002
+  phase4_coolify_env_exists() { [[ -f /data/coolify/source/.env ]]; }
+  phase4_configure_binding() { "${SCRIPT_DIR}/configure_coolify_binding.sh" --tailscale-ip "${TS_IP}"; }
+  phase4_set_wildcard_domain() { APP_DOMAIN="${APP_DOMAIN}" coolify_set_wildcard_domain_script | bash -s; }
+  phase4_reconcile_pusher_env() {
+    DEPLOY_MODE="${DEPLOY_MODE}" DOMAIN="${DOMAIN}" coolify_reconcile_pusher_env_script | bash -s
+  }
+  phase4_install_cloudflared() { coolify_install_cloudflared_script | bash -s; }
+  phase4_configure_cloudflared() {
     TUNNEL_ID="${TUNNEL_ID}" \
     TUNNEL_SECRET="${TUNNEL_SECRET}" \
     CF_ACCOUNT_ID="${CF_ACCOUNT_ID}" \
     DOMAIN="${DOMAIN}" \
     APP_DOMAIN="${APP_DOMAIN}" \
     CF_ZONE_NAME="${CF_ZONE_NAME}" \
-      coolify_configure_cloudflared_script | bash -s \
-      || die "Failed to write cloudflared credentials/config or start service"
-    local wc_summary="*.${APP_DOMAIN}"
-    [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]] && wc_summary+=" and *.${CF_ZONE_NAME}"
-    pass "Tunnel credentials and config written (wildcards: ${wc_summary})"
-    pass "cloudflared service running"
+      coolify_configure_cloudflared_script | bash -s
+  }
+  phase4_stop_cloudflared() { systemctl stop cloudflared 2>/dev/null || true; }
 
-    # Create CNAME records: exact domain + wildcard for subdomains
-    local tunnel_target="${TUNNEL_ID}.cfargotunnel.com"
-    cf_upsert_cname "${DOMAIN}" "${tunnel_target}"
-    pass "DNS CNAME configured: ${DOMAIN} → ${tunnel_target}"
-
-    # Always create both wildcard CNAME levels for full routing coverage
-    cf_upsert_cname "*.${APP_DOMAIN}" "${tunnel_target}"
-    pass "DNS wildcard CNAME configured: *.${APP_DOMAIN} → ${tunnel_target}"
-    if [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
-      cf_upsert_cname "*.${CF_ZONE_NAME}" "${tunnel_target}"
-      pass "DNS wildcard CNAME configured: *.${CF_ZONE_NAME} → ${tunnel_target}"
-    fi
-  fi
+  # Contract anchors kept for tests/docs:
+  # sed '/^PUSHER_HOST=/d; /^PUSHER_PORT=/d; /^PUSHER_SCHEME=/d'
+  # PUSHER_HOST=ws.${DOMAIN}
+  # path: /terminal/ws
+  # service: http://localhost:6002
+  coolify_phase4_binding_dns_shared \
+    phase4_coolify_env_exists \
+    phase4_configure_binding \
+    phase4_set_wildcard_domain \
+    phase4_reconcile_pusher_env \
+    phase4_install_cloudflared \
+    phase4_configure_cloudflared \
+    phase4_stop_cloudflared
 }
 
 # ── Phase 5: Verification ─────────────────────────────────────────────────
