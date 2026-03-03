@@ -45,11 +45,11 @@ record() {
   esac
 
   if [[ "${JSON_MODE}" == "true" ]]; then
-    # Escape special characters for valid JSON output
-    local escaped_name escaped_detail
-    escaped_name="$(printf '%s' "${name}" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')"
-    escaped_detail="$(printf '%s' "${detail}" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')"
-    RESULTS+=("{\"check\":\"${escaped_name}\",\"status\":\"${status}\",\"detail\":\"${escaped_detail}\"}")
+    RESULTS+=("$(jq -nc \
+      --arg check "${name}" \
+      --arg status "${status}" \
+      --arg detail "${detail}" \
+      '{check:$check,status:$status,detail:$detail}')")
   elif [[ "${HEALTH_CHECK_MODE}" != "true" ]]; then
     printf '%-6s %-45s %s\n' "[${status}]" "${name}" "${detail}"
   else
@@ -1585,17 +1585,16 @@ if [[ "${HEALTH_CHECK_MODE}" == "true" ]]; then
   echo "HEALTHY"
   exit 0
 elif [[ "${JSON_MODE}" == "true" ]]; then
-  printf '{"pass":%d,"fail":%d,"info":%d,"checks":[' "${PASS_COUNT}" "${FAIL_COUNT}" "${INFO_COUNT}"
-  first="true"
-  for r in "${RESULTS[@]}"; do
-    if [[ "${first}" == "true" ]]; then
-      first="false"
-    else
-      printf ','
-    fi
-    printf '%s' "${r}"
-  done
-  printf ']}\n'
+  checks_json='[]'
+  if ((${#RESULTS[@]} > 0)); then
+    checks_json="$(printf '%s\n' "${RESULTS[@]}" | jq -s '.')"
+  fi
+  jq -nc \
+    --argjson pass "${PASS_COUNT}" \
+    --argjson fail "${FAIL_COUNT}" \
+    --argjson info "${INFO_COUNT}" \
+    --argjson checks "${checks_json}" \
+    '{pass:$pass,fail:$fail,info:$info,checks:$checks}'
 else
   printf '%s\n' "--------------------------------------------------------------"
   printf 'Summary: %d PASS, %d FAIL, %d INFO\n' "${PASS_COUNT}" "${FAIL_COUNT}" "${INFO_COUNT}"
