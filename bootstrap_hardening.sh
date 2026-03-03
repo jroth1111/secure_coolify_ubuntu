@@ -44,7 +44,7 @@ UPGRADE_MAIL="${UPGRADE_MAIL:-}"
 BIND_DASHBOARD_TO_TAILSCALE="${BIND_DASHBOARD_TO_TAILSCALE:-false}"
 INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-false}"
 TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
-STRICT_DOCKER_SSH_CIDRS="${STRICT_DOCKER_SSH_CIDRS:-false}"
+STRICT_DOCKER_SSH_CIDRS="${STRICT_DOCKER_SSH_CIDRS:-true}"
 
 OS_VERSION=""
 DOCKER_PRESENT="false"
@@ -106,7 +106,8 @@ Optional:
   --enable-auto-reboot <bool>   Enable unattended-upgrades reboot (default: false)
   --auto-reboot-time <HH:MM>    Reboot time for unattended-upgrades (default: 03:30)
   --journal-retention <span>   Journal retention period (default: 3month)
-  --strict-docker-ssh-cidrs   Use discovered Docker bridge CIDRs for SSH/UFW (least-privilege)
+  --strict-docker-ssh-cidrs   Use discovered Docker bridge CIDRs for SSH/UFW (default)
+  --compat-docker-ssh-cidrs   Use broad compatibility ranges (10.0.0.0/8, 172.16.0.0/12)
   --bind-dashboard-to-tailscale Bind Coolify dashboard to Tailscale IP only (split-horizon)
   --install-tailscale           Install Tailscale if not present (requires --tailscale-auth-key or interactive)
   --tailscale-auth-key <key>    Tailscale auth key for non-interactive setup (use with --install-tailscale)
@@ -241,6 +242,10 @@ parse_args() {
         ;;
       --strict-docker-ssh-cidrs)
         STRICT_DOCKER_SSH_CIDRS="true"
+        shift
+        ;;
+      --compat-docker-ssh-cidrs)
+        STRICT_DOCKER_SSH_CIDRS="false"
         shift
         ;;
       --swap-size)
@@ -1090,12 +1095,14 @@ discover_docker_ssh_cidrs() {
     )
   fi
 
-  # Discovery source 2: configured Docker default-address-pools.
-  if [[ -f "${DOCKER_DAEMON_JSON}" ]] && command -v jq >/dev/null 2>&1; then
+  # Discovery source 2: local Docker bridge interfaces.
+  # This still works when the Docker daemon is stopped.
+  if command -v ip >/dev/null 2>&1; then
     while IFS= read -r cidr; do
       add_docker_ssh_cidr "${cidr}"
     done < <(
-      jq -r '.["default-address-pools"][]?.base // empty' "${DOCKER_DAEMON_JSON}" 2>/dev/null \
+      ip -o -4 addr show 2>/dev/null \
+        | awk '$2 ~ /^docker0$/ || $2 ~ /^br-[[:alnum:]]+$/ { print $4 }' \
         | awk 'NF' \
         | sort -u
     )

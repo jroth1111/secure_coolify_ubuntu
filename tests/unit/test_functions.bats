@@ -1197,6 +1197,18 @@ allowusers testadmin"
   assert_output --partial "true"
 }
 
+@test "bootstrap default: STRICT_DOCKER_SSH_CIDRS=true" {
+  run bash -c 'source "'"${SCRIPT}"'" && echo "${STRICT_DOCKER_SSH_CIDRS}"'
+  assert_success
+  assert_output --partial "true"
+}
+
+@test "parse_args: --compat-docker-ssh-cidrs sets STRICT_DOCKER_SSH_CIDRS=false" {
+  run bash -c 'source "'"${SCRIPT}"'" && parse_args --compat-docker-ssh-cidrs && echo "${STRICT_DOCKER_SSH_CIDRS}"'
+  assert_success
+  assert_output --partial "false"
+}
+
 @test "parse_args: --auto-reboot-time sets value" {
   run bash -c 'source "'"${SCRIPT}"'" && parse_args --auto-reboot-time "05:00" && echo "${AUTO_REBOOT_TIME}"'
   assert_success
