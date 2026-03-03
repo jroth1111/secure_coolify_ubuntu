@@ -187,7 +187,7 @@ The token needs exactly two permissions:
 # Tunnel mode, apex app scope (default — apps at appname.example.com, works with Free Universal SSL)
 bash deploy.sh \
   --server-ip <ip> \
-  --root-pass <pass> \
+  --root-pass-file <path> \
   --admin-user <user> \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
@@ -198,7 +198,7 @@ bash deploy.sh \
 # Tunnel mode, vps app scope (apps at appname.vps.example.com — requires paid ACM or Enterprise for proxied SSL when DOMAIN is a subdomain)
 bash deploy.sh \
   --server-ip <ip> \
-  --root-pass <pass> \
+  --root-pass-file <path> \
   --admin-user <user> \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
@@ -210,7 +210,7 @@ bash deploy.sh \
 # Standard mode (if user explicitly requests open 80/443)
 bash deploy.sh \
   --server-ip <ip> \
-  --root-pass <pass> \
+  --root-pass-file <path> \
   --admin-user <user> \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
@@ -320,8 +320,8 @@ If the user asks about origin wildcard certs (Traefik DNS-01 with Cloudflare tok
   ```bash
   bash deploy.sh ... --ts-ip 100.x.x.x --yes
   ```
-  Neither `--root-pass` nor `--tailscale-auth-key` is required when `--ts-ip` is supplied (hardening is skipped).
-- **Secrets in process list**: `--root-pass` and `--cf-api-token` will briefly appear in `ps` output during invocation. The script uses `SSHPASS` env var internally (not CLI args) for SSH operations. This is acceptable for single-operator laptops but the user should be aware.
+  Neither `--root-pass-file` nor `--tailscale-auth-key` is required when `--ts-ip` is supplied (hardening is skipped).
+- **Secrets in process list**: prefer `--root-pass-file` (not `--root-pass`, which is disabled). `--cf-api-token` still appears in process args at invocation time. The script uses `SSHPASS` env var internally for SSH operations.
 
 ## Error Handling
 
@@ -355,7 +355,7 @@ Follow the Collection Sequence above. This tree handles branching decisions:
    - No Tailscale -> walk through Tailscale Setup Guide above (account + install + auth key)
    - No Cloudflare API token -> they need to create one at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) with **Zone:DNS:Edit** and **Account:Cloudflare Tunnel:Edit** permissions
 4. **Laptop or server?**
-   - Laptop -> `deploy.sh` (needs `--root-pass`)
+   - Laptop -> `deploy.sh` (use `--root-pass-file` or interactive prompt)
    - Server -> `setup.sh` (no root password needed)
 5. Run with `--yes` for non-interactive execution
 
@@ -365,7 +365,7 @@ Follow the Collection Sequence above. This tree handles branching decisions:
 |---------|-------------|-----|
 | Pre-flight fails: `sshpass` not found | `sshpass` not installed on operator machine | macOS: `brew install hudochenkov/sshpass/sshpass`; Linux: `apt install sshpass` |
 | Pre-flight fails: SSH key not found | No key at `~/.ssh/id_ed25519.pub` | Generate: `ssh-keygen -t ed25519`, or pass `--pubkey-file <path>` |
-| Phase 1 fails: `sshpass` exits with code 5 (`Permission denied`) | Wrong root password | VPS providers auto-generate a new root password after a rebuild — verify in the VPS control panel and re-run with the correct `--root-pass` |
+| Phase 1 fails: `sshpass` exits with code 5 (`Permission denied`) | Wrong root password | VPS providers auto-generate a new root password after a rebuild — verify in the VPS control panel and re-run with the correct root password (`--root-pass-file` or interactive prompt) |
 | Phase 1 fails: `backend error: invalid key` | Tailscale auth key already used (non-reusable) or from wrong tailnet | Generate a new `tskey-auth-...` key at login.tailscale.com/admin/settings/keys. If hardening completed before the failure, server may be accessible — check Tailscale admin panel for the server's IP and resume with `--ts-ip` |
 | Gate A fails (SSH timeout) | Tailscale not running on operator laptop, or not on same tailnet | Run `tailscale status` on laptop; ensure both machines are on same Tailnet |
 | Deploy exits after "PASS Hardening completed" with no further output | Post-hardening UFW blocks all public-IP SSH; `ssh_root 'tailscale ip -4'` timed out silently | Fixed in current code: bootstrap now prints `HARDEN_RESULT_TAILSCALE_IP=<ip>` and deploy.sh captures it via `tee`. If on an old version, check Tailscale admin panel for server IP then resume with `--ts-ip` |

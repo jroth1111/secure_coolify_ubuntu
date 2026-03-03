@@ -354,7 +354,7 @@ setup() {
 @test "deploy: usage documents required flags" {
   run bash -c "source '${DEPLOY_SCRIPT}'; usage"
   assert_output --partial "--server-ip"
-  assert_output --partial "--root-pass"
+  assert_output --partial "--root-pass-file"
   assert_output --partial "--tailscale-auth-key"
   assert_output --partial "--domain"
   assert_output --partial "--cf-api-token"

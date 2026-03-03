@@ -148,7 +148,7 @@ From your laptop — everything automated:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/secure_coolify_ubuntu/main/deploy.sh | bash -s -- \
   --server-ip <vps-ip> \
-  --root-pass <root-password> \
+  --root-pass-file /secure/path/root.pass \
   --tailscale-auth-key tskey-auth-... \
   --domain app.example.com \
   --cf-api-token <cloudflare-token> \
@@ -163,7 +163,7 @@ cd secure_coolify_ubuntu
 bash deploy.sh
 ```
 
-Already SSH'd into the server? Use `setup.sh` instead — same flags, runs locally (no `--root-pass` needed).
+Already SSH'd into the server? Use `setup.sh` instead — same flags, runs locally (no root password flag needed).
 
 ---
 
@@ -326,7 +326,7 @@ make test-all            # Full suite with Docker
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--server-ip <ip>` | *(required)* | Server public IPv4 |
-| `--root-pass <pass>` | *(required)* | Root password for initial SSH |
+| `--root-pass-file <path>` | optional | Read root password from file (recommended for automation) |
 | `--tailscale-auth-key <key>` | *(required)* | Tailscale auth key (`tskey-auth-...`) |
 | `--domain <fqdn>` | *(required)* | Domain name for Coolify |
 | `--cf-api-token <token>` | *(required)* | Cloudflare API token |

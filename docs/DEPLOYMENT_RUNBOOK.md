@@ -8,11 +8,11 @@ For a fully automated deployment, use `deploy.sh` (from your laptop) or `setup.s
 
 ```bash
 # Tunnel mode (default — recommended)
-bash deploy.sh --server-ip <ip> --root-pass <pass> --tailscale-auth-key <key> \
+bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
   --domain <fqdn> --cf-api-token <token> --yes
 
 # Standard mode (open public 80/443)
-bash deploy.sh --server-ip <ip> --root-pass <pass> --tailscale-auth-key <key> \
+bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
   --domain <fqdn> --cf-api-token <token> --mode standard --yes
 ```
 

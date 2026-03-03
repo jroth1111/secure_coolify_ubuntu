@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # Runs on the operator's machine; SSHes into the remote server.
 #
 # Interactive mode:  ./deploy.sh
-# Non-interactive:   ./deploy.sh --server-ip 1.2.3.4 --root-pass ... --yes
+# Non-interactive:   ./deploy.sh --server-ip 1.2.3.4 --root-pass-file /path/root.pass --yes
 # Mixed:             ./deploy.sh --server-ip 1.2.3.4  (prompted for the rest)
 
 SCRIPT_NAME="$(basename "$0")"
@@ -18,6 +18,7 @@ source "${SCRIPT_DIR}/lib/coolify-common.sh"
 
 SERVER_IP="${SERVER_IP:-}"
 ROOT_PASS="${ROOT_PASS:-}"
+ROOT_PASS_FILE="${ROOT_PASS_FILE:-}"
 ADMIN_USER="${ADMIN_USER:-}"
 PUBKEY_FILE="${PUBKEY_FILE:-}"
 TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
@@ -90,13 +91,14 @@ If any are missing, prompts for them (mixed mode supported).
 
 Required:
   --server-ip <ip>              Server public IPv4 address
-  --root-pass <pass>            Root password for initial SSH
+  Root password                 Provide via --root-pass-file or interactive prompt
   --tailscale-auth-key <key>    Tailscale auth key (tskey-auth-...)
   --domain <fqdn>               Domain name for Coolify
   --cf-api-token <token>        Cloudflare API token
 
 Optional:
   --admin-user <name>           Admin username (default: coolifyadmin)
+  --root-pass-file <path>       Read root password from file (recommended for automation)
   --pubkey-file <path>          SSH public key file (default: ~/.ssh/id_ed25519.pub)
   --mode <tunnel|standard>       Deployment mode (default: tunnel)
   --app-domain-mode <vps|apex>  App subdomain scope: vps=appname.DOMAIN, apex=appname.ZONE (default: apex)
@@ -116,7 +118,10 @@ parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --server-ip)       SERVER_IP="${2:?--server-ip requires a value}"; shift 2 ;;
-      --root-pass)       ROOT_PASS="${2:?--root-pass requires a value}"; shift 2 ;;
+      --root-pass)
+        die "--root-pass is disabled for security (CLI args leak to process list/history). Use --root-pass-file or interactive prompt."
+        ;;
+      --root-pass-file)  ROOT_PASS_FILE="${2:?--root-pass-file requires a value}"; shift 2 ;;
       --admin-user)      ADMIN_USER="${2:?--admin-user requires a value}"; shift 2 ;;
       --pubkey-file)     PUBKEY_FILE="${2:?--pubkey-file requires a value}"; shift 2 ;;
       --tailscale-auth-key) TAILSCALE_AUTH_KEY="${2:?--tailscale-auth-key requires a value}"; shift 2 ;;
@@ -146,6 +151,17 @@ collect_inputs() {
     TAILSCALE_AUTH_KEY="(not-needed)"
   fi
   collect_common_inputs
+  if ! is_true "${SKIP_HARDEN}" && [[ -z "${ROOT_PASS}" ]] && [[ -n "${ROOT_PASS_FILE}" ]]; then
+    [[ -f "${ROOT_PASS_FILE}" ]] || die "Root password file not found: ${ROOT_PASS_FILE}"
+    local file_perms
+    file_perms="$(stat -c '%a' "${ROOT_PASS_FILE}" 2>/dev/null || stat -f '%Lp' "${ROOT_PASS_FILE}" 2>/dev/null || echo "unknown")"
+    if [[ "${file_perms}" != "unknown" && "${file_perms}" != "600" && "${file_perms}" != "400" ]]; then
+      warn "Root password file ${ROOT_PASS_FILE} has permissions ${file_perms}; recommend 0600 or stricter."
+    fi
+    ROOT_PASS="$(cat "${ROOT_PASS_FILE}")"
+    ROOT_PASS="${ROOT_PASS%$'\n'}"
+    ROOT_PASS="${ROOT_PASS%$'\r'}"
+  fi
   # ROOT_PASS not needed when --ts-ip is supplied (hardening already done)
   if ! is_true "${SKIP_HARDEN}"; then
     [[ -n "${ROOT_PASS}" ]] || prompt_secret ROOT_PASS "Root password"
