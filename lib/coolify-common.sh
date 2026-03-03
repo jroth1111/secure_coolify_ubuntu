@@ -203,8 +203,16 @@ cf_create_tunnel() {
     [[ -n "${stop_fn}" ]] && "${stop_fn}"
     sleep 3  # Allow connections to close
     log "Deleting stale tunnel ${tunnel_name} (${existing_id}) before recreating..."
-    cf_api DELETE "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel/${existing_id}" >/dev/null \
-      || warn "Could not delete stale tunnel ${existing_id}; proceeding anyway."
+    local delete_resp delete_ok delete_err
+    delete_resp="$(cf_api DELETE "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel/${existing_id}" 2>/dev/null || true)"
+    delete_ok="$(printf '%s' "${delete_resp}" | jq -r '.success // false' 2>/dev/null || echo "false")"
+    if [[ "${delete_ok}" == "true" ]]; then
+      log "Deleted stale tunnel ${existing_id}"
+    else
+      delete_err="$(printf '%s' "${delete_resp}" | jq -r '[.errors[]?.message] | join("; ")' 2>/dev/null || true)"
+      [[ -n "${delete_err}" && "${delete_err}" != "null" ]] || delete_err="unknown"
+      warn "Could not delete stale tunnel ${existing_id} (${delete_err}); proceeding anyway."
+    fi
     sleep 2  # Allow CF to release the name
   fi
 
