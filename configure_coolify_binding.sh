@@ -11,6 +11,7 @@ SCRIPT_NAME="$(basename "$0")"
 COOLIFY_ENV="/data/coolify/source/.env"
 TAILSCALE_IP=""
 DRY_RUN="false"
+IPV4_RE='^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
 
 log() {
   printf '[%s] %s\n' "$(date -Iseconds)" "$*"
@@ -71,7 +72,7 @@ if [[ -z "${TAILSCALE_IP}" ]]; then
 fi
 
 # Validate IP format
-[[ "${TAILSCALE_IP}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Invalid IP address format: ${TAILSCALE_IP}"
+[[ "${TAILSCALE_IP}" =~ ${IPV4_RE} ]] || die "Invalid IP address format: ${TAILSCALE_IP}"
 
 log "Using Tailscale IP: ${TAILSCALE_IP}"
 
