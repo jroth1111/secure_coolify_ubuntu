@@ -599,6 +599,23 @@ auditd_check() {
     else
       record "FAIL" "auditd: disk failure actions" "expected disk_full_action/disk_error_action=suspend"
     fi
+
+    local space_left space_left_action admin_space_left admin_space_left_action
+    space_left="$(grep -E '^[[:space:]]*space_left[[:space:]]*=' "${AUDITD_CONF}" | tail -1 | sed 's/.*=[[:space:]]*//')"
+    space_left_action="$(grep -E '^[[:space:]]*space_left_action[[:space:]]*=' "${AUDITD_CONF}" | tail -1 | sed 's/.*=[[:space:]]*//')"
+    if [[ "${space_left:-0}" =~ ^[0-9]+$ ]] && (( space_left > 0 )) && [[ "${space_left_action}" == "syslog" ]]; then
+      record "PASS" "auditd: space_left=${space_left}, space_left_action=syslog"
+    else
+      record "FAIL" "auditd: space_left thresholds" "expected space_left>0 and space_left_action=syslog"
+    fi
+
+    admin_space_left="$(grep -E '^[[:space:]]*admin_space_left[[:space:]]*=' "${AUDITD_CONF}" | tail -1 | sed 's/.*=[[:space:]]*//')"
+    admin_space_left_action="$(grep -E '^[[:space:]]*admin_space_left_action[[:space:]]*=' "${AUDITD_CONF}" | tail -1 | sed 's/.*=[[:space:]]*//')"
+    if [[ "${admin_space_left:-0}" =~ ^[0-9]+$ ]] && (( admin_space_left > 0 )) && [[ "${admin_space_left_action}" == "suspend" ]]; then
+      record "PASS" "auditd: admin_space_left=${admin_space_left}, admin_space_left_action=suspend"
+    else
+      record "FAIL" "auditd: admin_space_left thresholds" "expected admin_space_left>0 and admin_space_left_action=suspend"
+    fi
   else
     record "INFO" "auditd: policy config" "${AUDITD_CONF} not found"
   fi

@@ -228,6 +228,14 @@ setup() {
   grep -q "lost=" "${VALIDATE_SCRIPT}"
 }
 
+@test "auditd_check validates space_left_action" {
+  grep -q "space_left_action" "${VALIDATE_SCRIPT}"
+}
+
+@test "auditd_check validates admin_space_left thresholds" {
+  grep -q "admin_space_left" "${VALIDATE_SCRIPT}"
+}
+
 @test "auditd_check validates user_commands execve rules" {
   grep -q "user_commands" "${VALIDATE_SCRIPT}"
 }
