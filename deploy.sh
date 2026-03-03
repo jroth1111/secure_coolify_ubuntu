@@ -600,7 +600,7 @@ if cmp -s "\${tmp}" "\${coolify_env}"; then
   exit 0
 fi
 
-install -m 0644 "\${tmp}" "\${coolify_env}"
+install -m 0600 "\${tmp}" "\${coolify_env}"
 rm -f "\${tmp}"
 echo "PUSHER env updated for mode=\${mode}"
 # Apply env changes immediately.

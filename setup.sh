@@ -459,7 +459,7 @@ PUSHER_INNER
   fi
 
   if ! cmp -s "${pusher_tmp}" "${coolify_env}"; then
-    install -m 0644 "${pusher_tmp}" "${coolify_env}"
+    install -m 0600 "${pusher_tmp}" "${coolify_env}"
     log "PUSHER env updated for mode=${DEPLOY_MODE}"
     # Apply env changes immediately.
     docker compose -f /data/coolify/source/docker-compose.yml \

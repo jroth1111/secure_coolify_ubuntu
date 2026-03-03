@@ -72,6 +72,11 @@ DEPLOY_MATRIX="${PROJECT_ROOT}/docs/deploy_setup_functionality_test_matrix.md"
   grep -Fq "Running final validate_hardening.sh..." "${DEPLOY_SCRIPT}"
 }
 
+@test "deploy: coolify .env written with 0600 permissions" {
+  grep -q 'install -m 0600' "${DEPLOY_SCRIPT}"
+  ! grep -q 'install -m 0644.*coolify_env\|install -m 0644.*\${coolify_env}' "${DEPLOY_SCRIPT}"
+}
+
 @test "deploy: matrix includes all DEP contract ids" {
   grep -Fq "DEP-01" "${DEPLOY_MATRIX}"
   grep -Fq "DEP-10" "${DEPLOY_MATRIX}"
