@@ -597,13 +597,19 @@ phase4_binding_dns() {
   ssh_admin_sudo 'bash -s' <<WILDCARD_EOF
 set -Eeuo pipefail
 coolify_env="/data/coolify/source/.env"
-db_user="\$(grep '^DB_USERNAME=' "\${coolify_env}" | cut -d= -f2 || echo 'coolify')"
-db_name="\$(grep '^DB_DATABASE=' "\${coolify_env}" | cut -d= -f2 || echo 'coolify')"
-db_pass="\$(grep '^DB_PASSWORD=' "\${coolify_env}" | cut -d= -f2)"
-docker exec -i coolify-db bash -c "
-  export PGPASSWORD='\${db_pass}'
-  psql -U '\${db_user}' -d '\${db_name}' -c \"UPDATE server_settings SET wildcard_domain = 'http://${APP_DOMAIN}' WHERE server_id = 0;\"
-" 2>/dev/null || echo "WARN: psql update failed — set Wildcard Domain manually in Coolify UI"
+db_user="\$(grep -m1 '^DB_USERNAME=' "\${coolify_env}" | cut -d= -f2- || true)"
+db_name="\$(grep -m1 '^DB_DATABASE=' "\${coolify_env}" | cut -d= -f2- || true)"
+db_pass="\$(grep -m1 '^DB_PASSWORD=' "\${coolify_env}" | cut -d= -f2- || true)"
+db_user="\${db_user:-coolify}"
+db_name="\${db_name:-coolify}"
+[[ -n "\${db_pass}" ]] || { echo "DB_PASSWORD missing in \${coolify_env}" >&2; exit 1; }
+sql="UPDATE server_settings SET wildcard_domain = 'http://${APP_DOMAIN}' WHERE server_id = 0;"
+# Read DB password from stdin so it is not embedded in command args.
+docker exec -i coolify-db sh -ceu '
+  IFS= read -r PGPASSWORD
+  export PGPASSWORD
+  psql -v ON_ERROR_STOP=1 -U "$1" -d "$2" -c "$3" >/dev/null
+' _ "\${db_user}" "\${db_name}" "\${sql}" <<< "\${db_pass}"
 WILDCARD_EOF
   pass "Coolify wildcard domain: http://${APP_DOMAIN}"
 

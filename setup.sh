@@ -450,14 +450,21 @@ phase4_binding_dns() {
   log "Setting Coolify wildcard domain to http://${APP_DOMAIN}..."
   local coolify_env="/data/coolify/source/.env"
   local db_user db_name db_pass
-  db_user="$(grep '^DB_USERNAME=' "${coolify_env}" | cut -d= -f2 || echo 'coolify')"
-  db_name="$(grep '^DB_DATABASE=' "${coolify_env}" | cut -d= -f2 || echo 'coolify')"
-  db_pass="$(grep '^DB_PASSWORD=' "${coolify_env}" | cut -d= -f2)"
-  docker exec -i coolify-db bash -c "
-    export PGPASSWORD='${db_pass}'
-    psql -U '${db_user}' -d '${db_name}' -c \"UPDATE server_settings SET wildcard_domain = 'http://${APP_DOMAIN}' WHERE server_id = 0;\"
-  " 2>/dev/null \
-    || warn "psql update failed — set Wildcard Domain manually in Coolify UI > Servers > localhost"
+  db_user="$(grep -m1 '^DB_USERNAME=' "${coolify_env}" | cut -d= -f2- || true)"
+  db_name="$(grep -m1 '^DB_DATABASE=' "${coolify_env}" | cut -d= -f2- || true)"
+  db_pass="$(grep -m1 '^DB_PASSWORD=' "${coolify_env}" | cut -d= -f2- || true)"
+  db_user="${db_user:-coolify}"
+  db_name="${db_name:-coolify}"
+  [[ -n "${db_pass}" ]] || die "DB_PASSWORD missing in ${coolify_env}"
+  local sql
+  sql="UPDATE server_settings SET wildcard_domain = 'http://${APP_DOMAIN}' WHERE server_id = 0;"
+  # Read DB password from stdin so it is not embedded in command args.
+  docker exec -i coolify-db sh -ceu '
+    IFS= read -r PGPASSWORD
+    export PGPASSWORD
+    psql -v ON_ERROR_STOP=1 -U "$1" -d "$2" -c "$3" >/dev/null
+  ' _ "${db_user}" "${db_name}" "${sql}" <<< "${db_pass}" \
+    || die "Failed to update wildcard domain in Coolify database"
   pass "Coolify wildcard domain: http://${APP_DOMAIN}"
 
   # Configure PUSHER_* for the selected mode.
