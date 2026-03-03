@@ -976,6 +976,17 @@ docker_trust_boundary_check() {
   else
     record "INFO" "docker-trust: docker group" "group not present"
   fi
+
+  # Check for privileged containers (INFO — some workloads legitimately need it)
+  local priv_containers
+  priv_containers="$(docker ps -q 2>/dev/null | xargs -r docker inspect \
+    --format '{{if .HostConfig.Privileged}}{{.Name}}{{end}}' 2>/dev/null \
+    | sed 's|^/||' | paste -sd, - || true)"
+  if [[ -n "${priv_containers}" ]]; then
+    record "INFO" "docker-trust: privileged containers" "running: ${priv_containers}"
+  else
+    record "PASS" "docker-trust: no privileged containers running"
+  fi
 }
 
 # ── AppArmor ──

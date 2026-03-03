@@ -230,6 +230,14 @@ setup() {
 
 # ── tailscale_check uses jq (not python3) ──────────────────────────────────────
 
+# ── privileged container check ──────────────────────────────────────────────────
+
+@test "docker_trust_boundary_check: checks for privileged containers" {
+  grep -q "HostConfig.Privileged" "${VALIDATE_SCRIPT}"
+}
+
+# ── tailscale_check uses jq (not python3) ──────────────────────────────────────
+
 @test "tailscale_check: does not use python3 for BackendState" {
   ! grep -q 'python3.*BackendState' "${VALIDATE_SCRIPT}"
 }
