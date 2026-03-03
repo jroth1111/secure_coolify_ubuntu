@@ -576,10 +576,10 @@ coolify_env="/data/coolify/source/.env"
 db_user="\$(grep '^DB_USERNAME=' "\${coolify_env}" | cut -d= -f2 || echo 'coolify')"
 db_name="\$(grep '^DB_DATABASE=' "\${coolify_env}" | cut -d= -f2 || echo 'coolify')"
 db_pass="\$(grep '^DB_PASSWORD=' "\${coolify_env}" | cut -d= -f2)"
-docker exec -e PGPASSWORD="\${db_pass}" coolify-db \
-  psql -U "\${db_user}" -d "\${db_name}" -c \
-  "UPDATE server_settings SET wildcard_domain = 'http://${APP_DOMAIN}' WHERE server_id = 0;" \
-  2>/dev/null || echo "WARN: psql update failed — set Wildcard Domain manually in Coolify UI"
+docker exec -i coolify-db bash -c "
+  export PGPASSWORD='\${db_pass}'
+  psql -U '\${db_user}' -d '\${db_name}' -c \"UPDATE server_settings SET wildcard_domain = 'http://${APP_DOMAIN}' WHERE server_id = 0;\"
+" 2>/dev/null || echo "WARN: psql update failed — set Wildcard Domain manually in Coolify UI"
 WILDCARD_EOF
   pass "Coolify wildcard domain: http://${APP_DOMAIN}"
 

@@ -72,6 +72,10 @@ DEPLOY_MATRIX="${PROJECT_ROOT}/docs/deploy_setup_functionality_test_matrix.md"
   grep -Fq "Running final validate_hardening.sh..." "${DEPLOY_SCRIPT}"
 }
 
+@test "deploy: PGPASSWORD not exposed via docker exec -e flag" {
+  ! grep -q 'docker exec -e PGPASSWORD' "${DEPLOY_SCRIPT}"
+}
+
 @test "deploy: docker daemon reconciliation includes default-ipc-mode" {
   grep -q 'default-ipc-mode' "${DEPLOY_SCRIPT}"
 }

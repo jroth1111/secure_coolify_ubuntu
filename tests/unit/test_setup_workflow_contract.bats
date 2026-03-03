@@ -66,6 +66,10 @@ DEPLOY_MATRIX="${PROJECT_ROOT}/docs/deploy_setup_functionality_test_matrix.md"
   grep -Fq "Running final validate_hardening.sh..." "${SETUP_SCRIPT}"
 }
 
+@test "setup: PGPASSWORD not exposed via docker exec -e flag" {
+  ! grep -q 'docker exec -e PGPASSWORD' "${SETUP_SCRIPT}"
+}
+
 @test "setup: cf_api hides token from process listing via --config" {
   local common_lib="${PROJECT_ROOT}/lib/coolify-common.sh"
   ! grep -q '\-H "Authorization: Bearer \${CF_API_TOKEN}"' "${common_lib}"
