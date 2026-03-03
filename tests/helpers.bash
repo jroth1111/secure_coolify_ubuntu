@@ -99,3 +99,29 @@ source_deploy_script() {
   fi
   eval "$(declare -f bats_run | sed '1s/^bats_run /run /')"
 }
+
+# Source setup.sh to import functions for unit testing.
+# Same guards as source_script() above.
+source_setup_script() {
+  # Save BATS's run function before it gets overwritten
+  eval "$(declare -f run | sed '1s/^run /bats_run /')" 2>/dev/null || true
+
+  local _old_opts
+  _old_opts="$(set +o)"
+  local _old_traps
+  _old_traps="$(trap -p ERR)"
+
+  source "${SETUP_SCRIPT}"
+
+  eval "${_old_opts}"
+  trap - ERR
+  if [[ -n "${_old_traps}" ]]; then
+    eval "${_old_traps}"
+  fi
+
+  # Rename the script's run() → setup_run(), restore BATS's run
+  if declare -f run >/dev/null 2>&1; then
+    eval "$(declare -f run | sed '1s/^run /setup_run /')"
+  fi
+  eval "$(declare -f bats_run | sed '1s/^bats_run /run /')"
+}

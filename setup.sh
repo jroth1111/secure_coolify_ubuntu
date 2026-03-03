@@ -484,4 +484,6 @@ main() {
   phase5_verify
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
