@@ -576,12 +576,22 @@ install_tailscale() {
   fi
 
   if is_true "${DRY_RUN}"; then
-    log "DRY-RUN: would install Tailscale via official install script."
+    log "DRY-RUN: would install Tailscale via official apt repository."
     return 0
   fi
 
-  log "Installing Tailscale..."
-  run bash -o pipefail -c 'curl -fsSL https://tailscale.com/install.sh | sh'
+  log "Installing Tailscale via official apt repository..."
+  local codename keyring listfile
+  source /etc/os-release
+  codename="${VERSION_CODENAME:-}"
+  [[ -n "${codename}" ]] || die "Unable to determine Ubuntu codename for Tailscale repository."
+  keyring="/usr/share/keyrings/tailscale-archive-keyring.gpg"
+  listfile="/etc/apt/sources.list.d/tailscale.list"
+
+  run curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/${codename}.noarmor.gpg" -o "${keyring}"
+  run curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/${codename}.tailscale-keyring.list" -o "${listfile}"
+  run apt-get update
+  run env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tailscale
 
   # Authenticate Tailscale
   if [[ -n "${TAILSCALE_AUTH_KEY}" ]]; then
