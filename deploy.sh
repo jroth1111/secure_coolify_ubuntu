@@ -463,13 +463,12 @@ phase2_gates() {
 phase3_docker_coolify() {
   step "3/5" "Install Docker & Coolify"
 
-  # Install Docker (skip if already present — the install script is not idempotent on network errors)
+  # Install Docker (skip if already present).
   if ssh_admin_sudo 'docker version >/dev/null 2>&1'; then
     log "Docker already installed — skipping install."
   else
-    log "Installing Docker..."
-    # Use pipefail so curl/network failures are not masked by the shell pipeline.
-    ssh_admin_sudo "bash -o pipefail -c 'curl -fsSL https://get.docker.com | sh'" \
+    log "Installing Docker via official apt repository..."
+    coolify_install_docker_engine_script | ssh_admin_sudo 'bash -s' \
       || die "Docker installation failed."
     pass "Docker installed"
   fi
@@ -488,8 +487,7 @@ phase3_docker_coolify() {
     pass "Coolify already installed"
   else
     log "Installing Coolify (this may take a few minutes)..."
-    # Use pipefail so curl/network failures are not masked by the shell pipeline.
-    ssh_admin_sudo "bash -o pipefail -c 'curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash'" \
+    coolify_install_coolify_script | ssh_admin_sudo 'bash -s' \
       || die "Coolify installation failed."
     pass "Coolify installed"
   fi

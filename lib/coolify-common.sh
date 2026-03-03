@@ -267,6 +267,47 @@ report_validation_result() {
   fi
 }
 
+# coolify_install_docker_engine_script — Emit host-side script to install Docker
+# via the official apt repository (no convenience curl|sh installer).
+coolify_install_docker_engine_script() {
+  cat <<'EOF'
+set -Eeuo pipefail
+export DEBIAN_FRONTEND=noninteractive
+source /etc/os-release
+codename="${VERSION_CODENAME:-}"
+[[ -n "${codename}" ]] || { echo "VERSION_CODENAME missing in /etc/os-release" >&2; exit 1; }
+
+apt-get update -qq
+apt-get install -y -qq ca-certificates curl gnupg
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+cat > /etc/apt/sources.list.d/docker.list <<REPO
+deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${codename} stable
+REPO
+apt-get update -qq
+apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+EOF
+}
+
+# coolify_install_coolify_script — Emit host-side script to install Coolify by
+# downloading installer to a local temp file, validating basic format, then executing it.
+coolify_install_coolify_script() {
+  cat <<'EOF'
+set -Eeuo pipefail
+installer_url="https://cdn.coollabs.io/coolify/install.sh"
+tmp="$(mktemp /tmp/coolify-install.XXXXXX.sh)"
+cleanup() { rm -f "${tmp}"; }
+trap cleanup EXIT
+
+curl -fsSL "${installer_url}" -o "${tmp}"
+[[ -s "${tmp}" ]] || { echo "Downloaded Coolify installer is empty" >&2; exit 1; }
+head -1 "${tmp}" | grep -Eq '^#!.*/(ba)?sh$' || { echo "Unexpected Coolify installer header" >&2; exit 1; }
+chmod 700 "${tmp}"
+bash "${tmp}"
+EOF
+}
+
 # coolify_reconcile_docker_daemon_script — Emit a host-side script that enforces
 # daemon.json hardening keys while preserving unrelated settings.
 # Caller is responsible for transport/execution (local bash -s vs remote sudo bash -s).
