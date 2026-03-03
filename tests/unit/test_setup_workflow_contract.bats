@@ -66,6 +66,12 @@ DEPLOY_MATRIX="${PROJECT_ROOT}/docs/deploy_setup_functionality_test_matrix.md"
   grep -Fq "Running final validate_hardening.sh..." "${SETUP_SCRIPT}"
 }
 
+@test "setup: cf_api hides token from process listing via --config" {
+  local common_lib="${PROJECT_ROOT}/lib/coolify-common.sh"
+  ! grep -q '\-H "Authorization: Bearer \${CF_API_TOKEN}"' "${common_lib}"
+  grep -q '\-\-config -' "${common_lib}"
+}
+
 @test "setup: docker daemon reconciliation includes default-ipc-mode" {
   grep -q 'default-ipc-mode' "${SETUP_SCRIPT}"
 }

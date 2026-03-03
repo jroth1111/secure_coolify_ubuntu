@@ -99,9 +99,10 @@ prompt_choice() {
 cf_api() {
   local method="$1" endpoint="$2" body="${3:-}"
   local url="https://api.cloudflare.com/client/v4${endpoint}"
-  local args=(-s -X "${method}" -H "Authorization: Bearer ${CF_API_TOKEN}" -H "Content-Type: application/json")
+  local args=(-s -X "${method}" -H "Content-Type: application/json")
   [[ -n "${body}" ]] && args+=(-d "${body}")
-  curl "${args[@]}" "${url}"
+  printf -- '-H "Authorization: Bearer %s"\n' "${CF_API_TOKEN}" \
+    | curl --config - "${args[@]}" "${url}"
 }
 
 cf_verify_token() {
