@@ -1029,7 +1029,7 @@ tailscale_check() {
   if command -v tailscale >/dev/null 2>&1; then
     local ts_state
     ts_state="$(tailscale status --json 2>/dev/null \
-      | python3 -c "import sys,json; print(json.load(sys.stdin).get('BackendState','unknown'))" \
+      | jq -r '.BackendState // "unknown"' \
       2>/dev/null || echo "unknown")"
     if [[ "${ts_state}" == "Running" ]]; then
       record "PASS" "tailscale: BackendState=Running"

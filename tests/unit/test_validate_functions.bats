@@ -228,6 +228,18 @@ setup() {
   grep -q "lost=" "${VALIDATE_SCRIPT}"
 }
 
+# ── tailscale_check uses jq (not python3) ──────────────────────────────────────
+
+@test "tailscale_check: does not use python3 for BackendState" {
+  ! grep -q 'python3.*BackendState' "${VALIDATE_SCRIPT}"
+}
+
+@test "tailscale_check: uses jq for BackendState" {
+  grep -q 'jq.*BackendState' "${VALIDATE_SCRIPT}"
+}
+
+# ── auditd space_left validation ───────────────────────────────────────────────
+
 @test "auditd_check validates space_left_action" {
   grep -q "space_left_action" "${VALIDATE_SCRIPT}"
 }
