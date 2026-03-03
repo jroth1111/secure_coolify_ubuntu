@@ -107,7 +107,7 @@ is_true() {
 }
 
 regex_escape() {
-  printf '%s' "$1" | sed -e 's/[.[\*^$()+?{|]/\\&/g' -e 's/\//\\\//g'
+  printf '%s' "$1" | sed -e 's/[][\\/.*^$(){}+?|]/\\&/g'
 }
 
 load_docker_ssh_cidrs() {
