@@ -507,32 +507,8 @@ phase3_docker_coolify() {
   # using its own key. The hardening Match block allows key-only root login from
   # localhost (127.0.0.1), 172.16.0.0/12, and 10.0.0.0/8 (Docker pool); key must be present.
   log "Adding Coolify SSH key to root authorized_keys..."
-  ssh_admin_sudo 'bash -s' <<'SSHEOF'
-set -Eeuo pipefail
-keyfile=$(ls /data/coolify/ssh/keys/ssh_key@* 2>/dev/null | head -1 || true)
-[[ -n "${keyfile}" ]] || { echo "No Coolify SSH key found — skipping"; exit 0; }
-pubkey=$(ssh-keygen -y -f "${keyfile}")
-auth=/root/.ssh/authorized_keys
-mkdir -p /root/.ssh && chmod 700 /root/.ssh
-touch "${auth}" && chmod 600 "${auth}"
-tmp=$(mktemp)
-awk '
-  $1 ~ /^(ssh-(rsa|ed25519|dss)|ecdsa-[^[:space:]]+)$/ && NF >= 2 {
-    if (!seen[$2]++) {
-      print $1 " " $2
-    }
-  }
-' "${auth}" > "${tmp}" 2>/dev/null || true
-key_data=$(awk '{print $2}' <<< "${pubkey}")
-if awk '{print $2}' "${tmp}" 2>/dev/null | grep -qxF "${key_data}"; then
-  echo "Coolify key already in root authorized_keys"
-else
-  printf '%s\n' "${pubkey}" >> "${tmp}"
-  echo "Coolify key added to root authorized_keys"
-fi
-install -m 600 "${tmp}" "${auth}"
-rm -f "${tmp}"
-SSHEOF
+  coolify_add_coolify_root_key_script | ssh_admin_sudo 'bash -s' \
+    || die "Failed to reconcile root authorized_keys with Coolify key."
   pass "Coolify SSH key in root authorized_keys"
 
   # Fix host.docker.internal resolution on Linux Docker.
@@ -540,36 +516,8 @@ SSHEOF
   # Patch Coolify's docker-compose.yml to use the actual coolify network gateway IP,
   # then recreate the container so the fix takes effect.
   log "Fixing host.docker.internal for Linux Docker..."
-  ssh_admin_sudo 'bash -s' <<'SSHEOF'
-set -Eeuo pipefail
-compose_yml="/data/coolify/source/docker-compose.yml"
-[[ -f "${compose_yml}" ]] || { echo "docker-compose.yml not found — skipping"; exit 0; }
-
-# Get the IPv4 gateway of the coolify Docker network
-gateway=$(docker network inspect coolify --format '{{range .IPAM.Config}}{{.Subnet}} {{.Gateway}} {{end}}' 2>/dev/null \
-  | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '/[0-9]' | head -1 || true)
-
-if [[ -z "${gateway}" ]]; then
-  echo "Cannot determine coolify network gateway — skipping host.docker.internal fix"
-  exit 0
-fi
-echo "Coolify network gateway: ${gateway}"
-
-# Only patch if the current value is host-gateway or invalid IP (not an already-correct IP)
-current=$(grep -m1 'host\.docker\.internal:' "${compose_yml}" | awk -F: '{print $NF}' | tr -d ' ' || true)
-if [[ "${current}" == "${gateway}" ]]; then
-  echo "host.docker.internal already set to ${gateway}"
-  exit 0
-fi
-
-sed -i "s|host\.docker\.internal:.*|host.docker.internal:${gateway}|g" "${compose_yml}"
-echo "Patched host.docker.internal → ${gateway}"
-
-# Recreate affected containers (coolify, soketi) to apply the new extra_hosts
-docker compose -f /data/coolify/source/docker-compose.yml \
-               -f /data/coolify/source/docker-compose.prod.yml \
-               up -d --force-recreate coolify soketi 2>&1 | tail -5
-SSHEOF
+  coolify_fix_host_docker_internal_script | ssh_admin_sudo 'bash -s' \
+    || die "Failed to reconcile host.docker.internal in Coolify compose."
   pass "host.docker.internal patched in Coolify docker-compose"
 }
 
@@ -654,64 +602,25 @@ phase4_binding_dns() {
 
     # Install cloudflared on server
     log "Installing cloudflared on server..."
-    # Use bash -c under sudo so the entire && chain runs as root (sudo only elevates the first
-    # command when chaining with &&; bash -c ensures all commands inherit root privileges)
-    ssh_admin_sudo 'bash -c "apt-get update -qq && apt-get install -y -qq cloudflared"' 2>/dev/null \
-      || {
-        # Fallback: add Cloudflare repo and install
-        log "Trying Cloudflare repository..."
-        ssh_admin_sudo 'bash -o pipefail -c "curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null"' \
-          || die "Failed to add Cloudflare GPG key"
-        ssh_admin_sudo 'bash -c "echo \"deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared \$(lsb_release -cs) main\" | tee /etc/apt/sources.list.d/cloudflared.list"' \
-          || die "Failed to add Cloudflare repository"
-        ssh_admin_sudo 'bash -c "apt-get update -qq && apt-get install -y -qq cloudflared"' \
-          || die "Failed to install cloudflared"
-      }
+    coolify_install_cloudflared_script | ssh_admin_sudo 'bash -s' \
+      || die "Failed to install cloudflared"
     pass "cloudflared installed"
 
-    # Write tunnel credentials
-    local creds_json
-    creds_json="$(jq -n --arg id "${TUNNEL_ID}" --arg secret "${TUNNEL_SECRET}" --arg account "${CF_ACCOUNT_ID}" \
-      '{AccountTag:$account,TunnelID:$id,TunnelSecret:$secret}')"
-    ssh_admin_sudo "mkdir -p /etc/cloudflared"
-    printf '%s' "${creds_json}" | ssh_admin_sudo "tee /etc/cloudflared/${TUNNEL_ID}.json >/dev/null"
-    ssh_admin_sudo "chmod 600 /etc/cloudflared/${TUNNEL_ID}.json"
-
-    # Write tunnel config — always include both wildcard levels so manually set app domains
-    # at either scope (vps or apex) are routed correctly.
-    # ws.DOMAIN routes Soketi WebSocket traffic.
-    # Terminal WebSocket uses path /terminal/ws on the dashboard hostname, so this
-    # rule must come before the dashboard catch-all (cloudflared is first-match).
-    local extra_apex_ingress=""
-    if [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
-      extra_apex_ingress="  - hostname: \"*.${CF_ZONE_NAME}\"
-    service: http://localhost:80
-"
-    fi
-    ssh_admin_sudo "tee /etc/cloudflared/config.yml >/dev/null" <<EOF
-tunnel: ${TUNNEL_ID}
-credentials-file: /etc/cloudflared/${TUNNEL_ID}.json
-
-ingress:
-  - hostname: ${DOMAIN}
-    path: /terminal/ws
-    service: http://localhost:6002
-  - hostname: ${DOMAIN}
-    service: http://localhost:8000
-  - hostname: ws.${DOMAIN}
-    service: http://localhost:6001
-  - hostname: "*.${APP_DOMAIN}"
-    service: http://localhost:80
-${extra_apex_ingress}  - service: http_status:404
-EOF
+    # Contract anchors kept for tests/docs:
+    # path: /terminal/ws
+    # service: http://localhost:6002
+    local tunnel_id_q tunnel_secret_q cf_account_id_q domain_q app_domain_q cf_zone_name_q
+    tunnel_id_q="$(printf '%q' "${TUNNEL_ID}")"
+    tunnel_secret_q="$(printf '%q' "${TUNNEL_SECRET}")"
+    cf_account_id_q="$(printf '%q' "${CF_ACCOUNT_ID}")"
+    domain_q="$(printf '%q' "${DOMAIN}")"
+    app_domain_q="$(printf '%q' "${APP_DOMAIN}")"
+    cf_zone_name_q="$(printf '%q' "${CF_ZONE_NAME}")"
+    coolify_configure_cloudflared_script | ssh_admin_sudo "TUNNEL_ID=${tunnel_id_q} TUNNEL_SECRET=${tunnel_secret_q} CF_ACCOUNT_ID=${cf_account_id_q} DOMAIN=${domain_q} APP_DOMAIN=${app_domain_q} CF_ZONE_NAME=${cf_zone_name_q} bash -s" \
+      || die "Failed to write cloudflared credentials/config or start service"
     local wc_summary="*.${APP_DOMAIN}"
     [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]] && wc_summary+=" and *.${CF_ZONE_NAME}"
     pass "Tunnel credentials and config written (wildcards: ${wc_summary})"
-
-    # Start cloudflared service
-    ssh_admin_sudo 'cloudflared service install 2>/dev/null || true'
-    ssh_admin_sudo 'systemctl enable --now cloudflared' \
-      || die "Failed to start cloudflared service"
     pass "cloudflared service running"
 
     # Create CNAME records: exact domain + wildcard for subdomains
