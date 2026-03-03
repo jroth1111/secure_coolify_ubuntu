@@ -178,7 +178,6 @@ parse_args() {
     for arg in "$@"; do
       if [[ "${prev}" == "--env-file" ]]; then
         env_file="${arg}"
-        break
       fi
       prev="${arg}"
     done
