@@ -1989,52 +1989,91 @@ generate_report() {
     fi
   fi
 
-  cat > "${REPORT_FILE}" <<EOF
-{
-  "generated_at": "$(date -Iseconds)",
-  "script_version": "${SCRIPT_VERSION}",
-  "os_version": "${OS_VERSION}",
-  "admin_user": "${ADMIN_USER}",
-  "wan_iface": "${WAN_IFACE}",
-  "tailscale_iface": "${TAILSCALE_IFACE}",
-  "tailscale_cidr_hint": "${TAILSCALE_CIDR}",
-  "ssh_port": ${SSH_PORT},
-  "tunnel_mode": $(is_true "${TUNNEL_MODE}" && echo true || echo false),
-  "swap_size": "${SWAP_SIZE:-2G}",
-  "journal_retention": "${JOURNAL_RETENTION}",
-  "update_profile": "${UPDATE_PROFILE}",
-  "auto_reboot_requested": $(is_true "${ENABLE_AUTO_REBOOT}" && echo true || echo false),
-  "auto_reboot_time": "${AUTO_REBOOT_TIME}",
-  "strict_docker_ssh_cidrs": $(is_true "${STRICT_DOCKER_SSH_CIDRS}" && echo true || echo false),
-  "docker_ssh_cidrs": "${docker_ssh_cidrs_csv}",
-  "tailscale_direct_wan": $(is_true "${TAILSCALE_DIRECT_WAN}" && echo true || echo false),
-  "bind_dashboard_to_tailscale": $(is_true "${BIND_DASHBOARD_TO_TAILSCALE}" && echo true || echo false),
-  "install_tailscale": $(is_true "${INSTALL_TAILSCALE}" && echo true || echo false),
-  "tailscale_ip": "${DETECTED_TAILSCALE_IP:-}",
-  "dry_run": $(is_true "${DRY_RUN}" && echo true || echo false),
-  "checks": {
-    "tailscale_iface_present": ${tailscale_iface_present},
-    "ufw_active": ${ufw_active},
-    "ssh_root_login_disabled": ${ssh_root_disabled},
-    "ssh_root_local_only_key_auth": ${ssh_root_local_only},
-    "ssh_password_auth_disabled": ${ssh_password_disabled},
-    "journald_persistent": ${journald_persistent},
-    "auditd_enabled": ${auditd_enabled},
-    "audit_rules_loaded": ${audit_rules_loaded},
-    "docker_user_drop_rule_v4": ${docker_drop_rule},
-    "docker_user_drop_rule_v6": ${docker_drop_rule_v6},
-    "docker_sock_world_writable": ${docker_sock_world_writable},
-    "admin_user_in_docker_group": ${admin_in_docker_group},
-    "sysctl_syncookies": ${sysctl_syncookies},
-    "sysctl_bbr": ${sysctl_bbr},
-    "timesync_ntp": ${timesync_ntp},
-    "swap_active": ${swap_active},
-    "fail2ban_active": ${fail2ban_active},
-    "banner_present": ${banner_present},
-    "coolify_dashboard_bound_to_tailscale": ${coolify_dashboard_bound}
-  }
-}
-EOF
+  jq -n \
+    --arg generated_at "$(date -Iseconds)" \
+    --arg script_version "${SCRIPT_VERSION}" \
+    --arg os_version "${OS_VERSION}" \
+    --arg admin_user "${ADMIN_USER}" \
+    --arg wan_iface "${WAN_IFACE}" \
+    --arg tailscale_iface "${TAILSCALE_IFACE}" \
+    --arg tailscale_cidr_hint "${TAILSCALE_CIDR}" \
+    --argjson ssh_port "${SSH_PORT}" \
+    --argjson tunnel_mode "$(is_true "${TUNNEL_MODE}" && echo true || echo false)" \
+    --arg swap_size "${SWAP_SIZE:-2G}" \
+    --arg journal_retention "${JOURNAL_RETENTION}" \
+    --arg update_profile "${UPDATE_PROFILE}" \
+    --argjson auto_reboot_requested "$(is_true "${ENABLE_AUTO_REBOOT}" && echo true || echo false)" \
+    --arg auto_reboot_time "${AUTO_REBOOT_TIME}" \
+    --argjson strict_docker_ssh_cidrs "$(is_true "${STRICT_DOCKER_SSH_CIDRS}" && echo true || echo false)" \
+    --arg docker_ssh_cidrs "${docker_ssh_cidrs_csv}" \
+    --argjson tailscale_direct_wan "$(is_true "${TAILSCALE_DIRECT_WAN}" && echo true || echo false)" \
+    --argjson bind_dashboard_to_tailscale "$(is_true "${BIND_DASHBOARD_TO_TAILSCALE}" && echo true || echo false)" \
+    --argjson install_tailscale "$(is_true "${INSTALL_TAILSCALE}" && echo true || echo false)" \
+    --arg tailscale_ip "${DETECTED_TAILSCALE_IP:-}" \
+    --argjson dry_run "$(is_true "${DRY_RUN}" && echo true || echo false)" \
+    --argjson tailscale_iface_present "${tailscale_iface_present}" \
+    --argjson ufw_active "${ufw_active}" \
+    --argjson ssh_root_login_disabled "${ssh_root_disabled}" \
+    --argjson ssh_root_local_only_key_auth "${ssh_root_local_only}" \
+    --argjson ssh_password_auth_disabled "${ssh_password_disabled}" \
+    --argjson journald_persistent "${journald_persistent}" \
+    --argjson auditd_enabled "${auditd_enabled}" \
+    --argjson audit_rules_loaded "${audit_rules_loaded}" \
+    --argjson docker_user_drop_rule_v4 "${docker_drop_rule}" \
+    --argjson docker_user_drop_rule_v6 "${docker_drop_rule_v6}" \
+    --argjson docker_sock_world_writable "${docker_sock_world_writable}" \
+    --argjson admin_user_in_docker_group "${admin_in_docker_group}" \
+    --argjson sysctl_syncookies "${sysctl_syncookies}" \
+    --argjson sysctl_bbr "${sysctl_bbr}" \
+    --argjson timesync_ntp "${timesync_ntp}" \
+    --argjson swap_active "${swap_active}" \
+    --argjson fail2ban_active "${fail2ban_active}" \
+    --argjson banner_present "${banner_present}" \
+    --argjson coolify_dashboard_bound_to_tailscale "${coolify_dashboard_bound}" \
+    '{
+      generated_at: $generated_at,
+      script_version: $script_version,
+      os_version: $os_version,
+      admin_user: $admin_user,
+      wan_iface: $wan_iface,
+      tailscale_iface: $tailscale_iface,
+      tailscale_cidr_hint: $tailscale_cidr_hint,
+      ssh_port: $ssh_port,
+      tunnel_mode: $tunnel_mode,
+      swap_size: $swap_size,
+      journal_retention: $journal_retention,
+      update_profile: $update_profile,
+      auto_reboot_requested: $auto_reboot_requested,
+      auto_reboot_time: $auto_reboot_time,
+      strict_docker_ssh_cidrs: $strict_docker_ssh_cidrs,
+      docker_ssh_cidrs: $docker_ssh_cidrs,
+      tailscale_direct_wan: $tailscale_direct_wan,
+      bind_dashboard_to_tailscale: $bind_dashboard_to_tailscale,
+      install_tailscale: $install_tailscale,
+      tailscale_ip: $tailscale_ip,
+      dry_run: $dry_run,
+      checks: {
+        tailscale_iface_present: $tailscale_iface_present,
+        ufw_active: $ufw_active,
+        ssh_root_login_disabled: $ssh_root_login_disabled,
+        ssh_root_local_only_key_auth: $ssh_root_local_only_key_auth,
+        ssh_password_auth_disabled: $ssh_password_auth_disabled,
+        journald_persistent: $journald_persistent,
+        auditd_enabled: $auditd_enabled,
+        audit_rules_loaded: $audit_rules_loaded,
+        docker_user_drop_rule_v4: $docker_user_drop_rule_v4,
+        docker_user_drop_rule_v6: $docker_user_drop_rule_v6,
+        docker_sock_world_writable: $docker_sock_world_writable,
+        admin_user_in_docker_group: $admin_user_in_docker_group,
+        sysctl_syncookies: $sysctl_syncookies,
+        sysctl_bbr: $sysctl_bbr,
+        timesync_ntp: $timesync_ntp,
+        swap_active: $swap_active,
+        fail2ban_active: $fail2ban_active,
+        banner_present: $banner_present,
+        coolify_dashboard_bound_to_tailscale: $coolify_dashboard_bound_to_tailscale
+      }
+    }' > "${REPORT_FILE}"
 
   chmod 0600 "${REPORT_FILE}"
 }
