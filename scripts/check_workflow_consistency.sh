@@ -18,6 +18,8 @@ check_count=0
 error_count=0
 declare -A seen_ids=()
 declare -A workflow_counts=()
+EXPECTED_STEP_COUNT=34
+EXPECTED_CHECK_COUNT=7
 
 report_error() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -65,14 +67,22 @@ while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
       section="checks"
       continue
       ;;
-    '  - "'*'"')
-      entry="${raw_line#  - \"}"
-      entry="${entry%\"}"
-      ;;
-    *)
-      continue
-      ;;
   esac
+
+  if [[ "${raw_line}" =~ ^[[:space:]]*-[[:space:]]\".*\"[[:space:]]*$ ]]; then
+    if [[ "${section}" != "steps" && "${section}" != "checks" ]]; then
+      report_error "list entry outside recognized section: ${raw_line}"
+      continue
+    fi
+    entry="$(printf '%s' "${raw_line}" | sed -E 's/^[[:space:]]*-[[:space:]]*"//; s/"[[:space:]]*$//')"
+  else
+    if [[ "${section}" == "steps" || "${section}" == "checks" ]]; then
+      if [[ -n "${raw_line//[[:space:]]/}" && ! "${raw_line}" =~ ^[[:space:]]*# ]]; then
+        report_error "unparseable line in ${section} section: ${raw_line}"
+      fi
+    fi
+    continue
+  fi
 
   if [[ "${section}" == "steps" ]]; then
     step_count=$((step_count + 1))
@@ -117,12 +127,12 @@ while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
   fi
 done < "${CONTRACT_FILE}"
 
-if [[ ${step_count} -lt 20 ]]; then
-  report_error "expected at least 20 contract step entries; found ${step_count}"
+if [[ ${step_count} -ne ${EXPECTED_STEP_COUNT} ]]; then
+  report_error "expected exactly ${EXPECTED_STEP_COUNT} contract step entries; found ${step_count}"
 fi
 
-if [[ ${check_count} -lt 5 ]]; then
-  report_error "expected at least 5 consistency checks; found ${check_count}"
+if [[ ${check_count} -ne ${EXPECTED_CHECK_COUNT} ]]; then
+  report_error "expected exactly ${EXPECTED_CHECK_COUNT} consistency checks; found ${check_count}"
 fi
 
 for expected_workflow in bootstrap deploy setup; do
