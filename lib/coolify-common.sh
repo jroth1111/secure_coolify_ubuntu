@@ -267,6 +267,95 @@ report_validation_result() {
   fi
 }
 
+# coolify_reconcile_docker_daemon_script — Emit a host-side script that enforces
+# daemon.json hardening keys while preserving unrelated settings.
+# Caller is responsible for transport/execution (local bash -s vs remote sudo bash -s).
+coolify_reconcile_docker_daemon_script() {
+  cat <<'EOF'
+set -Eeuo pipefail
+daemon_json="/etc/docker/daemon.json"
+state_file="/var/lib/bootstrap-hardening/state"
+nproc_hard="8192"
+nproc_soft="4096"
+tmp="$(mktemp)"
+
+if [[ -f "${state_file}" ]]; then
+  nproc_hard="$(grep -m1 '^docker_nproc_hard=' "${state_file}" | cut -d= -f2- || echo "8192")"
+  nproc_soft="$(grep -m1 '^docker_nproc_soft=' "${state_file}" | cut -d= -f2- || echo "4096")"
+fi
+[[ "${nproc_hard}" =~ ^[1-9][0-9]*$ ]] || nproc_hard="8192"
+[[ "${nproc_soft}" =~ ^[1-9][0-9]*$ ]] || nproc_soft="4096"
+if (( nproc_soft > nproc_hard )); then
+  nproc_soft="${nproc_hard}"
+fi
+
+if [[ -f "${daemon_json}" ]]; then
+  current_driver="$(jq -r '.["log-driver"] // ""' "${daemon_json}" 2>/dev/null || true)"
+  if [[ "${current_driver}" != "" && "${current_driver}" != "json-file" ]]; then
+    echo "WARNING: Docker log-driver drift detected (was '${current_driver}', expected 'json-file'). Reconciling..." >&2
+  fi
+  current_live_restore="$(jq -r '.["live-restore"] // ""' "${daemon_json}" 2>/dev/null || true)"
+  if [[ "${current_live_restore}" != "" && "${current_live_restore}" != "true" ]]; then
+    echo "WARNING: Docker live-restore drift detected (was '${current_live_restore}', expected 'true'). Reconciling..." >&2
+  fi
+  current_ipc_mode="$(jq -r '.["default-ipc-mode"] // ""' "${daemon_json}" 2>/dev/null || true)"
+  if [[ "${current_ipc_mode}" != "" && "${current_ipc_mode}" != "private" ]]; then
+    echo "WARNING: Docker default-ipc-mode drift detected (was '${current_ipc_mode}', expected 'private'). Reconciling..." >&2
+  fi
+  current_storage_driver="$(jq -r '.["storage-driver"] // ""' "${daemon_json}" 2>/dev/null || true)"
+  if [[ "${current_storage_driver}" != "" && "${current_storage_driver}" != "overlay2" ]]; then
+    echo "WARNING: Docker storage-driver drift detected (was '${current_storage_driver}', expected 'overlay2'). Reconciling..." >&2
+  fi
+fi
+
+if [[ -f "${daemon_json}" ]]; then
+  jq \
+    --argjson nproc_hard "${nproc_hard}" \
+    --argjson nproc_soft "${nproc_soft}" \
+    '. + {
+      "log-driver":"json-file",
+      "log-opts":((.["log-opts"] // {}) + {"max-size":"10m","max-file":"3"}),
+      "live-restore":true,
+      "default-ipc-mode":"private",
+      "storage-driver":"overlay2",
+      "default-ulimits":((.["default-ulimits"] // {}) + {
+        "nofile":{"Name":"nofile","Hard":65536,"Soft":65536},
+        "nproc":{"Name":"nproc","Hard":$nproc_hard,"Soft":$nproc_soft}
+      })
+    }' "${daemon_json}" > "${tmp}"
+else
+  jq -n \
+    --argjson nproc_hard "${nproc_hard}" \
+    --argjson nproc_soft "${nproc_soft}" \
+    '{
+      "log-driver":"json-file",
+      "log-opts":{"max-size":"10m","max-file":"3"},
+      "live-restore":true,
+      "default-ipc-mode":"private",
+      "storage-driver":"overlay2",
+      "default-ulimits":{
+        "nofile":{"Name":"nofile","Hard":65536,"Soft":65536},
+        "nproc":{"Name":"nproc","Hard":$nproc_hard,"Soft":$nproc_soft}
+      }
+    }' > "${tmp}"
+fi
+
+if [[ -f "${daemon_json}" ]] && cmp -s "${tmp}" "${daemon_json}"; then
+  rm -f "${tmp}"
+  exit 0
+fi
+
+if [[ -f "${daemon_json}" ]]; then
+  cp -a "${daemon_json}" "${daemon_json}.bak.$(date +%s)"
+fi
+
+cat "${tmp}" > "${daemon_json}"
+chmod 0644 "${daemon_json}"
+rm -f "${tmp}"
+systemctl restart docker
+EOF
+}
+
 # collect_common_inputs — Prompt for inputs shared by both deploy.sh and setup.sh.
 # Each script calls this then adds its own script-specific prompts.
 collect_common_inputs() {

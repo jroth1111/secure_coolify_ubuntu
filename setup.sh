@@ -170,93 +170,10 @@ verify_docker_user_gate_local() {
 
 reconcile_docker_daemon_local() {
   log "Reconciling Docker daemon settings after Coolify install..."
-  # Hardening owns: log-driver, log-opts, live-restore. Coolify may add: default-address-pools.
+  # Hardening owns: log-driver, log-opts, live-restore, default-ipc-mode, storage-driver.
   # Using json-file driver to match Coolify's expectation for compatibility.
-  local daemon_json="/etc/docker/daemon.json"
-  local state_file="/var/lib/bootstrap-hardening/state"
-  local nproc_hard="8192"
-  local nproc_soft="4096"
-  local tmp
-  tmp="$(mktemp)"
-
-  if [[ -f "${state_file}" ]]; then
-    nproc_hard="$(grep -m1 '^docker_nproc_hard=' "${state_file}" | cut -d= -f2- || echo "8192")"
-    nproc_soft="$(grep -m1 '^docker_nproc_soft=' "${state_file}" | cut -d= -f2- || echo "4096")"
-  fi
-  [[ "${nproc_hard}" =~ ^[1-9][0-9]*$ ]] || nproc_hard="8192"
-  [[ "${nproc_soft}" =~ ^[1-9][0-9]*$ ]] || nproc_soft="4096"
-  if (( nproc_soft > nproc_hard )); then
-    nproc_soft="${nproc_hard}"
-  fi
-
-  # Drift detection: warn if hardening keys were changed (e.g., by Coolify update)
-  if [[ -f "${daemon_json}" ]]; then
-    local current_driver current_live_restore
-    current_driver="$(jq -r '.["log-driver"] // ""' "${daemon_json}" 2>/dev/null || true)"
-    if [[ "${current_driver}" != "" && "${current_driver}" != "json-file" ]]; then
-      warn "Docker log-driver drift detected (was '${current_driver}', expected 'json-file'). Reconciling..."
-    fi
-    current_live_restore="$(jq -r '.["live-restore"] // ""' "${daemon_json}" 2>/dev/null || true)"
-    if [[ "${current_live_restore}" != "" && "${current_live_restore}" != "true" ]]; then
-      warn "Docker live-restore drift detected (was '${current_live_restore}', expected 'true'). Reconciling..."
-    fi
-    local current_ipc_mode current_storage_driver
-    current_ipc_mode="$(jq -r '.["default-ipc-mode"] // ""' "${daemon_json}" 2>/dev/null || true)"
-    if [[ "${current_ipc_mode}" != "" && "${current_ipc_mode}" != "private" ]]; then
-      warn "Docker default-ipc-mode drift detected (was '${current_ipc_mode}', expected 'private'). Reconciling..."
-    fi
-    current_storage_driver="$(jq -r '.["storage-driver"] // ""' "${daemon_json}" 2>/dev/null || true)"
-    if [[ "${current_storage_driver}" != "" && "${current_storage_driver}" != "overlay2" ]]; then
-      warn "Docker storage-driver drift detected (was '${current_storage_driver}', expected 'overlay2'). Reconciling..."
-    fi
-  fi
-
-  if [[ -f "${daemon_json}" ]]; then
-    jq \
-      --argjson nproc_hard "${nproc_hard}" \
-      --argjson nproc_soft "${nproc_soft}" \
-      '. + {
-        "log-driver":"json-file",
-        "log-opts":((.["log-opts"] // {}) + {"max-size":"10m","max-file":"3"}),
-        "live-restore":true,
-        "default-ipc-mode":"private",
-        "storage-driver":"overlay2",
-        "default-ulimits":((.["default-ulimits"] // {}) + {
-          "nofile":{"Name":"nofile","Hard":65536,"Soft":65536},
-          "nproc":{"Name":"nproc","Hard":$nproc_hard,"Soft":$nproc_soft}
-        })
-      }' "${daemon_json}" > "${tmp}"
-  else
-    jq -n \
-      --argjson nproc_hard "${nproc_hard}" \
-      --argjson nproc_soft "${nproc_soft}" \
-      '{
-        "log-driver":"json-file",
-        "log-opts":{"max-size":"10m","max-file":"3"},
-        "live-restore":true,
-        "default-ipc-mode":"private",
-        "storage-driver":"overlay2",
-        "default-ulimits":{
-          "nofile":{"Name":"nofile","Hard":65536,"Soft":65536},
-          "nproc":{"Name":"nproc","Hard":$nproc_hard,"Soft":$nproc_soft}
-        }
-      }' > "${tmp}"
-  fi
-
-  if [[ -f "${daemon_json}" ]] && cmp -s "${tmp}" "${daemon_json}"; then
-    rm -f "${tmp}"
-    pass "Docker daemon settings already match hardening policy"
-    return 0
-  fi
-
-  if [[ -f "${daemon_json}" ]]; then
-    cp -a "${daemon_json}" "${daemon_json}.bak.$(date +%s)"
-  fi
-
-  cat "${tmp}" > "${daemon_json}"
-  chmod 0644 "${daemon_json}"
-  rm -f "${tmp}"
-  systemctl restart docker
+  coolify_reconcile_docker_daemon_script | bash -s \
+    || die "Failed to reconcile Docker daemon hardening settings."
   pass "Docker daemon hardening reconciled (json-file log rotation + live-restore)"
 }
 
