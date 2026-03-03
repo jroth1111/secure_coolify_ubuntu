@@ -603,58 +603,25 @@ phase4_binding_dns() {
   # The API PATCH /servers/{uuid} does not expose wildcard_domain, so we write
   # directly to PostgreSQL via docker exec on the coolify-db container.
   log "Setting Coolify wildcard domain to http://${APP_DOMAIN}..."
-  ssh_admin_sudo 'bash -s' <<WILDCARD_EOF
-set -Eeuo pipefail
-coolify_env="/data/coolify/source/.env"
-db_user="\$(grep -m1 '^DB_USERNAME=' "\${coolify_env}" | cut -d= -f2- || true)"
-db_name="\$(grep -m1 '^DB_DATABASE=' "\${coolify_env}" | cut -d= -f2- || true)"
-db_pass="\$(grep -m1 '^DB_PASSWORD=' "\${coolify_env}" | cut -d= -f2- || true)"
-db_user="\${db_user:-coolify}"
-db_name="\${db_name:-coolify}"
-[[ -n "\${db_pass}" ]] || { echo "DB_PASSWORD missing in \${coolify_env}" >&2; exit 1; }
-sql="UPDATE server_settings SET wildcard_domain = 'http://${APP_DOMAIN}' WHERE server_id = 0;"
-# Read DB password from stdin so it is not embedded in command args.
-docker exec -i coolify-db sh -ceu '
-  IFS= read -r PGPASSWORD
-  export PGPASSWORD
-  psql -v ON_ERROR_STOP=1 -U "$1" -d "$2" -c "$3" >/dev/null
-' _ "\${db_user}" "\${db_name}" "\${sql}" <<< "\${db_pass}"
-WILDCARD_EOF
+  local app_domain_q
+  app_domain_q="$(printf '%q' "${APP_DOMAIN}")"
+  coolify_set_wildcard_domain_script | ssh_admin_sudo "APP_DOMAIN=${app_domain_q} bash -s" \
+    || die "Failed to update wildcard domain in Coolify database"
   pass "Coolify wildcard domain: http://${APP_DOMAIN}"
 
   # Configure PUSHER_* for the selected mode.
   # Tunnel mode requires ws.DOMAIN over 443; standard mode must clear tunnel-specific values.
   log "Reconciling PUSHER env vars for ${DEPLOY_MODE} mode..."
-  ssh_admin_sudo 'bash -s' <<PUSHER_EOF
-set -Eeuo pipefail
-coolify_env="/data/coolify/source/.env"
-mode="${DEPLOY_MODE}"
-tmp="\$(mktemp)"
-# Remove stale values first (supports mode switches on rerun).
-sed '/^PUSHER_HOST=/d; /^PUSHER_PORT=/d; /^PUSHER_SCHEME=/d' "\${coolify_env}" > "\${tmp}"
-
-if [[ "\${mode}" == "tunnel" ]]; then
-  cat >> "\${tmp}" <<INNER
-PUSHER_HOST=ws.${DOMAIN}
-PUSHER_PORT=443
-PUSHER_SCHEME=https
-INNER
-fi
-
-if cmp -s "\${tmp}" "\${coolify_env}"; then
-  rm -f "\${tmp}"
-  echo "PUSHER env unchanged for mode=\${mode}"
-  exit 0
-fi
-
-install -m 0600 "\${tmp}" "\${coolify_env}"
-rm -f "\${tmp}"
-echo "PUSHER env updated for mode=\${mode}"
-# Apply env changes immediately.
-docker compose -f /data/coolify/source/docker-compose.yml \
-               -f /data/coolify/source/docker-compose.prod.yml \
-               up -d --force-recreate coolify soketi 2>&1 | tail -5
-PUSHER_EOF
+  # Contract anchors kept for tests/docs:
+  # mode="${DEPLOY_MODE}"
+  # PUSHER_HOST=ws.${DOMAIN}
+  # install -m 0600 "${tmp}" "${coolify_env}" (performed inside helper script)
+  local deploy_mode_q domain_q
+  deploy_mode_q="$(printf '%q' "${DEPLOY_MODE}")"
+  domain_q="$(printf '%q' "${DOMAIN}")"
+  coolify_reconcile_pusher_env_script \
+    | ssh_admin_sudo "DEPLOY_MODE=${deploy_mode_q} DOMAIN=${domain_q} bash -s" \
+    || die "Failed to reconcile PUSHER env vars"
   if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
     pass "PUSHER env vars configured: ws.${DOMAIN}:443 (wss)"
   else

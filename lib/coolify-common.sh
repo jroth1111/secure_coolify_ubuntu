@@ -356,6 +356,63 @@ systemctl restart docker
 EOF
 }
 
+# coolify_set_wildcard_domain_script — Emit host-side script to update Coolify
+# wildcard domain directly in PostgreSQL. Requires APP_DOMAIN in environment.
+coolify_set_wildcard_domain_script() {
+  cat <<'EOF'
+set -Eeuo pipefail
+: "${APP_DOMAIN:?APP_DOMAIN is required}"
+coolify_env="/data/coolify/source/.env"
+db_user="$(grep -m1 '^DB_USERNAME=' "${coolify_env}" | cut -d= -f2- || true)"
+db_name="$(grep -m1 '^DB_DATABASE=' "${coolify_env}" | cut -d= -f2- || true)"
+db_pass="$(grep -m1 '^DB_PASSWORD=' "${coolify_env}" | cut -d= -f2- || true)"
+db_user="${db_user:-coolify}"
+db_name="${db_name:-coolify}"
+[[ -n "${db_pass}" ]] || { echo "DB_PASSWORD missing in ${coolify_env}" >&2; exit 1; }
+sql="UPDATE server_settings SET wildcard_domain = 'http://${APP_DOMAIN}' WHERE server_id = 0;"
+docker exec -i coolify-db sh -ceu '
+  IFS= read -r PGPASSWORD
+  export PGPASSWORD
+  psql -v ON_ERROR_STOP=1 -U "$1" -d "$2" -c "$3" >/dev/null
+' _ "${db_user}" "${db_name}" "${sql}" <<< "${db_pass}"
+EOF
+}
+
+# coolify_reconcile_pusher_env_script — Emit host-side script to reconcile
+# PUSHER_* environment variables by deployment mode. Requires DEPLOY_MODE, DOMAIN.
+coolify_reconcile_pusher_env_script() {
+  cat <<'EOF'
+set -Eeuo pipefail
+: "${DEPLOY_MODE:?DEPLOY_MODE is required}"
+: "${DOMAIN:?DOMAIN is required}"
+coolify_env="/data/coolify/source/.env"
+mode="${DEPLOY_MODE}"
+tmp="$(mktemp)"
+sed '/^PUSHER_HOST=/d; /^PUSHER_PORT=/d; /^PUSHER_SCHEME=/d' "${coolify_env}" > "${tmp}"
+
+if [[ "${mode}" == "tunnel" ]]; then
+  cat >> "${tmp}" <<INNER
+PUSHER_HOST=ws.${DOMAIN}
+PUSHER_PORT=443
+PUSHER_SCHEME=https
+INNER
+fi
+
+if cmp -s "${tmp}" "${coolify_env}"; then
+  rm -f "${tmp}"
+  echo "PUSHER env unchanged for mode=${mode}"
+  exit 0
+fi
+
+install -m 0600 "${tmp}" "${coolify_env}"
+rm -f "${tmp}"
+echo "PUSHER env updated for mode=${mode}"
+docker compose -f /data/coolify/source/docker-compose.yml \
+               -f /data/coolify/source/docker-compose.prod.yml \
+               up -d --force-recreate coolify soketi 2>&1 | tail -5
+EOF
+}
+
 # collect_common_inputs — Prompt for inputs shared by both deploy.sh and setup.sh.
 # Each script calls this then adds its own script-specific prompts.
 collect_common_inputs() {
