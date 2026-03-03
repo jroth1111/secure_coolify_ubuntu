@@ -178,12 +178,21 @@ reconcile_docker_daemon_local() {
     if [[ "${current_live_restore}" != "" && "${current_live_restore}" != "true" ]]; then
       warn "Docker live-restore drift detected (was '${current_live_restore}', expected 'true'). Reconciling..."
     fi
+    local current_ipc_mode current_storage_driver
+    current_ipc_mode="$(jq -r '.["default-ipc-mode"] // ""' "${daemon_json}" 2>/dev/null || true)"
+    if [[ "${current_ipc_mode}" != "" && "${current_ipc_mode}" != "private" ]]; then
+      warn "Docker default-ipc-mode drift detected (was '${current_ipc_mode}', expected 'private'). Reconciling..."
+    fi
+    current_storage_driver="$(jq -r '.["storage-driver"] // ""' "${daemon_json}" 2>/dev/null || true)"
+    if [[ "${current_storage_driver}" != "" && "${current_storage_driver}" != "overlay2" ]]; then
+      warn "Docker storage-driver drift detected (was '${current_storage_driver}', expected 'overlay2'). Reconciling..."
+    fi
   fi
 
   if [[ -f "${daemon_json}" ]]; then
-    jq '. + {"log-driver":"json-file","log-opts":((.["log-opts"] // {}) + {"max-size":"10m","max-file":"3"}),"live-restore":true}' "${daemon_json}" > "${tmp}"
+    jq '. + {"log-driver":"json-file","log-opts":((.["log-opts"] // {}) + {"max-size":"10m","max-file":"3"}),"live-restore":true,"default-ipc-mode":"private","storage-driver":"overlay2"}' "${daemon_json}" > "${tmp}"
   else
-    jq -n '{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"},"live-restore":true}' > "${tmp}"
+    jq -n '{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"},"live-restore":true,"default-ipc-mode":"private","storage-driver":"overlay2"}' > "${tmp}"
   fi
 
   if [[ -f "${daemon_json}" ]] && cmp -s "${tmp}" "${daemon_json}"; then

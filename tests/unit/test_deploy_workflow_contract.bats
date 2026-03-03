@@ -72,6 +72,14 @@ DEPLOY_MATRIX="${PROJECT_ROOT}/docs/deploy_setup_functionality_test_matrix.md"
   grep -Fq "Running final validate_hardening.sh..." "${DEPLOY_SCRIPT}"
 }
 
+@test "deploy: docker daemon reconciliation includes default-ipc-mode" {
+  grep -q 'default-ipc-mode' "${DEPLOY_SCRIPT}"
+}
+
+@test "deploy: docker daemon reconciliation includes storage-driver" {
+  grep -q 'storage-driver' "${DEPLOY_SCRIPT}"
+}
+
 @test "deploy: coolify .env written with 0600 permissions" {
   grep -q 'install -m 0600' "${DEPLOY_SCRIPT}"
   ! grep -q 'install -m 0644.*coolify_env\|install -m 0644.*\${coolify_env}' "${DEPLOY_SCRIPT}"
