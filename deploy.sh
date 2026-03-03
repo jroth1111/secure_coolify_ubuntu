@@ -19,6 +19,7 @@ source "${SCRIPT_DIR}/lib/coolify-common.sh"
 SERVER_IP="${SERVER_IP:-}"
 ROOT_PASS="${ROOT_PASS:-}"
 ROOT_PASS_FILE="${ROOT_PASS_FILE:-}"
+ROOT_PASS_RUNTIME_FILE=""
 ADMIN_USER="${ADMIN_USER:-}"
 PUBKEY_FILE="${PUBKEY_FILE:-}"
 TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
@@ -53,11 +54,15 @@ ADMIN_KNOWN_HOSTS=""
 declare -a SSH_OPTS=()
 declare -a ROOT_SSH_OPTS=()
 
+cleanup_temp_files() {
+  rm -f "${DEPLOY_KNOWN_HOSTS:-}" "${ADMIN_KNOWN_HOSTS:-}" "${ROOT_PASS_RUNTIME_FILE:-}"
+}
+
 init_ssh_options() {
   # Use accept-new: accept on first connect, reject changed keys (OpenSSH 7.6+).
   DEPLOY_KNOWN_HOSTS="$(mktemp)"
   ADMIN_KNOWN_HOSTS="$(mktemp)"
-  trap 'rm -f "${DEPLOY_KNOWN_HOSTS}" "${ADMIN_KNOWN_HOSTS}"' EXIT
+  trap 'cleanup_temp_files' EXIT
 
   SSH_OPTS=(
     -o StrictHostKeyChecking=accept-new
@@ -74,6 +79,17 @@ init_ssh_options() {
     -o LogLevel=ERROR
     -o PreferredAuthentications=keyboard-interactive,password
   )
+}
+
+init_root_password_auth() {
+  if is_true "${SKIP_HARDEN}"; then
+    return 0
+  fi
+  [[ -n "${ROOT_PASS}" ]] || die "Root password is required for phase 1."
+  ROOT_PASS_RUNTIME_FILE="$(mktemp)"
+  chmod 600 "${ROOT_PASS_RUNTIME_FILE}"
+  printf '%s' "${ROOT_PASS}" > "${ROOT_PASS_RUNTIME_FILE}"
+  ROOT_PASS=""
 }
 
 # ── Usage ───────────────────────────────────────────────────────────────────
@@ -222,11 +238,15 @@ validate_inputs() {
 # ── SSH wrappers ────────────────────────────────────────────────────────────
 
 ssh_root() {
-  SSHPASS="${ROOT_PASS}" sshpass -e ssh "${ROOT_SSH_OPTS[@]}" "root@${SERVER_IP}" "$@"
+  [[ -n "${ROOT_PASS_RUNTIME_FILE}" && -f "${ROOT_PASS_RUNTIME_FILE}" ]] \
+    || die "Root password runtime file is missing."
+  sshpass -f "${ROOT_PASS_RUNTIME_FILE}" ssh "${ROOT_SSH_OPTS[@]}" "root@${SERVER_IP}" "$@"
 }
 
 scp_root() {
-  SSHPASS="${ROOT_PASS}" sshpass -e scp "${ROOT_SSH_OPTS[@]}" "$@"
+  [[ -n "${ROOT_PASS_RUNTIME_FILE}" && -f "${ROOT_PASS_RUNTIME_FILE}" ]] \
+    || die "Root password runtime file is missing."
+  sshpass -f "${ROOT_PASS_RUNTIME_FILE}" scp "${ROOT_SSH_OPTS[@]}" "$@"
 }
 
 scp_admin() {
@@ -880,6 +900,7 @@ main() {
   parse_args "$@"
   collect_inputs
   validate_inputs
+  init_root_password_auth
 
   # Show summary before proceeding
   printf '\n'
