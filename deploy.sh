@@ -49,8 +49,8 @@ TUNNEL_SECRET=""
 # so sourcing this file for tests doesn't trigger mktemp/trap side-effects.
 DEPLOY_KNOWN_HOSTS=""
 ADMIN_KNOWN_HOSTS=""
-SSH_OPTS=""
-ROOT_SSH_OPTS=""
+declare -a SSH_OPTS=()
+declare -a ROOT_SSH_OPTS=()
 
 init_ssh_options() {
   # Use accept-new: accept on first connect, reject changed keys (OpenSSH 7.6+).
@@ -58,10 +58,21 @@ init_ssh_options() {
   ADMIN_KNOWN_HOSTS="$(mktemp)"
   trap 'rm -f "${DEPLOY_KNOWN_HOSTS}" "${ADMIN_KNOWN_HOSTS}"' EXIT
 
-  SSH_OPTS="-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${ADMIN_KNOWN_HOSTS} -o ConnectTimeout=10 -o LogLevel=ERROR"
+  SSH_OPTS=(
+    -o StrictHostKeyChecking=accept-new
+    -o "UserKnownHostsFile=${ADMIN_KNOWN_HOSTS}"
+    -o ConnectTimeout=10
+    -o LogLevel=ERROR
+  )
   # Root SSH uses password auth; PreferredAuthentications ensures sshpass works even when server
   # advertises publickey first (macOS OpenSSH skips password challenge otherwise).
-  ROOT_SSH_OPTS="-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${DEPLOY_KNOWN_HOSTS} -o ConnectTimeout=10 -o LogLevel=ERROR -o PreferredAuthentications=keyboard-interactive,password"
+  ROOT_SSH_OPTS=(
+    -o StrictHostKeyChecking=accept-new
+    -o "UserKnownHostsFile=${DEPLOY_KNOWN_HOSTS}"
+    -o ConnectTimeout=10
+    -o LogLevel=ERROR
+    -o PreferredAuthentications=keyboard-interactive,password
+  )
 }
 
 # ── Usage ───────────────────────────────────────────────────────────────────
@@ -195,23 +206,23 @@ validate_inputs() {
 # ── SSH wrappers ────────────────────────────────────────────────────────────
 
 ssh_root() {
-  SSHPASS="${ROOT_PASS}" sshpass -e ssh ${ROOT_SSH_OPTS} "root@${SERVER_IP}" "$@"
+  SSHPASS="${ROOT_PASS}" sshpass -e ssh "${ROOT_SSH_OPTS[@]}" "root@${SERVER_IP}" "$@"
 }
 
 scp_root() {
-  SSHPASS="${ROOT_PASS}" sshpass -e scp ${ROOT_SSH_OPTS} "$@"
+  SSHPASS="${ROOT_PASS}" sshpass -e scp "${ROOT_SSH_OPTS[@]}" "$@"
 }
 
 scp_admin() {
-  scp ${SSH_OPTS} -i "${PRIVATE_KEY}" "$@"
+  scp "${SSH_OPTS[@]}" -i "${PRIVATE_KEY}" "$@"
 }
 
 ssh_admin() {
-  ssh ${SSH_OPTS} -i "${PRIVATE_KEY}" "${ADMIN_USER}@${TS_IP}" "$@"
+  ssh "${SSH_OPTS[@]}" -i "${PRIVATE_KEY}" "${ADMIN_USER}@${TS_IP}" "$@"
 }
 
 ssh_admin_sudo() {
-  ssh ${SSH_OPTS} -i "${PRIVATE_KEY}" "${ADMIN_USER}@${TS_IP}" "sudo $*"
+  ssh "${SSH_OPTS[@]}" -i "${PRIVATE_KEY}" "${ADMIN_USER}@${TS_IP}" "sudo $*"
 }
 
 # Upload companion scripts to /root/ on the server using admin key + sudo.
