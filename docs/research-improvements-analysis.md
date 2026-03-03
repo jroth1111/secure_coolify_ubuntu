@@ -58,10 +58,15 @@ This update reflects the real implementation state and the follow-up fix applied
 
 **Original suggestion:** Document as optimization, not hard dependency.
 
-**Current code status:** Rule remains enabled by default in UFW (`bootstrap_hardening.sh`).
+**Current code status:** Implemented as explicit behavior:
+- New `TAILSCALE_DIRECT_WAN` setting (default `false`) in `bootstrap_hardening.sh`
+- New CLI flags: `--tailscale-direct-wan` / `--no-tailscale-direct-wan`
+- UFW only opens WAN UDP `41641` when explicitly enabled
+- State/report now record `tailscale_direct_wan`
+- `validate_hardening.sh` now validates presence/absence of UDP `41641` based on state
 
-**Decision:** Valid documentation improvement, low priority.  
-No behavior change applied in this cycle.
+**Decision:** Applied as a script-level hardening improvement.  
+Default behavior now minimizes WAN exposure while preserving opt-in direct-path performance.
 
 ---
 
@@ -78,5 +83,6 @@ No behavior change applied in this cycle.
 
 ## Net Assessment
 
-Most high-value research items are already implemented.  
-The only actionable script gap found during review was Docker origin field strictness in validation, which is now fixed by accepting both `archive=` and `suite=` forms while still enforcing `component=stable`.
+Most high-value research items are now implemented in scripts.
+- Docker origin validation accepts both `archive=` and `suite=` while enforcing `component=stable`.
+- Tailscale direct-path WAN UDP (`41641`) is now optional and state-driven (default closed, explicit opt-in).

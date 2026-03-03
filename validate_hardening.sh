@@ -78,6 +78,7 @@ TAILSCALE_IP=""
 TAILSCALE_CIDR="100.64.0.0/10"
 STRICT_DOCKER_SSH_CIDRS="false"
 DOCKER_SSH_CIDRS="10.0.0.0/8,172.16.0.0/12"
+TAILSCALE_DIRECT_WAN="auto"
 UPDATE_PROFILE=""
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
 
@@ -94,6 +95,7 @@ if [[ -f "${STATE_FILE}" ]]; then
   TAILSCALE_CIDR="${tailscale_cidr:-100.64.0.0/10}"
   STRICT_DOCKER_SSH_CIDRS="${strict_docker_ssh_cidrs:-false}"
   DOCKER_SSH_CIDRS="${docker_ssh_cidrs:-10.0.0.0/8,172.16.0.0/12}"
+  TAILSCALE_DIRECT_WAN="${tailscale_direct_wan:-auto}"
   UPDATE_PROFILE="${update_profile:-}"
 fi
 
@@ -263,12 +265,12 @@ ufw_check() {
   local ufw_out
   ufw_out="$(ufw status verbose 2>/dev/null)" || { record "FAIL" "ufw: status query" "cannot run ufw"; return; }
   ufw_has_port_on_iface() {
-    local port="$1" iface="$2"
-    grep -qE "${port}/tcp.*(on[[:space:]]+${iface}.*ALLOW IN|ALLOW IN.*on[[:space:]]+${iface})" <<< "${ufw_out}"
+    local port="$1" iface="$2" proto="${3:-tcp}"
+    grep -qE "${port}/${proto}.*(on[[:space:]]+${iface}.*ALLOW IN|ALLOW IN.*on[[:space:]]+${iface})" <<< "${ufw_out}"
   }
   ufw_has_port_anywhere_unscoped() {
-    local port="$1"
-    grep -qE "${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere([[:space:]]+\\(v6\\))?$" <<< "${ufw_out}"
+    local port="$1" proto="${2:-tcp}"
+    grep -qE "${port}/${proto}[[:space:]]+ALLOW IN[[:space:]]+Anywhere([[:space:]]+\\(v6\\))?$" <<< "${ufw_out}"
   }
 
   if grep -q "^Status: active$" <<< "${ufw_out}"; then
@@ -340,6 +342,33 @@ ufw_check() {
         record "PASS" "ufw: tunnel-mode no port 443"
       fi
     fi
+
+    case "${TAILSCALE_DIRECT_WAN,,}" in
+      true|1|yes|y|on)
+        if ufw_has_port_on_iface "41641" "${WAN_IFACE}" "udp" \
+          || ufw_has_port_anywhere_unscoped "41641" "udp"; then
+          record "PASS" "ufw: tailscale direct UDP 41641 on WAN"
+        else
+          record "FAIL" "ufw: tailscale direct UDP 41641 on WAN" "TAILSCALE_DIRECT_WAN enabled but rule missing"
+        fi
+        ;;
+      false|0|no|n|off)
+        if ufw_has_port_on_iface "41641" "${WAN_IFACE}" "udp" \
+          || ufw_has_port_anywhere_unscoped "41641" "udp"; then
+          record "FAIL" "ufw: tailscale direct UDP 41641 closed" "TAILSCALE_DIRECT_WAN disabled but WAN rule exists"
+        else
+          record "PASS" "ufw: tailscale direct UDP 41641 closed"
+        fi
+        ;;
+      *)
+        if ufw_has_port_on_iface "41641" "${WAN_IFACE}" "udp" \
+          || ufw_has_port_anywhere_unscoped "41641" "udp"; then
+          record "INFO" "ufw: tailscale direct UDP 41641" "rule present (legacy state: tailscale_direct_wan unset)"
+        else
+          record "INFO" "ufw: tailscale direct UDP 41641" "rule absent (legacy state: tailscale_direct_wan unset)"
+        fi
+        ;;
+    esac
   fi
 }
 
@@ -1058,6 +1087,15 @@ tailscale_check() {
       record "PASS" "tailscale: IPv4 assigned (${ts_ip})"
     else
       record "FAIL" "tailscale: IPv4 address" "no Tailscale IPv4 — check auth key and login state"
+    fi
+
+    local direct_count relay_count
+    direct_count="$(tailscale status --json 2>/dev/null | jq -r '[.Peer[]? | select((.CurAddr // "") != "" and ((.Relay // "") == ""))] | length' 2>/dev/null || echo "")"
+    relay_count="$(tailscale status --json 2>/dev/null | jq -r '[.Peer[]? | select((.Relay // "") != "")] | length' 2>/dev/null || echo "")"
+    if [[ "${direct_count}" =~ ^[0-9]+$ && "${relay_count}" =~ ^[0-9]+$ ]]; then
+      record "INFO" "tailscale: peer path summary" "direct=${direct_count}, relay=${relay_count}"
+    else
+      record "INFO" "tailscale: peer path summary" "unable to parse direct/relay counts"
     fi
   else
     record "INFO" "tailscale: CLI" "tailscale binary not found; skipping state/IP checks"

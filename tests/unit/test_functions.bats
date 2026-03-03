@@ -1212,6 +1212,24 @@ allowusers testadmin"
   assert_output --partial "false"
 }
 
+@test "bootstrap default: TAILSCALE_DIRECT_WAN=false" {
+  run bash -c 'source "'"${SCRIPT}"'" && echo "${TAILSCALE_DIRECT_WAN}"'
+  assert_success
+  assert_output --partial "false"
+}
+
+@test "parse_args: --tailscale-direct-wan sets TAILSCALE_DIRECT_WAN=true" {
+  run bash -c 'source "'"${SCRIPT}"'" && parse_args --tailscale-direct-wan && echo "${TAILSCALE_DIRECT_WAN}"'
+  assert_success
+  assert_output --partial "true"
+}
+
+@test "parse_args: --no-tailscale-direct-wan sets TAILSCALE_DIRECT_WAN=false" {
+  run bash -c 'source "'"${SCRIPT}"'" && TAILSCALE_DIRECT_WAN=true && parse_args --no-tailscale-direct-wan && echo "${TAILSCALE_DIRECT_WAN}"'
+  assert_success
+  assert_output --partial "false"
+}
+
 @test "parse_args: --auto-reboot-time sets value" {
   run bash -c 'source "'"${SCRIPT}"'" && parse_args --auto-reboot-time "05:00" && echo "${AUTO_REBOOT_TIME}"'
   assert_success

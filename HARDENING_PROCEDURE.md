@@ -103,7 +103,7 @@ sudo ./bootstrap_hardening.sh \
 When `--tunnel-mode` is set, the script assumes all web traffic arrives via an outbound tunnel (e.g. Cloudflare Tunnel). This means:
 - **UFW**: No `80/tcp` or `443/tcp` ALLOW rules on the WAN interface. The VPS has zero inbound web ports open.
 - **DOCKER-USER**: The `coolify-hardening-wan-web` ACCEPT rule is omitted. The WAN DROP rule remains, making Docker containers completely unreachable from WAN.
-- **Tailscale UDP 41641**: Always allowed on WAN regardless of tunnel mode — enables direct peer-to-peer WireGuard connections instead of DERP relay fallback.
+- **Tailscale UDP 41641**: Closed by default. Opt in with `TAILSCALE_DIRECT_WAN=true` (or `--tailscale-direct-wan`) to prefer direct peer-to-peer WireGuard paths over DERP relay fallback.
 
 This eliminates the "direct-to-origin bypass" attack surface entirely.
 
@@ -201,7 +201,7 @@ Standard mode:
 - SSH MACs restricted to hmac-sha2-512-etm, hmac-sha2-256-etm
 - SSH rule only on `tailscale0`
 - Public `80/443` allowed on WAN interface
-- Tailscale UDP `41641` allowed on WAN interface
+- Tailscale UDP `41641` closed on WAN by default (allowed only when `TAILSCALE_DIRECT_WAN=true`)
 - DOCKER-USER contains managed `coolify-hardening-*` rules (IPv4 + IPv6)
 - DOCKER-USER includes bridge rules for container-to-container traffic
 - `docker-user-hardening.service` configured with `PartOf=docker.service` + `WantedBy=docker.service` — rules automatically re-applied after any Docker daemon restart or security update

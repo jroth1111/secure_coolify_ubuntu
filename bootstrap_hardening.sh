@@ -45,6 +45,7 @@ UPGRADE_MAIL="${UPGRADE_MAIL:-}"
 BIND_DASHBOARD_TO_TAILSCALE="${BIND_DASHBOARD_TO_TAILSCALE:-false}"
 INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-false}"
 TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
+TAILSCALE_DIRECT_WAN="${TAILSCALE_DIRECT_WAN:-false}"
 STRICT_DOCKER_SSH_CIDRS="${STRICT_DOCKER_SSH_CIDRS:-true}"
 
 OS_VERSION=""
@@ -113,6 +114,8 @@ Optional:
   --bind-dashboard-to-tailscale Bind Coolify dashboard to Tailscale IP only (split-horizon)
   --install-tailscale           Install Tailscale if not present (requires --tailscale-auth-key or interactive)
   --tailscale-auth-key <key>    Tailscale auth key for non-interactive setup (use with --install-tailscale)
+  --tailscale-direct-wan        Allow WAN UDP 41641 for direct Tailscale paths (optional optimization)
+  --no-tailscale-direct-wan     Keep WAN UDP 41641 closed (default; DERP fallback remains available)
   --upgrade-mail <address>      Email for unattended-upgrade failure reports (optional)
   --env-file <path>             Source variables from file before parsing flags
   --dry-run                     Print actions without changing system
@@ -277,6 +280,14 @@ parse_args() {
         TAILSCALE_AUTH_KEY="$2"
         shift 2
         ;;
+      --tailscale-direct-wan)
+        TAILSCALE_DIRECT_WAN="true"
+        shift
+        ;;
+      --no-tailscale-direct-wan)
+        TAILSCALE_DIRECT_WAN="false"
+        shift
+        ;;
       --dry-run)
         DRY_RUN="true"
         shift
@@ -342,6 +353,11 @@ validate_inputs() {
   local strict_cidrs_lower="${STRICT_DOCKER_SSH_CIDRS,,}"
   if [[ "${strict_cidrs_lower}" != "true" && "${strict_cidrs_lower}" != "false" && "${strict_cidrs_lower}" != "1" && "${strict_cidrs_lower}" != "0" && "${strict_cidrs_lower}" != "yes" && "${strict_cidrs_lower}" != "no" ]]; then
     die "STRICT_DOCKER_SSH_CIDRS must be true/false (got: ${STRICT_DOCKER_SSH_CIDRS})."
+  fi
+
+  local tailscale_direct_wan_lower="${TAILSCALE_DIRECT_WAN,,}"
+  if [[ "${tailscale_direct_wan_lower}" != "true" && "${tailscale_direct_wan_lower}" != "false" && "${tailscale_direct_wan_lower}" != "1" && "${tailscale_direct_wan_lower}" != "0" && "${tailscale_direct_wan_lower}" != "yes" && "${tailscale_direct_wan_lower}" != "no" ]]; then
+    die "TAILSCALE_DIRECT_WAN must be true/false (got: ${TAILSCALE_DIRECT_WAN})."
   fi
 
   case "${UPDATE_PROFILE}" in
@@ -1242,7 +1258,11 @@ configure_ufw() {
     run ufw allow in on "${WAN_IFACE}" proto tcp to any port 443 comment "coolify-hardening-https"
   fi
 
-  run ufw allow in on "${WAN_IFACE}" proto udp to any port 41641 comment "coolify-hardening-tailscale-direct"
+  if is_true "${TAILSCALE_DIRECT_WAN}"; then
+    run ufw allow in on "${WAN_IFACE}" proto udp to any port 41641 comment "coolify-hardening-tailscale-direct"
+  else
+    log "Tailscale direct WAN optimization disabled: keeping WAN UDP 41641 closed (DERP fallback only)."
+  fi
 
   # ICMP is allowed via UFW's default before.rules (ufw allow proto icmp is not supported)
 
@@ -1740,6 +1760,16 @@ run_post_checks() {
     fi
   fi
 
+  if is_true "${TAILSCALE_DIRECT_WAN}"; then
+    if ! ufw status verbose | grep -qE "41641/udp.*on ${WAN_IFACE}.*ALLOW IN"; then
+      die "Post-check failed: TAILSCALE_DIRECT_WAN=true but WAN UDP 41641 UFW rule is missing."
+    fi
+  else
+    if ufw status verbose | grep -qE "41641/udp.*on ${WAN_IFACE}.*ALLOW IN"; then
+      die "Post-check failed: TAILSCALE_DIRECT_WAN=false but WAN UDP 41641 UFW rule exists."
+    fi
+  fi
+
   if [[ "${DOCKER_PRESENT}" == "true" ]]; then
     iptables -t filter -S DOCKER-USER | grep -q "coolify-hardening-wan-drop" || die "Post-check failed: DOCKER-USER IPv4 drop rule missing."
     iptables -t filter -S DOCKER-USER | grep -q "coolify-hardening-bridge-docker0" || die "Post-check failed: DOCKER-USER bridge-docker0 rule missing."
@@ -1874,6 +1904,7 @@ journal_retention=${JOURNAL_RETENTION}
 update_profile=${UPDATE_PROFILE}
 strict_docker_ssh_cidrs=${STRICT_DOCKER_SSH_CIDRS}
 docker_ssh_cidrs=${cidr_csv}
+tailscale_direct_wan=${TAILSCALE_DIRECT_WAN}
 bind_dashboard_to_tailscale=${BIND_DASHBOARD_TO_TAILSCALE}
 install_tailscale=${INSTALL_TAILSCALE}
 EOF
@@ -1975,6 +2006,7 @@ generate_report() {
   "auto_reboot_time": "${AUTO_REBOOT_TIME}",
   "strict_docker_ssh_cidrs": $(is_true "${STRICT_DOCKER_SSH_CIDRS}" && echo true || echo false),
   "docker_ssh_cidrs": "${docker_ssh_cidrs_csv}",
+  "tailscale_direct_wan": $(is_true "${TAILSCALE_DIRECT_WAN}" && echo true || echo false),
   "bind_dashboard_to_tailscale": $(is_true "${BIND_DASHBOARD_TO_TAILSCALE}" && echo true || echo false),
   "install_tailscale": $(is_true "${INSTALL_TAILSCALE}" && echo true || echo false),
   "tailscale_ip": "${DETECTED_TAILSCALE_IP:-}",

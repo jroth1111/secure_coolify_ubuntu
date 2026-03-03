@@ -104,7 +104,7 @@ If the state file shows `tunnel_mode=true`, the server uses **Cloudflare Tunnel*
 - No UFW rules for ports 80/443 on WAN.
 - No DOCKER-USER ACCEPT rules for WAN web traffic.
 - All web traffic arrives via the tunnel daemon, not direct public access.
-- The only inbound WAN port is UDP 41641 for Tailscale direct connections.
+- By default, there are no inbound WAN management/web ports; optional UDP 41641 can be enabled for direct Tailscale paths (`TAILSCALE_DIRECT_WAN=true`).
 
 ## Coolify-Specific Notes
 

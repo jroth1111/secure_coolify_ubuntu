@@ -27,6 +27,7 @@ CF_API_TOKEN="${CF_API_TOKEN:-}"
 CF_ZONE="${CF_ZONE:-}"
 APP_DOMAIN_MODE="${APP_DOMAIN_MODE:-}"
 SWAP_SIZE="${SWAP_SIZE:-}"
+TAILSCALE_DIRECT_WAN="${TAILSCALE_DIRECT_WAN:-false}"
 AUTO_YES="${AUTO_YES:-false}"
 SKIP_HARDEN="${SKIP_HARDEN:-false}"  # set via --ts-ip to resume after partial harden
 
@@ -90,6 +91,8 @@ Optional:
   --app-domain-mode <vps|apex>  App subdomain scope: vps=appname.DOMAIN, apex=appname.ZONE (default: apex)
   --cf-zone <zone>              Cloudflare zone (default: derived from domain)
   --swap-size <size>            Swap size (default: 2G)
+  --tailscale-direct-wan        Allow WAN UDP 41641 for direct Tailscale paths (optional optimization)
+  --no-tailscale-direct-wan     Keep WAN UDP 41641 closed (default; DERP fallback remains available)
   --yes                         Skip confirmation prompts (for automation)
   --ts-ip <ip>                  Skip phase 1 (hardening already done); set Tailscale IP directly
   -h, --help                    Show this help
@@ -112,6 +115,8 @@ parse_args() {
       --cf-zone)         CF_ZONE="${2:?--cf-zone requires a value}"; shift 2 ;;
       --app-domain-mode) APP_DOMAIN_MODE="${2:?--app-domain-mode requires a value}"; shift 2 ;;
       --swap-size)       SWAP_SIZE="${2:?--swap-size requires a value}"; shift 2 ;;
+      --tailscale-direct-wan) TAILSCALE_DIRECT_WAN="true"; shift ;;
+      --no-tailscale-direct-wan) TAILSCALE_DIRECT_WAN="false"; shift ;;
       --yes)             AUTO_YES="true"; shift ;;
       --ts-ip)           TS_IP="${2:?--ts-ip requires a value}"; SKIP_HARDEN="true"; shift 2 ;;
       -h|--help)         usage; exit 0 ;;
@@ -175,6 +180,10 @@ validate_inputs() {
   [[ "${DOMAIN}" =~ ${FQDN_RE} ]]         || die "Invalid domain: ${DOMAIN}"
   [[ -n "${CF_API_TOKEN}" ]]               || die "Cloudflare API token is required."
   [[ "${SWAP_SIZE}" =~ ${SWAP_RE} ]]       || die "Invalid swap size: ${SWAP_SIZE} (expected e.g. 2G, 512M)"
+  case "${TAILSCALE_DIRECT_WAN,,}" in
+    true|false|1|0|yes|no|y|n|on|off) ;;
+    *) die "TAILSCALE_DIRECT_WAN must be true/false (got: ${TAILSCALE_DIRECT_WAN})" ;;
+  esac
 
   # Verify companion scripts exist before prompting to proceed
   local scripts=(bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh)
@@ -360,6 +369,7 @@ TUNNEL_MODE=${tunnel_flag}
 SWAP_SIZE=${SWAP_SIZE}
 INSTALL_TAILSCALE=true
 TAILSCALE_AUTH_KEY=${TAILSCALE_AUTH_KEY}
+TAILSCALE_DIRECT_WAN=${TAILSCALE_DIRECT_WAN}
 BIND_DASHBOARD_TO_TAILSCALE=false
 EOF
   ssh_root "chmod 600 /root/deploy.env"

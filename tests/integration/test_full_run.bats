@@ -220,10 +220,10 @@ teardown_file() {
   return 0
 }
 
-@test "ufw: tailscale direct UDP rule is present on WAN" {
+@test "ufw: tailscale direct UDP rule is closed on WAN by default" {
   run ufw status verbose
   assert_success
-  assert_output --partial "41641/udp"
+  refute_output --partial "41641/udp"
 }
 
 # ── Sysctl ───────────────────────────────────────────────────────────────────

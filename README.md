@@ -335,6 +335,8 @@ make test-all            # Full suite with Docker
 | `--mode <tunnel\|standard>` | `tunnel` | Deployment mode |
 | `--cf-zone <zone>` | derived from domain | Cloudflare zone |
 | `--swap-size <size>` | `2G` | Swap file size |
+| `--tailscale-direct-wan` | `false` | Open WAN UDP 41641 for direct Tailscale paths (optional optimization) |
+| `--no-tailscale-direct-wan` | `true` | Keep WAN UDP 41641 closed (default behavior) |
 | `--yes` | `false` | Skip confirmation prompts |
 
 </details>
@@ -351,6 +353,8 @@ make test-all            # Full suite with Docker
 | `--ssh-port <port>` | `22` | SSH port |
 | `--tailscale-cidr <cidr>` | `100.64.0.0/10` | Tailscale network CIDR |
 | `--wan-iface <iface>` | auto-detected | WAN interface |
+| `--tailscale-direct-wan` | `false` | Open WAN UDP 41641 for direct Tailscale paths (optional optimization) |
+| `--no-tailscale-direct-wan` | `true` | Keep WAN UDP 41641 closed (default behavior) |
 | `--install-tailscale` | `false` | Install Tailscale |
 | `--tailscale-auth-key <key>` | — | Tailscale auth key (with `--install-tailscale`) |
 | `--bind-dashboard-to-tailscale` | `false` | Bind Coolify dashboard to Tailscale IP |

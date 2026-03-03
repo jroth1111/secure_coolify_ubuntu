@@ -109,8 +109,8 @@ teardown_file() {
   return 0
 }
 
-@test "tunnel: tailscale direct UDP 41641 still present on WAN" {
+@test "tunnel: tailscale direct UDP 41641 closed on WAN by default" {
   run ufw status verbose
   assert_success
-  assert_output --partial "41641/udp"
+  refute_output --partial "41641/udp"
 }
