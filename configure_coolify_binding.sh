@@ -73,6 +73,11 @@ fi
 
 # Validate IP format
 [[ "${TAILSCALE_IP}" =~ ${IPV4_RE} ]] || die "Invalid IP address format: ${TAILSCALE_IP}"
+IFS='.' read -r ip_o1 ip_o2 _ip_o3 _ip_o4 <<< "${TAILSCALE_IP}"
+if ! (( ip_o1 == 100 && ip_o2 >= 64 && ip_o2 <= 127 )); then
+  die "IP is not in Tailscale CGNAT range 100.64.0.0/10: ${TAILSCALE_IP}"
+fi
+unset ip_o1 ip_o2 _ip_o3 _ip_o4
 
 log "Using Tailscale IP: ${TAILSCALE_IP}"
 
