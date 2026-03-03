@@ -72,6 +72,11 @@ DEPLOY_MATRIX="${PROJECT_ROOT}/docs/deploy_setup_functionality_test_matrix.md"
   grep -Fq "Running final validate_hardening.sh..." "${DEPLOY_SCRIPT}"
 }
 
+@test "deploy: SSH uses accept-new instead of StrictHostKeyChecking=no" {
+  ! grep -q 'StrictHostKeyChecking=no' "${DEPLOY_SCRIPT}"
+  grep -q 'StrictHostKeyChecking=accept-new' "${DEPLOY_SCRIPT}"
+}
+
 @test "deploy: PGPASSWORD not exposed via docker exec -e flag" {
   ! grep -q 'docker exec -e PGPASSWORD' "${DEPLOY_SCRIPT}"
 }

@@ -44,10 +44,24 @@ TUNNEL_SECRET=""
 
 # ── SSH options ─────────────────────────────────────────────────────────────
 
-SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o LogLevel=ERROR"
-# Root SSH uses password auth; PreferredAuthentications ensures sshpass works even when server
-# advertises publickey first (macOS OpenSSH skips password challenge otherwise).
-ROOT_SSH_OPTS="${SSH_OPTS} -o PreferredAuthentications=keyboard-interactive,password"
+# Temp known-hosts files are created in init_ssh_options() (called from main)
+# so sourcing this file for tests doesn't trigger mktemp/trap side-effects.
+DEPLOY_KNOWN_HOSTS=""
+ADMIN_KNOWN_HOSTS=""
+SSH_OPTS=""
+ROOT_SSH_OPTS=""
+
+init_ssh_options() {
+  # Use accept-new: accept on first connect, reject changed keys (OpenSSH 7.6+).
+  DEPLOY_KNOWN_HOSTS="$(mktemp)"
+  ADMIN_KNOWN_HOSTS="$(mktemp)"
+  trap 'rm -f "${DEPLOY_KNOWN_HOSTS}" "${ADMIN_KNOWN_HOSTS}"' EXIT
+
+  SSH_OPTS="-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${ADMIN_KNOWN_HOSTS} -o ConnectTimeout=10 -o LogLevel=ERROR"
+  # Root SSH uses password auth; PreferredAuthentications ensures sshpass works even when server
+  # advertises publickey first (macOS OpenSSH skips password challenge otherwise).
+  ROOT_SSH_OPTS="-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${DEPLOY_KNOWN_HOSTS} -o ConnectTimeout=10 -o LogLevel=ERROR -o PreferredAuthentications=keyboard-interactive,password"
+}
 
 # ── Usage ───────────────────────────────────────────────────────────────────
 
@@ -812,6 +826,7 @@ phase5_verify() {
 # ── Main ────────────────────────────────────────────────────────────────────
 
 main() {
+  init_ssh_options
   parse_args "$@"
   collect_inputs
   validate_inputs

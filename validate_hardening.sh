@@ -124,9 +124,12 @@ load_docker_ssh_cidrs() {
 infer_update_profile() {
   local apt_local="$1"
   local updates_origin='origin=Ubuntu,codename=${distro_codename}-updates,label=Ubuntu'
-  local docker_origin='origin=Docker,label=Docker CE,archive=${distro_codename},component=stable'
+  local docker_origin_archive='origin=Docker,label=Docker CE,archive=${distro_codename},component=stable'
+  local docker_origin_suite='origin=Docker,label=Docker CE,suite=${distro_codename},component=stable'
 
-  if grep -qF "${updates_origin}" "${apt_local}" || grep -qF "${docker_origin}" "${apt_local}"; then
+  if grep -qF "${updates_origin}" "${apt_local}" \
+    || grep -qF "${docker_origin_archive}" "${apt_local}" \
+    || grep -qF "${docker_origin_suite}" "${apt_local}"; then
     printf 'balanced\n'
   else
     printf 'security-only\n'
@@ -1130,7 +1133,8 @@ unattended_upgrades_check() {
   local apt_local="/etc/apt/apt.conf.d/52unattended-upgrades-local"
   local security_origin='origin=Ubuntu,codename=${distro_codename}-security,label=Ubuntu'
   local updates_origin='origin=Ubuntu,codename=${distro_codename}-updates,label=Ubuntu'
-  local docker_origin='origin=Docker,label=Docker CE,archive=${distro_codename},component=stable'
+  local docker_origin_archive='origin=Docker,label=Docker CE,archive=${distro_codename},component=stable'
+  local docker_origin_suite='origin=Docker,label=Docker CE,suite=${distro_codename},component=stable'
   local profile="${UPDATE_PROFILE:-}"
 
   if [[ ! -f "${apt_local}" ]]; then
@@ -1164,10 +1168,10 @@ unattended_upgrades_check() {
       record "FAIL" "auto-updates: Ubuntu updates origin" "missing for balanced profile"
     fi
 
-    if grep -qF "${docker_origin}" "${apt_local}"; then
+    if grep -qF "${docker_origin_archive}" "${apt_local}" || grep -qF "${docker_origin_suite}" "${apt_local}"; then
       record "PASS" "auto-updates: Docker CE origin pinned to stable"
     elif grep -q "origin=Docker,label=Docker CE" "${apt_local}"; then
-      record "FAIL" "auto-updates: Docker CE origin" "present but not pinned to archive/component=stable"
+      record "FAIL" "auto-updates: Docker CE origin" "present but not pinned to archive/suite + component=stable"
     else
       record "FAIL" "auto-updates: Docker CE origin" "missing for balanced profile"
     fi
@@ -1178,7 +1182,9 @@ unattended_upgrades_check() {
       record "PASS" "auto-updates: Ubuntu updates origin excluded (security-only)"
     fi
 
-    if grep -qF "${docker_origin}" "${apt_local}" || grep -q "origin=Docker,label=Docker CE" "${apt_local}"; then
+    if grep -qF "${docker_origin_archive}" "${apt_local}" \
+      || grep -qF "${docker_origin_suite}" "${apt_local}" \
+      || grep -q "origin=Docker,label=Docker CE" "${apt_local}"; then
       record "FAIL" "auto-updates: Docker CE origin" "present but profile is security-only"
     else
       record "PASS" "auto-updates: Docker CE origin excluded (security-only)"

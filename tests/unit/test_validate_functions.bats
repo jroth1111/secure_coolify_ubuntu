@@ -498,6 +498,8 @@ setup() {
   grep -q "^infer_update_profile()" "${VALIDATE_SCRIPT}"
   grep -q "profile is security-only" "${VALIDATE_SCRIPT}"
   grep -q "origin=Docker,label=Docker CE,archive=" "${VALIDATE_SCRIPT}"
+  grep -q "origin=Docker,label=Docker CE,suite=" "${VALIDATE_SCRIPT}"
+  grep -q "archive/suite + component=stable" "${VALIDATE_SCRIPT}"
   grep -q "component=stable" "${VALIDATE_SCRIPT}"
 }
 
