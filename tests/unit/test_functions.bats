@@ -1527,6 +1527,28 @@ allowusers testadmin"
 
 # ── IPv6 DOCKER-USER bridge RETURN rules ──────────────────────────────────────
 
+# ── add_docker_ssh_cidr() octet/prefix validation ─────────────────────────────
+
+@test "add_docker_ssh_cidr: rejects invalid octet 172.256.0.0/16" {
+  DOCKER_SSH_CIDRS=()
+  add_docker_ssh_cidr "172.256.0.0/16"
+  [ "${#DOCKER_SSH_CIDRS[@]}" -eq 0 ]
+}
+
+@test "add_docker_ssh_cidr: rejects invalid prefix 172.17.0.0/33" {
+  DOCKER_SSH_CIDRS=()
+  add_docker_ssh_cidr "172.17.0.0/33"
+  [ "${#DOCKER_SSH_CIDRS[@]}" -eq 0 ]
+}
+
+@test "add_docker_ssh_cidr: accepts valid CIDR 172.17.0.0/16" {
+  DOCKER_SSH_CIDRS=()
+  add_docker_ssh_cidr "172.17.0.0/16"
+  [ "${#DOCKER_SSH_CIDRS[@]}" -eq 1 ]
+}
+
+# ── IPv6 DOCKER-USER bridge RETURN rules ──────────────────────────────────────
+
 @test "bootstrap: IPv6 DOCKER-USER includes docker0 bridge RETURN rule" {
   grep -q "coolify-hardening-bridge-docker06" "${SCRIPT}"
 }

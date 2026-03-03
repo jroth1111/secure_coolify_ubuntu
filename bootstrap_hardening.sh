@@ -1083,7 +1083,7 @@ add_docker_ssh_cidr() {
 
   [[ -n "${cidr}" ]] || return 0
   # SSH/UFW rules here are IPv4-focused.
-  [[ "${cidr}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]+$ ]] || return 0
+  [[ "${cidr}" =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/([0-9]|[12][0-9]|3[0-2])$ ]] || return 0
 
   for existing in "${DOCKER_SSH_CIDRS[@]}"; do
     [[ "${existing}" == "${cidr}" ]] && return 0
