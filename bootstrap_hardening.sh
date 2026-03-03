@@ -1008,7 +1008,10 @@ ensure_admin_access() {
   if is_true "${DRY_RUN}"; then
     log "DRY-RUN: would create ${sudoers_file} with passwordless sudo for ${ADMIN_USER}"
   else
-    echo "${ADMIN_USER} ALL=(ALL) NOPASSWD: ALL" > "${sudoers_file}"
+    cat > "${sudoers_file}" <<EOF
+Defaults:${ADMIN_USER} timestamp_timeout=0
+${ADMIN_USER} ALL=(ALL) NOPASSWD: ALL
+EOF
     chmod 440 "${sudoers_file}"
     # Validate sudoers syntax before committing
     if ! visudo -c -f "${sudoers_file}" >/dev/null 2>&1; then
