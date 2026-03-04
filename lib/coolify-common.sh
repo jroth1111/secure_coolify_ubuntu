@@ -132,9 +132,14 @@ cf_verify_token() {
   # User:User Tokens:Read which is not part of our required token permissions.
   local resp
   resp="$(cf_api GET /zones?per_page=1)"
-  local status
+  local status err code
   status="$(printf '%s' "${resp}" | jq -r '.success // false')"
-  [[ "${status}" == "true" ]] || die "Cloudflare API token verification failed: $(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"')"
+  if [[ "${status}" != "true" ]]; then
+    err="$(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"')"
+    code="$(printf '%s' "${resp}" | jq -r '.errors[0].code // empty')"
+    [[ -n "${code}" ]] && err="${err} (code ${code})"
+    die "Cloudflare API token verification failed: ${err}. Ask the user for a token with Zone DNS permissions."
+  fi
   log "Cloudflare API token verified."
 }
 
@@ -224,7 +229,7 @@ cf_verify_tunnel_token() {
   status="$(printf '%s' "${resp}" | jq -r '.success // false')"
   if [[ "${status}" != "true" ]]; then
     err="$(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"')"
-    die "Cloudflare tunnel API token verification failed: ${err}"
+    die "Cloudflare tunnel API token verification failed: ${err}. Ask the user for a token with Cloudflare Tunnel permissions."
   fi
 
   # Probe tunnel create authorization with an intentionally invalid payload.
