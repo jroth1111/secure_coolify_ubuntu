@@ -61,21 +61,15 @@ ip6tables_usable() {
 }
 
 @test "tunnel: no WAN port 80 UFW rule" {
-  local output
-  output="$(ufw status verbose)"
-  if echo "${output}" | grep -E "80/tcp.*on ${TEST_WAN}.*ALLOW IN"; then
-    return 1
-  fi
-  return 0
+  run ufw status verbose
+  assert_success
+  ! grep -qE "80/tcp.*on ${TEST_WAN}.*ALLOW IN" <<< "${output}"
 }
 
 @test "tunnel: no WAN port 443 UFW rule" {
-  local output
-  output="$(ufw status verbose)"
-  if echo "${output}" | grep -E "443/tcp.*on ${TEST_WAN}.*ALLOW IN"; then
-    return 1
-  fi
-  return 0
+  run ufw status verbose
+  assert_success
+  ! grep -qE "443/tcp.*on ${TEST_WAN}.*ALLOW IN" <<< "${output}"
 }
 
 @test "tunnel: SSH remains allowed on tailscale0" {
@@ -86,40 +80,39 @@ ip6tables_usable() {
 }
 
 @test "tunnel: state file shows tunnel_mode=true" {
-  run cat /var/lib/bootstrap-hardening/state
+  run grep -q '^tunnel_mode=true$' /var/lib/bootstrap-hardening/state
   assert_success
-  assert_output --partial "tunnel_mode=true"
 }
 
 @test "tunnel: report JSON shows tunnel_mode=true" {
-  run cat /var/log/bootstrap-hardening-report.json
+  run jq -r '.tunnel_mode' /var/log/bootstrap-hardening-report.json
   assert_success
-  assert_output --partial '"tunnel_mode": true'
+  assert_output "true"
 }
 
 @test "tunnel: DOCKER-USER chain has no wan-web ACCEPT rule" {
   iptables_usable || skip "iptables backend unavailable in this kernel"
-  local output
-  output="$(iptables -t filter -S DOCKER-USER)"
-  if echo "${output}" | grep -q "coolify-hardening-wan-web"; then
-    return 1
-  fi
-  return 0
+  run iptables -t filter -S DOCKER-USER
+  assert_success
+  ! grep -q "coolify-hardening-wan-web" <<< "${output}"
 }
 
 @test "tunnel: DOCKER-USER IPv6 chain has no wan-web6 ACCEPT rule" {
   ip6tables_usable || skip "ip6tables backend unavailable in this kernel"
 
-  local output
-  output="$(ip6tables -t filter -S DOCKER-USER)"
-  if echo "${output}" | grep -q "coolify-hardening-wan-web6"; then
-    return 1
-  fi
-  return 0
+  run ip6tables -t filter -S DOCKER-USER
+  assert_success
+  ! grep -q "coolify-hardening-wan-web6" <<< "${output}"
 }
 
 @test "tunnel: tailscale direct UDP 41641 closed on WAN by default" {
   run ufw status verbose
   assert_success
   refute_output --partial "41641/udp"
+}
+
+@test "tunnel: validate JSON reports zero failures" {
+  run bash "${VALIDATE_SCRIPT}" --json
+  assert_success
+  assert_json_fail_count "${output}" "0"
 }

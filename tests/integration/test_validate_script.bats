@@ -44,51 +44,51 @@ teardown_file() {
 }
 
 @test "validate: exits 0 after hardening bootstrap" {
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
   assert_success
-  assert_output --partial "Summary:"
+  assert_json_fail_count "${output}" "0"
 }
 
 @test "validate: JSON output includes expected top-level fields" {
   run bash "${VALIDATE_SCRIPT}" --json
   assert_success
-  assert_output --partial '"pass":'
-  assert_output --partial '"fail":'
-  assert_output --partial '"checks":['
+  run jq -e 'has("pass") and has("fail") and has("info") and has("checks")' <<< "${output}"
+  assert_success
 }
 
 @test "validate: JSON output has valid structure with check entries" {
   run bash "${VALIDATE_SCRIPT}" --json
   assert_success
-  assert_output --regexp '^\{"pass":[0-9]+,"fail":[0-9]+,"info":[0-9]+'
-  assert_output --partial '"check":'
-  assert_output --partial '"status":"PASS"'
+  run jq -e '.pass >= 0 and .fail >= 0 and .info >= 0 and (.checks | type == "array") and (.checks | length > 0)' <<< "${output}"
+  assert_success
+  run jq -e 'all(.checks[]; has("check") and has("status") and has("detail"))' <<< "${output}"
+  assert_success
 }
 
 @test "validate: pass count is positive after hardening" {
   run bash "${VALIDATE_SCRIPT}" --json
   assert_success
   local pass_count
-  pass_count="$(echo "${output}" | grep -o '"pass":[0-9]*' | cut -d: -f2)"
+  pass_count="$(jq -r '.pass' <<< "${output}")"
   [ "${pass_count}" -gt 0 ]
 }
 
 @test "validate: state file values are reflected in output" {
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
   assert_success
-  assert_output --partial "${TEST_USER}"
+  assert_json_check_status "${output}" "ssh: AllowUsers includes ${TEST_USER}" "PASS"
 }
 
 @test "validate: stopping fail2ban causes failure" {
   systemctl stop fail2ban 2>/dev/null || true
 
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
 
   # Restore before assertions
   systemctl start fail2ban 2>/dev/null || true
 
   assert_failure
-  assert_output --partial "fail2ban"
+  assert_json_check_status "${output}" "fail2ban: active" "FAIL"
 }
 
 @test "validate: exits non-zero when expected control is missing" {
@@ -98,14 +98,14 @@ teardown_file() {
 
   rm -f /etc/issue.net
 
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
 
   # Restore before assertions
   cp "${backup}" /etc/issue.net
   rm -f "${backup}"
 
   assert_failure
-  assert_output --partial "banner: /etc/issue.net"
+  assert_json_check_status "${output}" "banner: /etc/issue.net" "FAIL"
 }
 
 @test "validate: exits non-zero when journald persistence is disabled" {
@@ -120,11 +120,11 @@ teardown_file() {
 Storage=volatile
 EOF
 
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
 
   cp "${backup}" "${journald_dropin}"
   rm -f "${backup}"
 
   assert_failure
-  assert_output --partial "journald: persistent storage"
+  assert_json_check_status "${output}" "journald: persistent storage config" "FAIL"
 }

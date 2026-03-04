@@ -71,12 +71,17 @@ json_status_for_check() {
   jq -r --arg check "${check}" '.checks[] | select(.check == $check) | .status' <<< "${output}"
 }
 
+json_fail_count() {
+  jq -r '.fail' <<< "${output}"
+}
+
 @test "validate negative: fail2ban stopped triggers failure" {
   systemctl stop fail2ban 2>/dev/null || true
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
   systemctl start fail2ban 2>/dev/null || true
   assert_failure
-  assert_output --partial "fail2ban"
+  [[ "$(json_status_for_check "fail2ban: active")" == "FAIL" ]]
+  [[ "$(json_fail_count)" -ge 1 ]]
 }
 
 @test "validate negative: journald volatile setting triggers failure" {
@@ -88,12 +93,13 @@ json_status_for_check() {
 Storage=volatile
 EOF
 
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
 
   cp "${backup}" "${JOURNALD_DROPIN}"
   rm -f "${backup}"
   assert_failure
-  assert_output --partial "journald: persistent storage"
+  [[ "$(json_status_for_check "journald: persistent storage config")" == "FAIL" ]]
+  [[ "$(json_fail_count)" -ge 1 ]]
 }
 
 @test "validate negative: missing banner triggers failure" {
@@ -102,20 +108,22 @@ EOF
   cp /etc/issue.net "${backup}"
   rm -f /etc/issue.net
 
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
 
   cp "${backup}" /etc/issue.net
   rm -f "${backup}"
   assert_failure
-  assert_output --partial "banner: /etc/issue.net"
+  [[ "$(json_status_for_check "banner: /etc/issue.net")" == "FAIL" ]]
+  [[ "$(json_fail_count)" -ge 1 ]]
 }
 
 @test "validate negative: disabling ufw triggers failure" {
   ufw --force disable >/dev/null 2>&1 || true
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
   ufw --force enable >/dev/null 2>&1 || true
   assert_failure
-  assert_output --partial "ufw"
+  [[ "$(json_status_for_check "ufw: active")" == "FAIL" ]]
+  [[ "$(json_fail_count)" -ge 1 ]]
 }
 
 @test "validate negative: docker daemon config drift triggers failure" {
@@ -125,12 +133,13 @@ EOF
   cp "${daemon_json}" "${backup}"
   jq '.["log-driver"]="none"' "${backup}" > "${daemon_json}"
 
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
 
   cp "${backup}" "${daemon_json}"
   rm -f "${backup}"
   assert_failure
-  assert_output --partial "docker-daemon: log-driver"
+  [[ "$(json_status_for_check "docker-daemon: log-driver")" == "FAIL" ]]
+  [[ "$(json_fail_count)" -ge 1 ]]
 }
 
 @test "validate negative: SSH policy drift triggers failure" {
@@ -140,21 +149,23 @@ EOF
   sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' "${SSH_DROPIN}"
   systemctl reload ssh 2>/dev/null || true
 
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
 
   cp "${backup}" "${SSH_DROPIN}"
   systemctl reload ssh 2>/dev/null || true
   rm -f "${backup}"
   assert_failure
-  assert_output --partial "ssh:"
+  [[ "$(json_status_for_check "ssh: passwordauthentication")" == "FAIL" ]]
+  [[ "$(json_fail_count)" -ge 1 ]]
 }
 
 @test "validate negative: sysctl drift triggers failure" {
   sysctl -w net.ipv4.tcp_syncookies=0 >/dev/null 2>&1 || true
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
   sysctl -w net.ipv4.tcp_syncookies=1 >/dev/null 2>&1 || true
   assert_failure
-  assert_output --partial "tcp_syncookies"
+  [[ "$(json_status_for_check "sysctl: net.ipv4.tcp_syncookies")" == "FAIL" ]]
+  [[ "$(json_fail_count)" -ge 1 ]]
 }
 
 @test "validate negative: unattended upgrades drift triggers failure" {
@@ -163,12 +174,13 @@ EOF
   cp "${APT_LOCAL_FILE}" "${backup}"
   rm -f "${APT_LOCAL_FILE}"
 
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
 
   cp "${backup}" "${APT_LOCAL_FILE}"
   rm -f "${backup}"
   assert_failure
-  assert_output --partial "unattended-upgrades"
+  [[ "$(json_status_for_check "auto-updates: local config")" == "FAIL" ]]
+  [[ "$(json_fail_count)" -ge 1 ]]
 }
 
 @test "validate negative: admin state drift to missing user triggers failure" {
@@ -180,12 +192,13 @@ EOF
   set_state_value "admin_user" "doesnotexist" "${backup}" "${mutated}"
   cp "${mutated}" "${STATE_FILE}"
 
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
 
   cp "${backup}" "${STATE_FILE}"
   rm -f "${backup}" "${mutated}"
   assert_failure
-  assert_output --partial "admin: user"
+  [[ "$(json_status_for_check "admin: user")" == "FAIL" ]]
+  [[ "$(json_fail_count)" -ge 1 ]]
 }
 
 @test "validate negative: apparmor command failure maps to container-safe INFO outcome" {
@@ -213,11 +226,12 @@ exit 0
 EOF
   chmod +x "${stubdir}/cloudflared"
 
-  run env PATH="${stubdir}:${PATH}" bash "${VALIDATE_SCRIPT}"
+  run env PATH="${stubdir}:${PATH}" bash "${VALIDATE_SCRIPT}" --json
 
   rm -rf "${stubdir}"
   assert_failure
-  assert_output --partial "cloudflared: service active"
+  [[ "$(json_status_for_check "cloudflared: service active")" == "FAIL" ]]
+  [[ "$(json_fail_count)" -ge 1 ]]
 }
 
 @test "validate negative: coolify binding guard timer inactive triggers failure when binding enabled" {
@@ -244,13 +258,14 @@ exec "${REAL_SYSTEMCTL}" "$@"
 EOF
   chmod +x "${stubdir}/systemctl"
 
-  run env REAL_SYSTEMCTL="${real_systemctl}" PATH="${stubdir}:${PATH}" bash "${VALIDATE_SCRIPT}"
+  run env REAL_SYSTEMCTL="${real_systemctl}" PATH="${stubdir}:${PATH}" bash "${VALIDATE_SCRIPT}" --json
 
   cp "${state_backup}" "${STATE_FILE}"
   rm -f "${state_backup}" "${state_mutated}"
   rm -rf "${stubdir}"
   assert_failure
-  assert_output --partial "coolify: UFW binding-guard timer"
+  [[ "$(json_status_for_check "coolify: UFW binding-guard timer")" == "FAIL" ]]
+  [[ "$(json_fail_count)" -ge 1 ]]
 }
 
 @test "validate negative: disabled service drift triggers failure" {
@@ -316,13 +331,13 @@ EOF
   rm -f "${unit}"
   systemctl daemon-reload 2>/dev/null || true
 
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
 
   cp "${backup}" "${unit}"
   systemctl daemon-reload 2>/dev/null || true
   rm -f "${backup}"
   assert_failure
-  assert_output --partial "docker-user: unit file"
+  [[ "$(json_status_for_check "docker-user: unit file")" == "FAIL" ]]
 }
 
 @test "validate negative: expected swap without active swap maps to container-safe INFO outcome" {
@@ -376,11 +391,12 @@ exit 0
 EOF
   chmod +x "${stubdir}/tailscale"
 
-  run env PATH="${stubdir}:${PATH}" bash "${VALIDATE_SCRIPT}"
+  run env PATH="${stubdir}:${PATH}" bash "${VALIDATE_SCRIPT}" --json
 
   rm -rf "${stubdir}"
   assert_failure
-  assert_output --partial "tailscale: BackendState"
+  [[ "$(json_status_for_check "tailscale: BackendState")" == "FAIL" ]]
+  [[ "$(json_fail_count)" -ge 1 ]]
 }
 
 @test "validate negative: timesync drift maps to container-safe INFO outcome" {
@@ -427,24 +443,27 @@ EOF
 @test "validate negative: coolify container health triggers failure when /data/coolify exists without containers" {
   mkdir -p /data/coolify 2>/dev/null || skip "cannot create /data/coolify in this environment"
 
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
 
   rm -rf /data/coolify
   assert_failure
-  assert_output --partial "coolify-containers: coolify"
+  [[ "$(json_status_for_check "coolify-containers: coolify")" == "FAIL" ]]
 }
 
 @test "validate negative: coolify ssh key absence triggers failure when ssh key dir exists" {
   mkdir -p /data/coolify/ssh/keys 2>/dev/null || skip "cannot create /data/coolify/ssh/keys in this environment"
 
-  run bash "${VALIDATE_SCRIPT}"
+  run bash "${VALIDATE_SCRIPT}" --json
 
   rm -rf /data/coolify
   assert_failure
-  assert_output --partial "coolify: ssh key exists"
+  [[ "$(json_status_for_check "coolify: ssh key exists")" == "FAIL" ]]
 }
 
 @test "validate negative: docker trust boundary reports socket-state outcome" {
-  run bash "${VALIDATE_SCRIPT}"
-  assert_output --regexp "docker-trust: (socket|docker)"
+  run bash "${VALIDATE_SCRIPT}" --json
+  assert_success
+  jq -e '
+    [.checks[] | select((.check == "docker-trust: docker") or (.check | startswith("docker-trust: socket")))] | length >= 1
+  ' <<< "${output}" >/dev/null
 }

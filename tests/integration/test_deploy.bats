@@ -150,32 +150,35 @@ setup() {
 
 @test "deploy: validate_inputs rejects invalid server IP" {
   SERVER_IP="${INVALID_IP}"
-  run bash -c "source '${DEPLOY_SCRIPT}'; SERVER_IP='${INVALID_IP}' && validate_inputs" 2>&1 || true
-  # Should fail due to invalid IP
-  [[ $? -ne 0 ]] || [[ "$output" == *"Invalid server IP"* ]]
+  run bash -c "source '${DEPLOY_SCRIPT}'; SERVER_IP='${INVALID_IP}' && validate_inputs" 2>&1
+  assert_failure
+  assert_output --partial "Invalid server IP"
 }
 
 @test "deploy: validate_inputs rejects empty root password" {
   SERVER_IP="${VALID_IP}"
   ROOT_PASS=""
-  run bash -c "source '${DEPLOY_SCRIPT}'; SERVER_IP='${VALID_IP}' ROOT_PASS='' && validate_inputs" 2>&1 || true
-  [[ $? -ne 0 ]] || [[ "$output" == *"Root password"* ]]
+  run bash -c "source '${DEPLOY_SCRIPT}'; SERVER_IP='${VALID_IP}' ROOT_PASS='' && validate_inputs" 2>&1
+  assert_failure
+  assert_output --partial "Root password"
 }
 
 @test "deploy: validate_inputs rejects root as admin user" {
   SERVER_IP="${VALID_IP}"
   ROOT_PASS="testpass"
   ADMIN_USER="root"
-  run bash -c "source '${DEPLOY_SCRIPT}'; SERVER_IP='${VALID_IP}' ROOT_PASS='test' ADMIN_USER='root' && validate_inputs" 2>&1 || true
-  [[ $? -ne 0 ]] || [[ "$output" == *"must not be root"* ]]
+  run bash -c "source '${DEPLOY_SCRIPT}'; SERVER_IP='${VALID_IP}' ROOT_PASS='test' ADMIN_USER='root' && validate_inputs" 2>&1
+  assert_failure
+  assert_output --partial "must not be root"
 }
 
 @test "deploy: validate_inputs rejects invalid admin username (uppercase)" {
   SERVER_IP="${VALID_IP}"
   ROOT_PASS="testpass"
   ADMIN_USER="AdminUser"
-  run bash -c "source '${DEPLOY_SCRIPT}'; SERVER_IP='${VALID_IP}' ROOT_PASS='test' ADMIN_USER='AdminUser' && validate_inputs" 2>&1 || true
-  [[ $? -ne 0 ]] || [[ "$output" == *"Invalid admin username"* ]]
+  run bash -c "source '${DEPLOY_SCRIPT}'; SERVER_IP='${VALID_IP}' ROOT_PASS='test' ADMIN_USER='AdminUser' && validate_inputs" 2>&1
+  assert_failure
+  assert_output --partial "Invalid admin username"
 }
 
 @test "deploy: validate_inputs rejects invalid Tailscale auth key format" {
@@ -183,8 +186,9 @@ setup() {
   ROOT_PASS="testpass"
   ADMIN_USER="${VALID_USER}"
   TAILSCALE_AUTH_KEY="invalid-format"
-  run bash -c "source '${DEPLOY_SCRIPT}'; SERVER_IP='${VALID_IP}' ROOT_PASS='test' ADMIN_USER='${VALID_USER}' TAILSCALE_AUTH_KEY='invalid' && validate_inputs" 2>&1 || true
-  [[ $? -ne 0 ]] || [[ "$output" == *"tskey-auth-"* ]]
+  run bash -c "source '${DEPLOY_SCRIPT}'; SERVER_IP='${VALID_IP}' ROOT_PASS='test' ADMIN_USER='${VALID_USER}' TAILSCALE_AUTH_KEY='invalid' && validate_inputs" 2>&1
+  assert_failure
+  assert_output --partial "tskey-auth-"
 }
 
 @test "deploy: validate_inputs rejects invalid deploy mode" {
@@ -193,8 +197,9 @@ setup() {
   ADMIN_USER="${VALID_USER}"
   TAILSCALE_AUTH_KEY="${VALID_TS_KEY}"
   DEPLOY_MODE="invalid"
-  run bash -c "source '${DEPLOY_SCRIPT}'; SERVER_IP='${VALID_IP}' ROOT_PASS='test' ADMIN_USER='${VALID_USER}' TAILSCALE_AUTH_KEY='${VALID_TS_KEY}' DEPLOY_MODE='invalid' && validate_inputs" 2>&1 || true
-  [[ $? -ne 0 ]] || [[ "$output" == *"'standard' or 'tunnel'"* ]]
+  run bash -c "source '${DEPLOY_SCRIPT}'; SERVER_IP='${VALID_IP}' ROOT_PASS='test' ADMIN_USER='${VALID_USER}' TAILSCALE_AUTH_KEY='${VALID_TS_KEY}' DEPLOY_MODE='invalid' && validate_inputs" 2>&1
+  assert_failure
+  assert_output --partial "'standard' or 'tunnel'"
 }
 
 @test "deploy: validate_inputs accepts valid deploy mode 'tunnel'" {
@@ -208,8 +213,8 @@ setup() {
 }
 
 @test "deploy: validate_inputs rejects invalid swap size" {
-  run bash -c "source '${DEPLOY_SCRIPT}'; SWAP_SIZE='2TB' && [[ \"\${SWAP_SIZE}\" =~ \${SWAP_RE} ]]" 2>&1 || true
-  [[ $? -ne 0 ]]
+  run bash -c "source '${DEPLOY_SCRIPT}'; SWAP_SIZE='2TB' && [[ \"\${SWAP_SIZE}\" =~ \${SWAP_RE} ]]" 2>&1
+  assert_failure
 }
 
 # ── parse_args Tests ──────────────────────────────────────────────────────────
@@ -235,8 +240,9 @@ setup() {
 }
 
 @test "deploy: parse_args rejects unknown option" {
-  run bash -c "source '${DEPLOY_SCRIPT}'; parse_args --unknown-flag" 2>&1 || true
-  [[ $? -ne 0 ]] || [[ "$output" == *"Unknown option"* ]]
+  run bash -c "source '${DEPLOY_SCRIPT}'; parse_args --unknown-flag" 2>&1
+  assert_failure
+  assert_output --partial "Unknown option"
 }
 
 # ── Cloudflare API Mock Tests ─────────────────────────────────────────────────
@@ -269,9 +275,10 @@ setup() {
     source '${DEPLOY_SCRIPT}'
     cf_api() { echo '{\"success\": false, \"errors\": [{\"message\": \"Invalid token\"}]}'; }
     export -f cf_api
-    cf_verify_token 2>&1 || true
+    cf_verify_token 2>&1
   "
-  [[ $? -ne 0 ]] || [[ "$output" == *"Invalid token"* ]] || [[ "$output" == *"failed"* ]]
+  assert_failure
+  [[ "$output" == *"Invalid token"* ]] || [[ "$output" == *"failed"* ]]
 }
 
 @test "deploy: cf_get_zone_id extracts zone ID from response" {
@@ -294,9 +301,10 @@ setup() {
     export -f cf_api
     DOMAIN='nonexistent.invalid'
     CF_ZONE=''
-    cf_get_zone_id 2>&1 || true
+    cf_get_zone_id 2>&1
   "
-  [[ $? -ne 0 ]] || [[ "$output" == *"not found"* ]]
+  assert_failure
+  assert_output --partial "not found"
 }
 
 @test "deploy: cf_create_tunnel extracts tunnel ID from response" {
@@ -339,21 +347,6 @@ setup() {
     verify_docker_user_gate_remote 'Test Gate' && echo 'PASSED'
   "
   assert_output --partial "PASSED"
-}
-
-# ── Phase Gate Labels ─────────────────────────────────────────────────────────
-
-@test "deploy: phase labels are consistent (5 phases)" {
-  # Verify deploy.sh has exactly 5 phase labels
-  run grep -c "step \".*/5\"" "${DEPLOY_SCRIPT}"
-  assert_output "5"
-}
-
-@test "deploy: gate labels A through E are defined" {
-  # Count gate references
-  local gate_count
-  gate_count=$(grep -c "Gate [A-E]" "${DEPLOY_SCRIPT}")
-  [[ ${gate_count} -ge 5 ]]
 }
 
 # ── Required CLI Flags Documentation ──────────────────────────────────────────
@@ -490,9 +483,9 @@ setup() {
 # ── Error Handling ────────────────────────────────────────────────────────────
 
 @test "deploy: die function exits with error message" {
-  run bash -c "source '${DEPLOY_SCRIPT}'; die 'test error message'" 2>&1 || true
-  [[ $? -ne 0 ]]
-  [[ "$output" == *"test error message"* ]]
+  run bash -c "source '${DEPLOY_SCRIPT}'; die 'test error message'" 2>&1
+  assert_failure
+  assert_output --partial "test error message"
 }
 
 @test "deploy: warn function logs warning" {

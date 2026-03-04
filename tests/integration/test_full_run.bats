@@ -625,3 +625,18 @@ ip6tables_usable() {
   assert_success
   assert_output --partial "container-runtime"
 }
+
+@test "validate: JSON reports zero failures after standard hardening" {
+  run bash "${VALIDATE_SCRIPT}" --json
+  assert_success
+  assert_json_fail_count "${output}" "0"
+}
+
+@test "validate: core hardening checks are PASS in standard lane" {
+  run bash "${VALIDATE_SCRIPT}" --json
+  assert_success
+  assert_json_check_status "${output}" "ssh: permitrootlogin=no" "PASS"
+  assert_json_check_status "${output}" "ufw: active" "PASS"
+  assert_json_check_status "${output}" "sysctl: net.ipv4.tcp_syncookies=1" "PASS"
+  assert_json_check_status "${output}" "fail2ban: active" "PASS"
+}

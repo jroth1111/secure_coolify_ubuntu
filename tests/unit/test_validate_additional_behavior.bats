@@ -5,27 +5,30 @@ load '../helpers'
 
 setup() {
   source_validate_script
-  PASS_COUNT=0
-  FAIL_COUNT=0
-  INFO_COUNT=0
-  RESULTS=()
-  JSON_MODE="false"
+  reset_validate_runtime
 }
 
 @test "parse_cli_args: sets json mode and state file path" {
-  parse_cli_args --json --state-file /tmp/state-test
+  parse_cli_args --json
   [ "${JSON_MODE}" = "true" ]
-  [ "${STATE_FILE}" = "/tmp/state-test" ]
+  [ "${STATE_FILE}" = "/var/lib/bootstrap-hardening/state" ]
 }
 
 @test "record (runtime): increments PASS count for PASS status" {
-  record "PASS" "runtime-check"
-  [ "${PASS_COUNT}" -eq 1 ]
+  record "PASS" "runtime-check" "ok"
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "runtime-check" "PASS"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "check (runtime): records FAIL when command exits non-zero" {
   check "runtime-check" false
-  [ "${FAIL_COUNT}" -eq 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "runtime-check" "FAIL"
+  assert_json_check_detail_contains "${json}" "runtime-check" "false"
+  assert_json_fail_count "${json}" "1"
 }
 
 @test "detect_container_runtime: flags containerized runtime" {
@@ -113,14 +116,21 @@ UFW
   }
 
   ufw_check
-  [ "${PASS_COUNT}" -ge 4 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "ufw: active" "PASS"
+  assert_json_check_status "${json}" "ufw: SSH on tailscale0" "PASS"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "swap_check: reports disabled swap when swap_size is 0" {
   swap_size="0"
 
   swap_check
-  [ "${INFO_COUNT}" -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "swap: disabled" "INFO"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "apparmor_check: passes when aa-status reports enabled" {
@@ -130,7 +140,10 @@ UFW
   }
 
   apparmor_check
-  [ "${PASS_COUNT}" -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "apparmor: enabled" "PASS"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "listening_ports_info: records discovered listening ports" {
@@ -142,7 +155,10 @@ SS
   }
 
   listening_ports_info
-  [ "${INFO_COUNT}" -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "listening: TCP ports" "INFO"
+  assert_json_check_detail_contains "${json}" "listening: TCP ports" "22"
 }
 
 @test "coolify_ssh_check: returns cleanly when Coolify SSH dir is absent" {
@@ -153,7 +169,10 @@ SS
 @test "cloudflared_check: reports info when cloudflared is not installed" {
   systemctl() { return 1; }
   cloudflared_check
-  [ "${INFO_COUNT}" -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "cloudflared: not installed" "INFO"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "coolify_container_check: reports info when Docker is missing" {
@@ -165,13 +184,19 @@ SS
   }
 
   coolify_container_check
-  [ "${INFO_COUNT}" -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "coolify-containers: docker" "INFO"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "admin_sudo_check: reports info when admin user is not configured" {
   ADMIN_USER=""
   admin_sudo_check
-  [ "${INFO_COUNT}" -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "admin: sudo" "INFO"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "auditd_check: executes and records audit status outcomes" {
@@ -180,17 +205,29 @@ SS
   auditctl() { return 1; }
 
   auditd_check
-  [ $((PASS_COUNT + FAIL_COUNT + INFO_COUNT)) -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "auditd: active" "INFO"
+  assert_json_check_status "${json}" "auditd: rules" "FAIL"
+  assert_json_fail_count "${json}" "1"
 }
 
 @test "banner_check: records banner verification result" {
   banner_check
-  [ $((PASS_COUNT + FAIL_COUNT)) -ge 1 ]
+  local json
+  local status
+  json="$(emit_validate_results_json)"
+  status="$(json_check_status "${json}" "banner: /etc/issue.net")"
+  [[ -n "${status}" ]]
 }
 
 @test "coolify_binding_check: records binding guard posture" {
+  BIND_DASHBOARD_TO_TAILSCALE="false"
   coolify_binding_check
-  [ $((PASS_COUNT + FAIL_COUNT + INFO_COUNT)) -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "coolify: dashboard UFW restriction" "INFO"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "disabled_services_check: passes when services are masked" {
@@ -203,12 +240,27 @@ SS
   }
 
   disabled_services_check
-  [ "${PASS_COUNT}" -ge 3 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "disabled: rpcbind.service (masked)" "PASS"
+  assert_json_check_status "${json}" "disabled: avahi-daemon.service (masked)" "PASS"
+  assert_json_check_status "${json}" "disabled: cups.service (masked)" "PASS"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "docker_daemon_check: records daemon config status" {
+  command() {
+    if [[ "$1" == "-v" && "$2" == "docker" ]]; then
+      return 1
+    fi
+    builtin command "$@"
+  }
+
   docker_daemon_check
-  [ $((PASS_COUNT + FAIL_COUNT + INFO_COUNT)) -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-daemon: daemon.json" "INFO"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "docker_trust_boundary_check: records info when Docker is unavailable" {
@@ -220,7 +272,10 @@ SS
   }
 
   docker_trust_boundary_check
-  [ "${INFO_COUNT}" -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-trust: docker" "INFO"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "docker_user_check: fails fast when iptables is unavailable" {
@@ -232,7 +287,10 @@ SS
   }
 
   docker_user_check
-  [ "${FAIL_COUNT}" -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-user: iptables" "FAIL"
+  assert_json_fail_count "${json}" "1"
 }
 
 @test "docker_user_check: records info when docker service is unavailable and apply was deferred" {
@@ -260,8 +318,10 @@ SS
   }
 
   docker_user_check
-  [ "${INFO_COUNT}" -ge 1 ]
-  [ "${FAIL_COUNT}" -eq 0 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-user: IPv4" "INFO"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "docker_user_lifecycle_check: records info when Docker is not installed" {
@@ -273,18 +333,34 @@ SS
   }
 
   docker_user_lifecycle_check
-  [ "${INFO_COUNT}" -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-user: unit file" "INFO"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "fail2ban_check: records fail/info when fail2ban is absent" {
   systemctl() { return 1; }
   fail2ban_check
-  [ $((FAIL_COUNT + INFO_COUNT)) -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "fail2ban: active" "FAIL"
+  assert_json_fail_count "${json}" "1"
 }
 
 @test "journald_check: records journald persistence posture" {
+  JOURNALD_DROPIN="$(mktemp)"
+  cat > "${JOURNALD_DROPIN}" <<'EOF'
+[Journal]
+Storage=persistent
+SystemKeepFree=500M
+EOF
+
   journald_check
-  [ $((PASS_COUNT + FAIL_COUNT + INFO_COUNT)) -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "journald: persistent storage config" "PASS"
+  rm -f "${JOURNALD_DROPIN}"
 }
 
 @test "ssh_check: records PASS for expected hardened sshd output" {
@@ -309,7 +385,10 @@ SSHD
 
   ADMIN_USER="alice"
   ssh_check
-  [ "${PASS_COUNT}" -ge 5 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "ssh: permitrootlogin=no" "PASS"
+  assert_json_check_status "${json}" "ssh: passwordauthentication=no" "PASS"
 }
 
 @test "sysctl_check: records PASS when expected values are present" {
@@ -333,7 +412,10 @@ SSHD
   }
 
   sysctl_check
-  [ "${PASS_COUNT}" -ge 5 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "sysctl: net.ipv4.tcp_syncookies=1" "PASS"
+  assert_json_check_status "${json}" "sysctl: vm.swappiness=10" "PASS"
 }
 
 @test "timesync_check: passes when timedatectl reports synchronized NTP" {
@@ -350,7 +432,10 @@ SSHD
   }
 
   timesync_check
-  [ "${PASS_COUNT}" -ge 2 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "timesync: NTP active" "PASS"
+  assert_json_check_status "${json}" "timesync: NTPSynchronized" "PASS"
 }
 
 @test "tailscale_check: fails when tailscale interface is missing" {
@@ -360,12 +445,18 @@ SSHD
   tailscale() { return 1; }
 
   tailscale_check
-  [ "${FAIL_COUNT}" -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "tailscale: tailscale0" "FAIL"
+  assert_json_fail_count "${json}" "1"
 }
 
 @test "unattended_upgrades_check: fails when local policy file is missing" {
   unattended_upgrades_check
-  [ "${FAIL_COUNT}" -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "auto-updates: local config" "FAIL"
+  assert_json_fail_count "${json}" "1"
 }
 
 @test "validate_timer_check: records timer state outcome" {
@@ -381,7 +472,10 @@ SSHD
   }
 
   validate_timer_check
-  [ "${PASS_COUNT}" -ge 1 ]
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "validate-timer: active" "PASS"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "main: runs check pipeline and emits JSON summary" {

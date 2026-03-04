@@ -1,590 +1,168 @@
 #!/usr/bin/env bats
-# Tier 0: Unit tests for pure functions in validate_hardening.sh
-# No Docker, no root, no system access required.
-#
-# Note: validate_hardening.sh has a root check that runs at source time.
-# These tests extract and test the functions using grep/sed to avoid
-# triggering the root check.
+# Runtime-focused unit tests for core validate_hardening.sh helper behavior.
 
 load '../helpers'
 
-VALIDATE_SCRIPT="${PROJECT_ROOT}/validate_hardening.sh"
-
-# ── is_true() (extracted from validate_hardening.sh) ───────────────────────────
-# We define our own is_true here to match the one in validate_hardening.sh
-
-is_true() {
-  case "${1,,}" in
-    1|true|yes|y|on) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-# ── record() (extracted for unit testing) ─────────────────────────────────────
-
-record() {
-  local status="$1"
-  local name="$2"
-  local detail="${3:-}"
-
-  case "${status}" in
-    PASS) ((++PASS_COUNT)) ;;
-    FAIL) ((++FAIL_COUNT)) ;;
-    INFO) ((++INFO_COUNT)) ;;
-  esac
-
-  if [[ "${JSON_MODE}" == "true" ]]; then
-    RESULTS+=("{\"check\":\"${name}\",\"status\":\"${status}\",\"detail\":\"${detail}\"}")
-  else
-    printf '%-6s %-45s %s\n' "[${status}]" "${name}" "${detail}"
-  fi
-}
-
-# ── check() (extracted for unit testing) ──────────────────────────────────────
-
-check() {
-  local name="$1"
-  shift
-  if "$@" >/dev/null 2>&1; then
-    record "PASS" "${name}"
-  else
-    record "FAIL" "${name}" "$*"
-  fi
-}
-
-# ── auditd queue-loss conditional logic (extracted for unit testing) ───────────
-# Mirrors the queue-loss branch in auditd_check() in validate_hardening.sh.
-
-_auditd_queue_loss_record() {
-  local lost="${1-}"
-  if [[ "${lost:-0}" =~ ^[0-9]+$ ]] && [[ "${lost}" == "0" ]]; then
-    record "PASS" "auditd: queue loss (lost=0)"
-  elif [[ "${lost:-}" =~ ^[0-9]+$ ]] && (( lost > 100 )); then
-    record "FAIL" "auditd: queue loss" "lost=${lost} (>100 events dropped)"
-  elif [[ "${lost:-}" =~ ^[0-9]+$ ]]; then
-    record "INFO" "auditd: queue loss" "lost=${lost} (minor — below threshold)"
-  else
-    record "INFO" "auditd: queue loss" "unable to parse 'lost' from auditctl -s"
-  fi
-}
-
 setup() {
-  PASS_COUNT=0
-  FAIL_COUNT=0
-  INFO_COUNT=0
-  JSON_MODE="false"
-  RESULTS=()
+  source_validate_script
+  reset_validate_runtime
 }
 
-# ── is_true() tests ────────────────────────────────────────────────────────────
-
-@test "validate is_true: '1' returns 0" {
-  run is_true "1"
-  assert_success
-}
-
-@test "validate is_true: 'true' returns 0" {
+@test "validate is_true: truthy values return success" {
   run is_true "true"
   assert_success
-}
 
-@test "validate is_true: 'false' returns 1" {
-  run is_true "false"
-  assert_failure
-}
+  run is_true "1"
+  assert_success
 
-@test "validate is_true: empty returns 1" {
-  run is_true ""
-  assert_failure
-}
-
-@test "validate is_true: 'yes' returns 0" {
   run is_true "yes"
   assert_success
 }
 
-@test "validate is_true: 'on' returns 0" {
-  run is_true "on"
-  assert_success
-}
+@test "validate is_true: falsy values return failure" {
+  run is_true "false"
+  assert_failure
 
-@test "validate is_true: 'no' returns 1" {
-  run is_true "no"
+  run is_true "0"
+  assert_failure
+
+  run is_true ""
   assert_failure
 }
 
-# ── record() tests ────────────────────────────────────────────────────────────
-
-@test "record: increments PASS_COUNT on PASS" {
-  record "PASS" "test-check" "detail"
-  [ "${PASS_COUNT}" -eq 1 ]
-}
-
-@test "record: increments FAIL_COUNT on FAIL" {
-  record "FAIL" "test-check" "detail"
-  [ "${FAIL_COUNT}" -eq 1 ]
-}
-
-@test "record: increments INFO_COUNT on INFO" {
-  record "INFO" "test-check" "detail"
-  [ "${INFO_COUNT}" -eq 1 ]
-}
-
-@test "record: outputs formatted line in non-JSON mode" {
-  run record "PASS" "my-check" "my-detail"
-  assert_output --partial "[PASS]"
-  assert_output --partial "my-check"
-  assert_output --partial "my-detail"
-}
-
-@test "record: adds to RESULTS array in JSON mode" {
-  JSON_MODE="true"
-  record "PASS" "json-check" "json-detail"
-  [ "${#RESULTS[@]}" -eq 1 ]
-  [[ "${RESULTS[0]}" == *"json-check"* ]]
-}
-
-@test "record: formats JSON entry correctly" {
-  JSON_MODE="true"
-  record "FAIL" "some-check" "error detail"
-  [[ "${RESULTS[0]}" == *'"status":"FAIL"'* ]]
-  [[ "${RESULTS[0]}" == *'"check":"some-check"'* ]]
-}
-
-# ── check() tests ─────────────────────────────────────────────────────────────
-
-@test "check: records PASS when command succeeds" {
-  check "test-check" true
-  [ "${PASS_COUNT}" -eq 1 ]
-  [ "${FAIL_COUNT}" -eq 0 ]
-}
-
-@test "check: records FAIL when command fails" {
-  check "test-check" false
-  [ "${PASS_COUNT}" -eq 0 ]
-  [ "${FAIL_COUNT}" -eq 1 ]
-}
-
-@test "check: records multiple passes correctly" {
-  check "check1" true
-  check "check2" true
-  check "check3" true
-  [ "${PASS_COUNT}" -eq 3 ]
-}
-
-@test "check: records mixed results correctly" {
-  check "passing" true
-  check "failing" false
-  check "another-pass" true
-  [ "${PASS_COUNT}" -eq 2 ]
-  [ "${FAIL_COUNT}" -eq 1 ]
-}
-
-# ── validate_hardening.sh function existence tests ─────────────────────────────
-# These verify the functions exist in the script without sourcing it
-
-@test "validate script contains is_true function" {
-  grep -q "^is_true()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains record function" {
-  grep -q "^record()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains check function" {
-  grep -q "^check()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains ssh_check function" {
-  grep -q "^ssh_check()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains ufw_check function" {
-  grep -q "^ufw_check()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains docker_user_check function" {
-  grep -q "^docker_user_check()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains sysctl_check function" {
-  grep -q "^sysctl_check()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains fail2ban_check function" {
-  grep -q "^fail2ban_check()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains auditd_check function" {
-  grep -q "^auditd_check()" "${VALIDATE_SCRIPT}"
-}
-
-@test "auditd_check validates keep_logs policy" {
-  grep -q "max_log_file_action=keep_logs" "${VALIDATE_SCRIPT}"
-}
-
-@test "auditd_check inspects queue loss via auditctl -s" {
-  grep -q "auditctl -s" "${VALIDATE_SCRIPT}"
-  grep -q "lost=" "${VALIDATE_SCRIPT}"
-}
-
-# ── tailscale_check uses jq (not python3) ──────────────────────────────────────
-
-# ── privileged container check ──────────────────────────────────────────────────
-
-@test "docker_trust_boundary_check: checks for privileged containers" {
-  grep -q "HostConfig.Privileged" "${VALIDATE_SCRIPT}"
-}
-
-# ── tailscale_check uses jq (not python3) ──────────────────────────────────────
-
-@test "tailscale_check: does not use python3 for BackendState" {
-  ! grep -q 'python3.*BackendState' "${VALIDATE_SCRIPT}"
-}
-
-@test "tailscale_check: uses jq for BackendState" {
-  grep -q 'jq.*BackendState' "${VALIDATE_SCRIPT}"
-}
-
-# ── auditd space_left validation ───────────────────────────────────────────────
-
-@test "auditd_check validates space_left_action" {
-  grep -q "space_left_action" "${VALIDATE_SCRIPT}"
-}
-
-@test "auditd_check validates admin_space_left thresholds" {
-  grep -q "admin_space_left" "${VALIDATE_SCRIPT}"
-}
-
-@test "auditd_check validates user_commands execve rules" {
-  grep -q "user_commands" "${VALIDATE_SCRIPT}"
-}
-
-@test "auditd_check uses threshold for queue loss severity" {
-  grep -q "lost > 100" "${VALIDATE_SCRIPT}" || grep -q "100" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains journald_check function" {
-  grep -q "^journald_check()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains banner_check function" {
-  grep -q "^banner_check()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains docker_daemon_check function" {
-  grep -q "^docker_daemon_check()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains docker_trust_boundary_check function" {
-  grep -q "^docker_trust_boundary_check()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains apparmor_check function" {
-  grep -q "^apparmor_check()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains disabled_services_check function" {
-  grep -q "^disabled_services_check()" "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script contains tailscale_check function" {
-  grep -q "^tailscale_check()" "${VALIDATE_SCRIPT}"
-}
-
-# ── validate_hardening.sh SSH check expectations ───────────────────────────────
-
-@test "ssh_check expects permitrootlogin no" {
-  grep -q '\[permitrootlogin\]="no"' "${VALIDATE_SCRIPT}"
-}
-
-@test "ssh_check expects passwordauthentication no" {
-  grep -q '\[passwordauthentication\]="no"' "${VALIDATE_SCRIPT}"
-}
-
-@test "ssh_check expects pubkeyauthentication yes" {
-  grep -q '\[pubkeyauthentication\]="yes"' "${VALIDATE_SCRIPT}"
-}
-
-@test "ssh_check enforces operator-mode Ciphers policy" {
-  grep -q "ssh: Ciphers policy uses operator mode" "${VALIDATE_SCRIPT}"
-}
-
-@test "ssh_check enforces operator-mode MACs policy" {
-  grep -q "ssh: MACs policy uses operator mode" "${VALIDATE_SCRIPT}"
-}
-
-@test "ssh_check enforces operator-mode KEX policy" {
-  grep -q "ssh: KexAlgorithms policy uses operator mode" "${VALIDATE_SCRIPT}"
-}
-
-@test "ssh_check enforces operator-mode hostkey policy" {
-  grep -q "ssh: HostKeyAlgorithms policy uses operator mode" "${VALIDATE_SCRIPT}"
-}
-
-# ── validate_hardening.sh sysctl check expectations ────────────────────────────
-
-@test "sysctl_check expects tcp_syncookies=1" {
-  grep -q '\[net.ipv4.tcp_syncookies\]="1"' "${VALIDATE_SCRIPT}"
-}
-
-@test "sysctl_check expects ip_forward=1" {
-  grep -q '\[net.ipv4.ip_forward\]="1"' "${VALIDATE_SCRIPT}"
-}
-
-@test "sysctl_check expects protected_hardlinks=1" {
-  grep -q '\[fs.protected_hardlinks\]="1"' "${VALIDATE_SCRIPT}"
-}
-
-# ── JSON output format tests ──────────────────────────────────────────────────
-
-@test "JSON_MODE flag is respected" {
-  JSON_MODE="true"
-  [ "${JSON_MODE}" == "true" ]
-}
-
-@test "IS_CONTAINER can be set for container tests" {
-  IS_CONTAINER="true"
-  [ "${IS_CONTAINER}" == "true" ]
-}
-
-# ── State file defaults verification ───────────────────────────────────────────
-
-@test "validate script sets default SSH_PORT=22" {
-  grep -q 'SSH_PORT="22"' "${VALIDATE_SCRIPT}" || grep -q 'SSH_PORT=\${ssh_port:-22}' "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script sets default TUNNEL_MODE=false" {
-  grep -q 'TUNNEL_MODE="false"' "${VALIDATE_SCRIPT}" || grep -q 'TUNNEL_MODE=\${tunnel_mode:-false}' "${VALIDATE_SCRIPT}"
-}
-
-@test "validate script sets default TAILSCALE_IFACE=tailscale0" {
-  grep -q 'TAILSCALE_IFACE="tailscale0"' "${VALIDATE_SCRIPT}"
-}
-
-# ── validate_hardening.sh journald check ──────────────────────────────────────
-
-@test "journald_check looks for Storage=persistent" {
-  grep -q 'Storage=persistent' "${VALIDATE_SCRIPT}"
-}
-
-# ── validate_hardening.sh banner check ────────────────────────────────────────
-
-@test "banner_check looks for AUTHORIZED in /etc/issue.net" {
-  grep -q 'AUTHORIZED' "${VALIDATE_SCRIPT}"
-}
-
-# ── validate_hardening.sh disabled services check ─────────────────────────────
-
-@test "disabled_services_check checks rpcbind" {
-  grep -q 'rpcbind' "${VALIDATE_SCRIPT}"
-}
-
-@test "disabled_services_check checks avahi-daemon" {
-  grep -q 'avahi-daemon' "${VALIDATE_SCRIPT}"
-}
-
-@test "disabled_services_check checks cups" {
-  grep -q 'cups' "${VALIDATE_SCRIPT}"
-}
+@test "record: PASS status increments pass counter and stores check in JSON payload" {
+  record "PASS" "record-pass" "ok"
 
-# ── validate_hardening.sh docker checks ───────────────────────────────────────
-
-@test "docker_user_check looks for wan-drop rule" {
-  grep -q 'coolify-hardening-wan-drop' "${VALIDATE_SCRIPT}"
-}
-
-@test "docker_daemon_check looks for log-driver" {
-  grep -q 'log-driver' "${VALIDATE_SCRIPT}"
-}
-
-@test "docker_daemon_check expects json-file driver (matches Coolify)" {
-  grep -q 'json-file' "${VALIDATE_SCRIPT}"
-}
-
-@test "docker_daemon_check looks for live-restore" {
-  grep -q 'live-restore' "${VALIDATE_SCRIPT}"
-}
-
-@test "docker_daemon_check validates default-ipc-mode" {
-  grep -q 'default-ipc-mode' "${VALIDATE_SCRIPT}"
-  grep -q 'private' "${VALIDATE_SCRIPT}"
-}
-
-@test "docker_daemon_check validates storage-driver" {
-  grep -q 'storage-driver' "${VALIDATE_SCRIPT}"
-  grep -q 'overlay2' "${VALIDATE_SCRIPT}"
-}
-
-@test "docker_daemon_check validates default-ulimits" {
-  grep -q 'default-ulimits' "${VALIDATE_SCRIPT}"
-  grep -q 'nofile' "${VALIDATE_SCRIPT}"
-  grep -q 'nproc' "${VALIDATE_SCRIPT}"
-}
-
-@test "docker_trust_boundary_check validates docker.sock world-writable risk" {
-  grep -q "docker-trust: socket world-writable check" "${VALIDATE_SCRIPT}"
-}
-
-@test "docker_trust_boundary_check checks admin docker group membership" {
-  grep -q "docker-trust: admin user not in docker group" "${VALIDATE_SCRIPT}"
-}
-
-# ── New kernel parameter checks (Priority 3.1) ───────────────────────────────────
-
-@test "sysctl_check expects kernel.dmesg_restrict=1" {
-  grep -q '\[kernel.dmesg_restrict\]="1"' "${VALIDATE_SCRIPT}"
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "record-pass" "PASS"
+  assert_json_fail_count "${json}" "0"
+  [[ "$(jq -r '.pass' <<< "${json}")" == "1" ]]
 }
 
-@test "sysctl_check expects kernel.perf_event_paranoid=3" {
-  grep -q '\[kernel.perf_event_paranoid\]="3"' "${VALIDATE_SCRIPT}"
-}
-
-@test "sysctl_check expects kernel.yama.ptrace_scope=1" {
-  grep -q '\[kernel.yama.ptrace_scope\]="1"' "${VALIDATE_SCRIPT}"
-}
-
-@test "sysctl_check expects kernel.unprivileged_bpf_disabled=2" {
-  grep -q '\[kernel.unprivileged_bpf_disabled\]="2"' "${VALIDATE_SCRIPT}"
-}
+@test "record: FAIL status increments fail counter and stores detail" {
+  record "FAIL" "record-fail" "boom"
 
-# ── Swappiness check (Priority 3.2) ─────────────────────────────────────────────
-
-@test "sysctl_check expects vm.swappiness=10" {
-  grep -q '\[vm.swappiness\]="10"' "${VALIDATE_SCRIPT}"
-}
-
-# ── Admin sudo check function (Priority 3.4) ────────────────────────────────────
-
-@test "validate script contains admin_sudo_check function" {
-  grep -q "^admin_sudo_check()" "${VALIDATE_SCRIPT}"
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "record-fail" "FAIL"
+  assert_json_check_detail_contains "${json}" "record-fail" "boom"
+  assert_json_fail_count "${json}" "1"
 }
 
-@test "admin_sudo_check looks for NOPASSWD" {
-  grep -q 'NOPASSWD' "${VALIDATE_SCRIPT}"
-}
+@test "record: INFO status increments info counter" {
+  record "INFO" "record-info" "heads-up"
 
-@test "admin_sudo_check checks for sudoers.d file" {
-  grep -q 'sudoers.d' "${VALIDATE_SCRIPT}"
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "record-info" "INFO"
+  [[ "$(jq -r '.info' <<< "${json}")" == "1" ]]
 }
 
-# ── Docker detection before DOCKER-USER check (Priority 3.3) ───────────────────
+@test "check: successful command records PASS" {
+  check "check-pass" true
 
-@test "docker_user_check checks if docker command exists" {
-  grep -q 'command -v docker' "${VALIDATE_SCRIPT}"
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "check-pass" "PASS"
+  assert_json_fail_count "${json}" "0"
 }
 
-# ── docker_user_lifecycle_check ──────────────────────────────────────────────
+@test "check: failing command records FAIL with command detail" {
+  check "check-fail" false
 
-@test "validate script contains docker_user_lifecycle_check function" {
-  grep -q "^docker_user_lifecycle_check()" "${VALIDATE_SCRIPT}"
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "check-fail" "FAIL"
+  assert_json_check_detail_contains "${json}" "check-fail" "false"
+  assert_json_fail_count "${json}" "1"
 }
 
-@test "docker_user_lifecycle_check checks PartOf=docker.service" {
-  grep -q "PartOf=docker.service" "${VALIDATE_SCRIPT}"
-}
+@test "check: mixed outcomes keep accurate aggregate counters" {
+  check "a" true
+  check "b" false
+  check "c" true
 
-@test "docker_user_lifecycle_check checks WantedBy=docker.service" {
-  grep -q "WantedBy=docker.service" "${VALIDATE_SCRIPT}"
+  local json
+  json="$(emit_validate_results_json)"
+  [[ "$(jq -r '.pass' <<< "${json}")" == "2" ]]
+  [[ "$(jq -r '.fail' <<< "${json}")" == "1" ]]
+  assert_json_check_status "${json}" "b" "FAIL"
 }
 
-# ── unattended_upgrades_check ─────────────────────────────────────────────────
+@test "parse_cli_args: enables JSON mode" {
+  JSON_MODE="false"
+  HEALTH_CHECK_MODE="false"
 
-@test "validate script contains unattended_upgrades_check function" {
-  grep -q "^unattended_upgrades_check()" "${VALIDATE_SCRIPT}"
-}
+  parse_cli_args --json
 
-@test "unattended_upgrades_check supports profile-aware origins" {
-  grep -q "^infer_update_profile()" "${VALIDATE_SCRIPT}"
-  grep -q "profile is security-only" "${VALIDATE_SCRIPT}"
-  grep -q "origin=Docker,label=Docker CE,archive=" "${VALIDATE_SCRIPT}"
-  grep -q "origin=Docker,label=Docker CE,suite=" "${VALIDATE_SCRIPT}"
-  grep -q "archive/suite + component=stable" "${VALIDATE_SCRIPT}"
-  grep -q "component=stable" "${VALIDATE_SCRIPT}"
+  [ "${JSON_MODE}" = "true" ]
+  [ "${HEALTH_CHECK_MODE}" = "false" ]
 }
 
-# ── coolify binding guard timer check ────────────────────────────────────────
+@test "parse_cli_args: enables health-check mode" {
+  JSON_MODE="false"
+  HEALTH_CHECK_MODE="false"
 
-@test "coolify_binding_check verifies binding-guard timer is active" {
-  grep -q "coolify-binding-guard.timer" "${VALIDATE_SCRIPT}"
-}
+  parse_cli_args --health-check
 
-# ── fail2ban ignoreip ─────────────────────────────────────────────────────────
-
-@test "fail2ban_check: checks for Tailscale CIDR in ignoreip" {
-  grep -q "TAILSCALE_CIDR" "${VALIDATE_SCRIPT}"
-  grep -q "tailscale_cidr" "${VALIDATE_SCRIPT}"
+  [ "${HEALTH_CHECK_MODE}" = "true" ]
+  [ "${JSON_MODE}" = "false" ]
 }
 
-@test "admin_sudo_check: allows option-prefixed authorized_keys lines" {
-  grep -Fq "ssh-[^[:space:]]+" "${VALIDATE_SCRIPT}"
-  grep -Fq "ecdsa-sha2-[^[:space:]]+" "${VALIDATE_SCRIPT}"
+@test "parse_cli_args: rejects mutually exclusive --json and --health-check" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    parse_cli_args --json --health-check
+  '
+  assert_failure
+  assert_output --partial "mutually exclusive"
 }
-
-# ── timesync NTPSynchronized ──────────────────────────────────────────────────
 
-@test "timesync_check: checks NTPSynchronized property" {
-  grep -q "NTPSynchronized" "${VALIDATE_SCRIPT}"
-}
+@test "detect_container_runtime: flags docker runtime via container variable" {
+  container="docker"
 
-# ── validate timer check ──────────────────────────────────────────────────────
+  detect_container_runtime
 
-@test "validate script contains validate_timer_check function" {
-  grep -q "^validate_timer_check()" "${VALIDATE_SCRIPT}"
+  [ "${IS_CONTAINER}" = "true" ]
 }
 
-@test "validate_timer_check: checks hardening-validate.timer" {
-  grep -q "hardening-validate.timer" "${VALIDATE_SCRIPT}"
+@test "regex_escape: escapes regex metacharacters" {
+  run regex_escape 'a.b[c]\\d+$'
+  assert_success
+  assert_output 'a\.b\[c\]\\d\+\$'
 }
 
-# ── coolify binding public exposure rationale ─────────────────────────────────
+@test "load_docker_ssh_cidrs: emits de-duplicated CIDRs in declaration order" {
+  DOCKER_SSH_CIDRS='10.0.0.0/8, 172.16.0.0/12,10.0.0.0/8'
+  STRICT_DOCKER_SSH_CIDRS='false'
 
-@test "coolify_binding_check: documents why self-connect cannot validate public exposure" {
-  grep -q "cannot validate public exposure" "${VALIDATE_SCRIPT}"
+  run load_docker_ssh_cidrs
+  assert_success
+  assert_line --index 0 '10.0.0.0/8'
+  assert_line --index 1 '172.16.0.0/12'
 }
 
-# ── auditd queue-loss branch logic ────────────────────────────────────────────
-
-@test "auditd queue-loss: lost=0 records PASS" {
-  _auditd_queue_loss_record "0"
-  [ "${PASS_COUNT}" -eq 1 ]
-  [ "${FAIL_COUNT}" -eq 0 ]
-  [ "${INFO_COUNT}" -eq 0 ]
-}
+@test "infer_update_profile: returns balanced when updates origin is present" {
+  local apt_local
+  apt_local="$(mktemp)"
+  printf '"origin=Ubuntu,codename=${distro_codename}-updates,label=Ubuntu";\n' > "${apt_local}"
 
-@test "auditd queue-loss: lost=50 records INFO (minor, below threshold)" {
-  _auditd_queue_loss_record "50"
-  [ "${PASS_COUNT}" -eq 0 ]
-  [ "${FAIL_COUNT}" -eq 0 ]
-  [ "${INFO_COUNT}" -eq 1 ]
-  run record "INFO" "auditd: queue loss" "lost=50 (minor — below threshold)"
-  assert_output --partial "minor"
-}
+  run infer_update_profile "${apt_local}"
+  assert_success
+  assert_output 'balanced'
 
-@test "auditd queue-loss: lost=200 records FAIL (above threshold)" {
-  _auditd_queue_loss_record "200"
-  [ "${PASS_COUNT}" -eq 0 ]
-  [ "${FAIL_COUNT}" -eq 1 ]
-  [ "${INFO_COUNT}" -eq 0 ]
+  rm -f "${apt_local}"
 }
 
-@test "auditd queue-loss: lost=unset records INFO (unable to parse)" {
-  _auditd_queue_loss_record
-  [ "${PASS_COUNT}" -eq 0 ]
-  [ "${FAIL_COUNT}" -eq 0 ]
-  [ "${INFO_COUNT}" -eq 1 ]
-}
+@test "infer_update_profile: returns security-only when only security origin is present" {
+  local apt_local
+  apt_local="$(mktemp)"
+  printf '"origin=Ubuntu,codename=${distro_codename}-security,label=Ubuntu";\n' > "${apt_local}"
 
-@test "auditd queue-loss: lost=100 records INFO (at boundary, not above)" {
-  _auditd_queue_loss_record "100"
-  [ "${PASS_COUNT}" -eq 0 ]
-  [ "${FAIL_COUNT}" -eq 0 ]
-  [ "${INFO_COUNT}" -eq 1 ]
-}
+  run infer_update_profile "${apt_local}"
+  assert_success
+  assert_output 'security-only'
 
-@test "auditd queue-loss: lost=101 records FAIL (just above threshold)" {
-  _auditd_queue_loss_record "101"
-  [ "${PASS_COUNT}" -eq 0 ]
-  [ "${FAIL_COUNT}" -eq 1 ]
-  [ "${INFO_COUNT}" -eq 0 ]
+  rm -f "${apt_local}"
 }

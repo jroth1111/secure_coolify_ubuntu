@@ -5,11 +5,7 @@ load '../helpers'
 
 setup() {
   source_validate_script
-  PASS_COUNT=0
-  FAIL_COUNT=0
-  INFO_COUNT=0
-  RESULTS=()
-  JSON_MODE="false"
+  reset_validate_runtime
 }
 
 @test "validate runtime is_true: true returns success" {
@@ -489,44 +485,24 @@ STATUS
 }
 
 @test "coolify_container_check: skips cleanly when Coolify data directory is absent" {
-  run bash -c '
-    source "'"${VALIDATE_SCRIPT}"'"
-    PASS_COUNT=0
-    FAIL_COUNT=0
-    INFO_COUNT=0
-    RESULTS=()
-    JSON_MODE="false"
+  command() {
+    if [[ "$1" == "-v" && "$2" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
 
-    command() {
-      if [[ "$1" == "-v" && "$2" == "docker" ]]; then
-        return 0
-      fi
-      builtin command "$@"
-    }
-
-    coolify_container_check
-    [[ "${PASS_COUNT}" -eq 0 ]]
-    [[ "${FAIL_COUNT}" -eq 0 ]]
-    [[ "${INFO_COUNT}" -eq 0 ]]
-  '
-  assert_success
+  coolify_container_check
+  local json
+  json="$(emit_validate_results_json)"
+  [[ "$(jq -r '.checks | length' <<< "${json}")" == "0" ]]
 }
 
 @test "coolify_ssh_check: no-ops when Coolify ssh key directory is absent" {
-  run bash -c '
-    source "'"${VALIDATE_SCRIPT}"'"
-    PASS_COUNT=0
-    FAIL_COUNT=0
-    INFO_COUNT=0
-    RESULTS=()
-    JSON_MODE="false"
-
-    coolify_ssh_check
-    [[ "${PASS_COUNT}" -eq 0 ]]
-    [[ "${FAIL_COUNT}" -eq 0 ]]
-    [[ "${INFO_COUNT}" -eq 0 ]]
-  '
-  assert_success
+  coolify_ssh_check
+  local json
+  json="$(emit_validate_results_json)"
+  [[ "$(jq -r '.checks | length' <<< "${json}")" == "0" ]]
 }
 
 @test "disabled_services_check: fails when rpcbind service is enabled" {
@@ -753,21 +729,13 @@ TS
 }
 
 @test "unattended_upgrades_check: records a fail outcome when validation preconditions are not met" {
-  run bash -c '
-    source "'"${VALIDATE_SCRIPT}"'"
-    PASS_COUNT=0
-    FAIL_COUNT=0
-    INFO_COUNT=0
-    RESULTS=()
-    JSON_MODE="false"
+  systemctl() { return 1; }
 
-    # Guarantee timer-related failures if local config exists; still fail fast if config is absent.
-    systemctl() { return 1; }
-
-    unattended_upgrades_check
-    [[ "${FAIL_COUNT}" -ge 1 ]]
-  '
-  assert_success
+  unattended_upgrades_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "auto-updates: local config" "FAIL"
+  assert_json_fail_count "${json}" "1"
 }
 
 @test "validate_timer_check: fails when timer is installed but inactive" {
