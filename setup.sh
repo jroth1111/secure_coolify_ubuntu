@@ -411,6 +411,7 @@ main() {
   log "  Domain:    ${DOMAIN}"
   log "  App scope: ${APP_DOMAIN_MODE}"
   log "  Swap:      ${SWAP_SIZE}"
+  log "  Local TZ:  $(local_tz_offset) (logs use UTC)"
   is_true "${PREFLIGHT_ONLY}" && log "  Mode:      preflight-only (no server changes)"
   [[ "${CF_TUNNEL_API_TOKEN}" != "${CF_API_TOKEN}" ]] && log "  CF tunnel token: custom"
   confirm "Proceed with deployment?"

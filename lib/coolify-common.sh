@@ -18,7 +18,14 @@ CF_ID_RE='^[a-f0-9]{32}$'
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
-log()  { printf '[%s] %s\n' "$(date -Iseconds)" "$*"; }
+utc_now() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
+local_tz_offset() {
+  local raw
+  raw="$(date '+%z')"
+  printf '%s:%s' "${raw:0:3}" "${raw:3:2}"
+}
+
+log()  { printf '[%s] %s\n' "$(utc_now)" "$*"; }
 warn() { log "WARN: $*"; }
 die()  { log "FATAL: $*" >&2; exit 1; }
 step() { printf '\n\033[1;36m[%s] %s\033[0m\n' "$1" "$2"; }

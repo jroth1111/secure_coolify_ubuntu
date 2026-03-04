@@ -441,6 +441,11 @@ phase1_upload_harden() {
   # because root SSH via public IP is now blocked by UFW.
 }
 
+phase1_skipped() {
+  step "1/5" "Upload scripts & harden server (skipped)"
+  pass "Phase 1 skipped: --ts-ip supplied (${TS_IP})"
+}
+
 # ── Phase 2: Gate checks ───────────────────────────────────────────────────
 
 phase2_gates() {
@@ -682,6 +687,7 @@ main() {
   log "  Domain:    ${DOMAIN}"
   log "  App scope: ${APP_DOMAIN_MODE}"
   log "  Swap:      ${SWAP_SIZE}"
+  log "  Local TZ:  $(local_tz_offset) (logs use UTC)"
   is_true "${PREFLIGHT_ONLY}" && log "  Mode:      preflight-only (no server changes)"
   [[ "${CF_TUNNEL_API_TOKEN}" != "${CF_API_TOKEN}" ]] && log "  CF tunnel token: custom"
   is_true "${SKIP_HARDEN}" && log "  TS IP:     ${TS_IP} (--ts-ip; skipping phase 1)"
@@ -693,6 +699,7 @@ main() {
     return 0
   fi
   if is_true "${SKIP_HARDEN}"; then
+    phase1_skipped
     log "Skipping phase 1 (--ts-ip supplied; hardening already complete on ${TS_IP})"
   else
     phase1_upload_harden
