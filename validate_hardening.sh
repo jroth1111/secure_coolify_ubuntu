@@ -1762,7 +1762,14 @@ cloudflared_check() {
         local all_tailscale="true"
         local matched_expected="false"
 
-        resolved_list="$(getent ahostsv4 "${host}" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+        if command -v dig >/dev/null 2>&1; then
+          # Query authoritative DNS directly to avoid local /etc/hosts or resolver overrides.
+          resolved_list="$(dig +short @1.1.1.1 "${host}" A 2>/dev/null \
+            | awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/' \
+            | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+        else
+          resolved_list="$(getent ahostsv4 "${host}" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+        fi
         if [[ -z "${resolved_list}" ]]; then
           record "FAIL" "cloudflared: ${label} DNS resolution" "no IPv4 answer for ${host}"
           return 0
