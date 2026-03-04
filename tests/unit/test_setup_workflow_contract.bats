@@ -12,6 +12,15 @@ load '../helpers'
   assert_success
 }
 
+@test "setup: parse_args extracts --server-timezone" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    parse_args --server-timezone "Australia/Melbourne"
+    [[ "${SERVER_TIMEZONE}" == "Australia/Melbourne" ]]
+  '
+  assert_success
+}
+
 @test "setup: usage documents required flags" {
   run bash -c '
     source "'"${SETUP_SCRIPT}"'"
@@ -20,6 +29,7 @@ load '../helpers'
   assert_success
   assert_output --partial "--server-ip"
   assert_output --partial "--cf-api-token-file"
+  assert_output --partial "--server-timezone"
 }
 
 @test "setup: validate_inputs rejects invalid server IP" {
@@ -78,6 +88,7 @@ EOF
     TAILSCALE_AUTH_KEY="tskey-auth-test"
     DEPLOY_MODE="tunnel"
     SWAP_SIZE="2G"
+    SERVER_TIMEZONE="UTC"
     TAILSCALE_DIRECT_WAN="false"
 
     cat > "${tmpdir}/bootstrap_hardening.sh" <<'\''EOF'\''

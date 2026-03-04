@@ -19,6 +19,7 @@ LINUX_USER_RE='^[a-z_][a-z0-9_-]*$'
 FQDN_RE='^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$'
 SWAP_RE='^[0-9]+[GM]$'
 CF_ID_RE='^[a-f0-9]{32}$'
+TIMEZONE_RE='^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$'
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1181,6 +1182,12 @@ collect_common_inputs() {
   fi
   # CF_ZONE intentionally left as-is (derived from domain when empty; --cf-zone overrides)
   [[ -n "${SWAP_SIZE}" ]]   || SWAP_SIZE="2G"
+  if [[ -z "${SERVER_TIMEZONE:-}" ]]; then
+    if is_true "${AUTO_YES}"; then
+      die "Server timezone is required in non-interactive mode. Set SERVER_TIMEZONE or use --server-timezone."
+    fi
+    prompt_value SERVER_TIMEZONE "Server timezone (IANA, e.g. Australia/Melbourne)" "UTC" "${TIMEZONE_RE}"
+  fi
   # App subdomain scope: where Coolify auto-assigns app URLs.
   #   apex → appname.CF_ZONE     e.g. appname.example.com      (default — Free Universal SSL)
   #   vps  → appname.DOMAIN      e.g. appname.vps.example.com  (server-scoped; needs ACM/Enterprise for proxied SSL)
@@ -1209,7 +1216,7 @@ resolve_app_domain() {
 }
 
 # print_deployment_summary — Print completion banner and next-steps block.
-# Uses globals: SERVER_IP, TS_IP, ADMIN_USER, DEPLOY_MODE, DOMAIN, CF_ZONE_NAME, APP_DOMAIN, TUNNEL_ID
+# Uses globals: SERVER_IP, TS_IP, ADMIN_USER, DEPLOY_MODE, DOMAIN, CF_ZONE_NAME, APP_DOMAIN, TUNNEL_ID, SERVER_TIMEZONE
 print_deployment_summary() {
   printf '\n'
   printf '┌─────────────────────────────────────────────────────────────┐\n'
@@ -1220,6 +1227,7 @@ print_deployment_summary() {
   printf '│  Admin User       : %-40s│\n' "${ADMIN_USER}"
   printf '│  Deploy Mode      : %-40s│\n' "${DEPLOY_MODE}"
   printf '│  Domain           : %-40s│\n' "${DOMAIN}"
+  printf '│  Server Timezone  : %-40s│\n' "${SERVER_TIMEZONE}"
   printf '│  Dashboard URL    : %-40s│\n' "http://${TS_IP}:8000"
   printf '│  SSH Access       : ssh %-36s│\n' "${ADMIN_USER}@${TS_IP}"
   printf '├─────────────────────────────────────────────────────────────┤\n'

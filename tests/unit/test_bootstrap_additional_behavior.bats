@@ -109,6 +109,20 @@ setup() {
   [ ! -f "${marker}" ]
 }
 
+@test "configure_timezone: dry-run executes without timedatectl mutation" {
+  DRY_RUN="true"
+  TIMEZONE="Australia/Melbourne"
+  local marker
+  marker="$(mktemp)"
+  rm -f "${marker}"
+  timedatectl() { echo called > "${marker}"; return 0; }
+
+  run configure_timezone
+  assert_success
+  assert_output --partial "DRY-RUN"
+  [ ! -f "${marker}" ]
+}
+
 @test "disable_unused_services: dry-run logs service disable actions" {
   DRY_RUN="true"
   local marker
@@ -391,6 +405,7 @@ setup() {
     validate_inputs() { :; }
     detect_os() { :; }
     check_disk_space() { :; }
+    configure_timezone() { :; }
     ensure_timesync() { :; }
     detect_wan_iface() { :; }
     ssh_session_safety_gate() { :; }

@@ -42,6 +42,15 @@ load '../helpers'
   assert_success
 }
 
+@test "parse_args (deploy): extracts --server-timezone" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    parse_args --server-timezone "UTC"
+    [[ "${SERVER_TIMEZONE}" == "UTC" ]]
+  '
+  assert_success
+}
+
 @test "collect_inputs (deploy): prompts for root password only when needed" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"
@@ -54,6 +63,7 @@ load '../helpers'
       DOMAIN="vps.example.com"
       CF_API_TOKEN="token"
       SWAP_SIZE="2G"
+      SERVER_TIMEZONE="UTC"
       APP_DOMAIN_MODE="apex"
     }
     prompt_secret() { ROOT_PASS="from-prompt"; }
@@ -197,6 +207,7 @@ load '../helpers'
       DOMAIN="vps.example.com"
       CF_API_TOKEN="token"
       SWAP_SIZE="2G"
+      SERVER_TIMEZONE="UTC"
       APP_DOMAIN_MODE="apex"
     }
     collect_inputs

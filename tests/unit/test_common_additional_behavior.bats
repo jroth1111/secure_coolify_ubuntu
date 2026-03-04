@@ -168,11 +168,13 @@ setup() {
   DOMAIN="vps.example.com"
   CF_API_TOKEN="token"
   SWAP_SIZE="2G"
+  SERVER_TIMEZONE="UTC"
   APP_DOMAIN_MODE="apex"
 
   collect_common_inputs
 
   [ "${SERVER_IP}" = "203.0.113.10" ]
+  [ "${SERVER_TIMEZONE}" = "UTC" ]
   [ "${APP_DOMAIN_MODE}" = "apex" ]
 }
 

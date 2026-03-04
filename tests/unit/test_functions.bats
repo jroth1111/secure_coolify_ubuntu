@@ -83,6 +83,7 @@ setup() {
   assert_output --partial "--admin-pubkey"
   assert_output --partial "Optional:"
   assert_output --partial "--dry-run"
+  assert_output --partial "--timezone"
 }
 
 # ── script_run()/setup_logging() ─────────────────────────────────────────────
@@ -934,6 +935,7 @@ allowusers testadmin"
   assert_output --partial "--dry-run"
   assert_output --partial "--force"
   assert_output --partial "--swap-size"
+  assert_output --partial "--timezone"
 }
 
 # ── validate_inputs() — SWAP_SIZE ──────────────────────────────────────────
@@ -1000,6 +1002,20 @@ allowusers testadmin"
   assert_output --partial "SWAP_SIZE must be"
 }
 
+@test "validate_inputs: TIMEZONE with path traversal fails" {
+  ADMIN_USER="testadmin"
+  ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyData user@host"
+  SSH_PORT="22"
+  AUTO_REBOOT_TIME="03:30"
+  ENABLE_AUTO_REBOOT="true"
+  JOURNAL_RETENTION="3month"
+  SWAP_SIZE="2G"
+  TIMEZONE="../etc/passwd"
+  run validate_inputs
+  assert_failure
+  assert_output --partial "TIMEZONE must be an IANA timezone name"
+}
+
 # ── parse_args() — --swap-size ────────────────────────────────────────────
 
 @test "parse_args: --swap-size sets SWAP_SIZE" {
@@ -1012,6 +1028,12 @@ allowusers testadmin"
   run bash -c 'source "'"${SCRIPT}"'" && parse_args --swap-size 0 && echo "${SWAP_SIZE}"'
   assert_success
   assert_output --partial "0"
+}
+
+@test "parse_args: --timezone sets TIMEZONE" {
+  run bash -c 'source "'"${SCRIPT}"'" && parse_args --timezone Australia/Melbourne && echo "${TIMEZONE}"'
+  assert_success
+  assert_output --partial "Australia/Melbourne"
 }
 
 # ── write_file() — content & directory tests ──────────────────────────────────

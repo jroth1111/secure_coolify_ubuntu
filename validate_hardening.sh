@@ -93,6 +93,7 @@ DOCKER_SSH_CIDRS="10.0.0.0/8,172.16.0.0/12"
 TAILSCALE_DIRECT_WAN="auto"
 UPDATE_PROFILE=""
 DOCKER_RULES_APPLIED="false"
+CONFIGURED_TIMEZONE=""
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
 DOCKER_SSH_CIDR_SYNC_SCRIPT="/usr/local/sbin/docker-ssh-cidr-sync.sh"
 DOCKER_SSH_CIDR_SYNC_SERVICE="docker-ssh-cidr-sync.service"
@@ -115,6 +116,7 @@ load_state_context() {
   TAILSCALE_DIRECT_WAN="${tailscale_direct_wan:-auto}"
   UPDATE_PROFILE="${update_profile:-}"
   DOCKER_RULES_APPLIED="${docker_rules_applied:-false}"
+  CONFIGURED_TIMEZONE="${timezone:-}"
 }
 
 is_true() {
@@ -826,6 +828,28 @@ timesync_check() {
     record "INFO" "timesync: NTPSynchronized" "skipped (NTP not active or container)"
   else
     record "FAIL" "timesync: NTPSynchronized" "not yet synchronized"
+  fi
+}
+
+timezone_check() {
+  local current_tz
+  current_tz="$(timedatectl show --property=Timezone --value 2>/dev/null || echo "?")"
+  if [[ "${current_tz}" == "?" || -z "${current_tz}" ]]; then
+    record "FAIL" "timezone: current timezone" "unable to determine timezone via timedatectl"
+    return
+  fi
+  record "INFO" "timezone: current" "${current_tz}"
+
+  if [[ -z "${CONFIGURED_TIMEZONE}" ]]; then
+    record "INFO" "timezone: configured value" "state missing timezone; cannot verify expected value"
+    return
+  fi
+
+  if [[ "${current_tz}" == "${CONFIGURED_TIMEZONE}" ]]; then
+    record "PASS" "timezone: configured (${CONFIGURED_TIMEZONE})"
+  else
+    record "FAIL" "timezone: configured (${CONFIGURED_TIMEZONE})" \
+      "current timezone is ${current_tz}"
   fi
 }
 
@@ -1673,6 +1697,7 @@ main() {
   unattended_upgrades_check
   journald_check
   timesync_check
+  timezone_check
   swap_check
   banner_check
   admin_sudo_check

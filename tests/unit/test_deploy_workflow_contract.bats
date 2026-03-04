@@ -42,6 +42,7 @@ EOF
     TAILSCALE_AUTH_KEY="tskey-auth-test"
     DEPLOY_MODE="tunnel"
     SWAP_SIZE="2G"
+    SERVER_TIMEZONE="UTC"
     TAILSCALE_DIRECT_WAN="false"
 
     scp_root() { :; }
@@ -80,6 +81,7 @@ EOF
     TAILSCALE_AUTH_KEY="tskey-auth-test"
     DEPLOY_MODE="tunnel"
     SWAP_SIZE="2G"
+    SERVER_TIMEZONE="UTC"
     TAILSCALE_DIRECT_WAN="false"
     cmd_file="$(mktemp)"
 

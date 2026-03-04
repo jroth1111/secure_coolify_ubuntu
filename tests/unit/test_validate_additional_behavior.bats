@@ -50,6 +50,7 @@ ssh_port=2222
 wan_iface=eth0
 tailscale_direct_wan=true
 update_profile=balanced
+timezone=Australia/Melbourne
 STATE
 
   STATE_FILE="${state}"
@@ -60,6 +61,7 @@ STATE
   [ "${WAN_IFACE}" = "eth0" ]
   [ "${TAILSCALE_DIRECT_WAN}" = "true" ]
   [ "${UPDATE_PROFILE}" = "balanced" ]
+  [ "${CONFIGURED_TIMEZONE}" = "Australia/Melbourne" ]
 
   rm -f "${state}"
 }
@@ -1128,6 +1130,38 @@ SSHD
   assert_json_check_status "${json}" "timesync: NTPSynchronized" "PASS"
 }
 
+@test "timezone_check: passes when current timezone matches configured state" {
+  CONFIGURED_TIMEZONE="Australia/Melbourne"
+  timedatectl() {
+    if [[ "$1" == "show" && "$2" == "--property=Timezone" ]]; then
+      echo "Australia/Melbourne"
+      return 0
+    fi
+    return 0
+  }
+
+  timezone_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "timezone: configured (Australia/Melbourne)" "PASS"
+}
+
+@test "timezone_check: fails when configured timezone does not match current timezone" {
+  CONFIGURED_TIMEZONE="UTC"
+  timedatectl() {
+    if [[ "$1" == "show" && "$2" == "--property=Timezone" ]]; then
+      echo "Australia/Melbourne"
+      return 0
+    fi
+    return 0
+  }
+
+  timezone_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "timezone: configured (UTC)" "FAIL"
+}
+
 @test "tailscale_check: fails when tailscale interface is missing" {
   TAILSCALE_IFACE="tailscale0"
 
@@ -1302,6 +1336,7 @@ EOF
   auditd_check() { record "PASS" "auditd: ok"; }
   journald_check() { record "PASS" "journald: ok"; }
   timesync_check() { record "PASS" "timesync: ok"; }
+  timezone_check() { record "PASS" "timezone: ok"; }
   swap_check() { record "INFO" "swap: skipped"; }
   banner_check() { record "PASS" "banner: ok"; }
   admin_sudo_check() { record "PASS" "sudo: ok"; }

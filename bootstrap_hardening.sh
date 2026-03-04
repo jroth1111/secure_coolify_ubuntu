@@ -47,6 +47,7 @@ JOURNAL_RETENTION="${JOURNAL_RETENTION:-3month}"
 JOURNAL_MAX_USE="${JOURNAL_MAX_USE:-2G}"
 TUNNEL_MODE="${TUNNEL_MODE:-false}"
 SWAP_SIZE="${SWAP_SIZE:-2G}"
+TIMEZONE="${TIMEZONE:-UTC}"
 DRY_RUN="${DRY_RUN:-false}"
 FORCE="${FORCE:-false}"
 UPGRADE_MAIL="${UPGRADE_MAIL:-}"
@@ -116,6 +117,7 @@ Optional:
   --wan-iface <iface>           WAN interface (default: auto-detected)
   --tunnel-mode                 Skip WAN 80/443 rules (Cloudflare Tunnel / outbound-only)
   --swap-size <size>            Swap file size (default: 2G; format: <N>G or <N>M; 0 to skip)
+  --timezone <IANA>             System timezone (default: UTC)
   --enable-auto-reboot <bool>   Enable unattended-upgrades reboot (default: false)
   --auto-reboot-time <HH:MM>    Reboot time for unattended-upgrades (default: 03:30)
   --update-profile <name>       unattended-upgrades profile: security-only|balanced (default: security-only)
@@ -303,6 +305,11 @@ parse_args() {
         SWAP_SIZE="$2"
         shift 2
         ;;
+      --timezone)
+        require_value "$1" "${2:-}"
+        TIMEZONE="$2"
+        shift 2
+        ;;
       --tunnel-mode)
         TUNNEL_MODE="true"
         shift
@@ -415,6 +422,11 @@ validate_inputs() {
   if [[ "${SWAP_SIZE}" != "0" ]]; then
     [[ "${SWAP_SIZE}" =~ ^[0-9]+[GgMm]$ ]] || die "SWAP_SIZE must be <N>G or <N>M (e.g. 2G, 512M), or 0 to skip."
   fi
+
+  [[ "${TIMEZONE}" =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]] \
+    || die "TIMEZONE must be an IANA timezone name (for example: Australia/Melbourne or UTC)."
+  [[ -e "/usr/share/zoneinfo/${TIMEZONE}" ]] \
+    || die "TIMEZONE '${TIMEZONE}' not found under /usr/share/zoneinfo."
 
   # Validate split-horizon binding options
   if is_true "${BIND_DASHBOARD_TO_TAILSCALE}" && ! is_true "${DRY_RUN}"; then
@@ -847,6 +859,31 @@ ensure_timesync() {
   else
     log "DRY-RUN: would verify NTP synchronization."
   fi
+}
+
+configure_timezone() {
+  if is_true "${DRY_RUN}"; then
+    log "DRY-RUN: would configure timezone to ${TIMEZONE}."
+    return 0
+  fi
+
+  if ! command -v timedatectl >/dev/null 2>&1; then
+    warn "timedatectl not found; skipping timezone configuration."
+    return 0
+  fi
+
+  local current_tz
+  current_tz="$(timedatectl show --property=Timezone --value 2>/dev/null || true)"
+  if [[ "${current_tz}" == "${TIMEZONE}" ]]; then
+    log "Timezone already configured: ${TIMEZONE}."
+    return 0
+  fi
+
+  run timedatectl set-timezone "${TIMEZONE}"
+  current_tz="$(timedatectl show --property=Timezone --value 2>/dev/null || true)"
+  [[ "${current_tz}" == "${TIMEZONE}" ]] \
+    || die "Failed to set timezone to ${TIMEZONE} (current: ${current_tz:-unknown})."
+  log "Timezone configured: ${TIMEZONE}."
 }
 
 configure_swap() {
@@ -1966,6 +2003,11 @@ run_post_checks() {
   [[ "${syncookies}" == "1" ]] || die "Post-check failed: tcp_syncookies is ${syncookies}, expected 1."
   [[ "${ip_forward}" == "1" ]] || die "Post-check failed: ip_forward is ${ip_forward}, expected 1."
 
+  local current_timezone
+  current_timezone="$(timedatectl show --property=Timezone --value 2>/dev/null || true)"
+  [[ "${current_timezone}" == "${TIMEZONE}" ]] \
+    || die "Post-check failed: timezone is ${current_timezone:-unknown}, expected ${TIMEZONE}."
+
   systemctl is-active --quiet fail2ban || die "Post-check failed: fail2ban is not active."
 
   [[ -f /etc/issue.net ]] || die "Post-check failed: /etc/issue.net missing."
@@ -2037,6 +2079,7 @@ tunnel_mode=${TUNNEL_MODE}
 swap_size=${SWAP_SIZE}
 journal_retention=${JOURNAL_RETENTION}
 update_profile=${UPDATE_PROFILE}
+timezone=${TIMEZONE}
 strict_docker_ssh_cidrs=${STRICT_DOCKER_SSH_CIDRS}
 docker_ssh_cidrs=${cidr_csv}
 docker_nproc_hard=${DOCKER_NPROC_HARD}
@@ -2138,6 +2181,7 @@ generate_report() {
     --arg swap_size "${SWAP_SIZE:-2G}" \
     --arg journal_retention "${JOURNAL_RETENTION}" \
     --arg update_profile "${UPDATE_PROFILE}" \
+    --arg timezone "${TIMEZONE}" \
     --argjson auto_reboot_requested "$(is_true "${ENABLE_AUTO_REBOOT}" && echo true || echo false)" \
     --arg auto_reboot_time "${AUTO_REBOOT_TIME}" \
     --argjson strict_docker_ssh_cidrs "$(is_true "${STRICT_DOCKER_SSH_CIDRS}" && echo true || echo false)" \
@@ -2181,6 +2225,7 @@ generate_report() {
       swap_size: $swap_size,
       journal_retention: $journal_retention,
       update_profile: $update_profile,
+      timezone: $timezone,
       auto_reboot_requested: $auto_reboot_requested,
       auto_reboot_time: $auto_reboot_time,
       strict_docker_ssh_cidrs: $strict_docker_ssh_cidrs,
@@ -2488,6 +2533,9 @@ main() {
   validate_inputs
   detect_os
   check_disk_space
+
+  log "Configuring system timezone (${TIMEZONE})."
+  configure_timezone
 
   log "Verifying NTP time synchronization."
   ensure_timesync

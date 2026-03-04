@@ -39,6 +39,7 @@ CF_ZONE_ID="${CF_ZONE_ID:-}"
 CF_ACCOUNT_ID="${CF_ACCOUNT_ID:-}"
 APP_DOMAIN_MODE="${APP_DOMAIN_MODE:-}"
 SWAP_SIZE="${SWAP_SIZE:-}"
+SERVER_TIMEZONE="${SERVER_TIMEZONE:-}"
 TAILSCALE_DIRECT_WAN="${TAILSCALE_DIRECT_WAN:-false}"
 AUTO_YES="${AUTO_YES:-false}"
 SKIP_HARDEN="${SKIP_HARDEN:-false}"  # set via --ts-ip to resume after partial harden
@@ -139,6 +140,7 @@ Optional:
   --cf-zone-id <id>             Cloudflare zone ID override (32-char hex)
   --cf-account-id <id>          Cloudflare account ID override (32-char hex)
   --swap-size <size>            Swap size (default: 2G)
+  --server-timezone <IANA>      Server timezone (for example: Australia/Melbourne, UTC)
   --tailscale-direct-wan        Allow WAN UDP 41641 for direct Tailscale paths (optional optimization)
   --no-tailscale-direct-wan     Keep WAN UDP 41641 closed (default; DERP fallback remains available)
   --preflight-only              Run local/Cloudflare preflight checks only, then exit
@@ -176,6 +178,7 @@ parse_args() {
       --cf-account-id)   CF_ACCOUNT_ID="${2:?--cf-account-id requires a value}"; shift 2 ;;
       --app-domain-mode) APP_DOMAIN_MODE="${2:?--app-domain-mode requires a value}"; shift 2 ;;
       --swap-size)       SWAP_SIZE="${2:?--swap-size requires a value}"; shift 2 ;;
+      --server-timezone|--timezone) SERVER_TIMEZONE="${2:?$1 requires a value}"; shift 2 ;;
       --tailscale-direct-wan) TAILSCALE_DIRECT_WAN="true"; shift ;;
       --no-tailscale-direct-wan) TAILSCALE_DIRECT_WAN="false"; shift ;;
       --preflight-only)  PREFLIGHT_ONLY="true"; shift ;;
@@ -262,6 +265,8 @@ validate_inputs() {
   [[ -z "${CF_ACCOUNT_ID}" || "${CF_ACCOUNT_ID}" =~ ${CF_ID_RE} ]] \
     || die "Invalid --cf-account-id: ${CF_ACCOUNT_ID} (expected 32-char hex)"
   [[ "${SWAP_SIZE}" =~ ${SWAP_RE} ]]       || die "Invalid swap size: ${SWAP_SIZE} (expected e.g. 2G, 512M)"
+  [[ "${SERVER_TIMEZONE}" =~ ${TIMEZONE_RE} ]] \
+    || die "Invalid server timezone: ${SERVER_TIMEZONE} (expected IANA name like Australia/Melbourne or UTC)"
   case "${TAILSCALE_DIRECT_WAN,,}" in
     true|false|1|0|yes|no|y|n|on|off) ;;
     *) die "TAILSCALE_DIRECT_WAN must be true/false (got: ${TAILSCALE_DIRECT_WAN})" ;;
@@ -414,6 +419,7 @@ phase1_upload_harden() {
     printf 'SSH_PORT=%q\n' "22"
     printf 'TUNNEL_MODE=%q\n' "${tunnel_flag}"
     printf 'SWAP_SIZE=%q\n' "${SWAP_SIZE}"
+    printf 'TIMEZONE=%q\n' "${SERVER_TIMEZONE}"
     printf 'INSTALL_TAILSCALE=%q\n' "true"
     printf 'TAILSCALE_AUTH_KEY=%q\n' "${TAILSCALE_AUTH_KEY}"
     printf 'TAILSCALE_DIRECT_WAN=%q\n' "${TAILSCALE_DIRECT_WAN}"
@@ -759,6 +765,7 @@ main() {
   log "  Domain:    ${DOMAIN}"
   log "  App scope: ${APP_DOMAIN_MODE}"
   log "  Swap:      ${SWAP_SIZE}"
+  log "  Timezone:  ${SERVER_TIMEZONE}"
   log "  Local TZ:  $(local_tz_offset) (logs use UTC)"
   is_true "${PREFLIGHT_ONLY}" && log "  Mode:      preflight-only (no server changes)"
   [[ "${CF_TUNNEL_API_TOKEN}" != "${CF_API_TOKEN}" ]] && log "  CF tunnel token: custom"
