@@ -56,12 +56,17 @@ setup() {
   BIND_DASHBOARD_TO_TAILSCALE="true"
   DETECTED_TAILSCALE_IP="100.64.1.42"
   DRY_RUN="true"
+  COOLIFY_ENV_FILE="$(mktemp)"
+  printf 'APP_PORT=8000\nSOKETI_PORT=6001\n' > "${COOLIFY_ENV_FILE}"
 
   run configure_coolify_binding
   assert_success
-  assert_output --partial "DRY-RUN"
-  assert_output --partial "APP_PORT"
+  assert_output --partial "DRY-RUN: would verify UFW rules"
   assert_output --partial "8000"
+  run cat "${COOLIFY_ENV_FILE}"
+  assert_success
+  assert_output --partial "APP_PORT=8000"
+  rm -f "${COOLIFY_ENV_FILE}"
 }
 
 # ── Port binding validation ─────────────────────────────────────────────────────
@@ -70,20 +75,32 @@ setup() {
   BIND_DASHBOARD_TO_TAILSCALE="true"
   DETECTED_TAILSCALE_IP="100.64.1.42"
   DRY_RUN="true"
+  COOLIFY_ENV_FILE="$(mktemp)"
+  printf 'APP_PORT=8000\n' > "${COOLIFY_ENV_FILE}"
 
   run configure_coolify_binding
   assert_success
-  assert_output --partial "100.64.1.42:8000"
+  assert_output --partial "port 8000"
+  run cat "${COOLIFY_ENV_FILE}"
+  assert_success
+  assert_output --partial "APP_PORT=8000"
+  rm -f "${COOLIFY_ENV_FILE}"
 }
 
 @test "configure_coolify_binding: sets SOKETI_PORT to Tailscale IP:6001" {
   BIND_DASHBOARD_TO_TAILSCALE="true"
   DETECTED_TAILSCALE_IP="100.64.1.42"
   DRY_RUN="true"
+  COOLIFY_ENV_FILE="$(mktemp)"
+  printf 'SOKETI_PORT=6001\n' > "${COOLIFY_ENV_FILE}"
 
   run configure_coolify_binding
   assert_success
-  assert_output --partial "100.64.1.42:6001"
+  assert_output --partial "ports 8000, 6001, and 6002"
+  run cat "${COOLIFY_ENV_FILE}"
+  assert_success
+  assert_output --partial "SOKETI_PORT=6001"
+  rm -f "${COOLIFY_ENV_FILE}"
 }
 
 # ── Error handling ──────────────────────────────────────────────────────────────
@@ -105,20 +122,26 @@ setup() {
   BIND_DASHBOARD_TO_TAILSCALE="true"
   DETECTED_TAILSCALE_IP="100.64.1.42"
   DRY_RUN="true"
+  STATE_FILE="$(mktemp)"
+  rm -f "${STATE_FILE}"
 
   run write_state
   assert_success
   assert_output --partial "tailscale_ip"
+  [ ! -f "${STATE_FILE}" ]
 }
 
 @test "write_state: includes bind_dashboard_to_tailscale flag" {
   ADMIN_USER="testadmin"
   BIND_DASHBOARD_TO_TAILSCALE="true"
   DRY_RUN="true"
+  STATE_FILE="$(mktemp)"
+  rm -f "${STATE_FILE}"
 
   run write_state
   assert_success
   assert_output --partial "bind_dashboard_to_tailscale=true"
+  [ ! -f "${STATE_FILE}" ]
 }
 
 # ── CIDR validation ─────────────────────────────────────────────────────────────

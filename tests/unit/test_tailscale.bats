@@ -69,10 +69,12 @@ setup() {
 @test "install_tailscale: dry-run logs installation plan" {
   INSTALL_TAILSCALE="true"
   DRY_RUN="true"
+  DETECTED_TAILSCALE_IP=""
 
   run install_tailscale
   assert_success
   assert_output --partial "DRY-RUN"
+  [ -z "${DETECTED_TAILSCALE_IP}" ]
 }
 
 # ── Auth key handling ───────────────────────────────────────────────────────────
@@ -81,11 +83,13 @@ setup() {
   INSTALL_TAILSCALE="true"
   TAILSCALE_AUTH_KEY="tskey-auth-fakekey123"
   DRY_RUN="true"
+  DETECTED_TAILSCALE_IP=""
 
   run install_tailscale
   assert_success
-  # In dry-run mode, it should skip actual installation
   assert_output --partial "DRY-RUN"
+  refute_output --partial "${TAILSCALE_AUTH_KEY}"
+  [ -z "${DETECTED_TAILSCALE_IP}" ]
 }
 
 # ── Tailscale interface verification ────────────────────────────────────────────

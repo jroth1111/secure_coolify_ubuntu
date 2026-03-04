@@ -15,39 +15,53 @@ setup() {
 # ── Admin user creation ─────────────────────────────────────────────────────────
 
 @test "ensure_admin_access: creates user with sudo group when user doesn't exist" {
-  local tmpdir
-  tmpdir="$(mktemp -d)"
-
-  # Mock user commands
-  ADMIN_USER="testadmin"
+  ADMIN_USER="testadmin_${BATS_TEST_NUMBER}_$$"
   DRY_RUN="true"
+  ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForTesting test@example.com"
 
   run ensure_admin_access
   assert_success
-  assert_output --partial "DRY-RUN"
+  assert_output --partial "DRY-RUN: would create /home/${ADMIN_USER}/.ssh/authorized_keys"
+  [ ! -d "/home/${ADMIN_USER}" ]
+  [ ! -f "/etc/sudoers.d/${ADMIN_USER}" ]
 }
 
 @test "ensure_admin_access: adds sudo group to existing user without it" {
   ADMIN_USER="existinguser"
+  ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForTesting test@example.com"
   DRY_RUN="true"
 
-  # This should succeed in dry-run mode even if user doesn't exist locally
+  id() {
+    if [[ "$1" == "existinguser" ]]; then
+      return 0
+    fi
+    if [[ "$1" == "-nG" && "$2" == "existinguser" ]]; then
+      echo "users"
+      return 0
+    fi
+    command id "$@"
+  }
+  getent() {
+    echo "existinguser:x:1001:1001::/home/existinguser:/bin/bash"
+  }
+
   run ensure_admin_access
   assert_success
+  assert_output --partial "DRY-RUN: usermod -aG sudo existinguser"
+  [ ! -f "/etc/sudoers.d/existinguser" ]
 }
 
 # ── Passwordless sudo configuration ─────────────────────────────────────────────
 
 @test "ensure_admin_access: creates sudoers.d file with NOPASSWD" {
-  local tmpdir
-  tmpdir="$(mktemp -d)"
-
-  ADMIN_USER="testadmin"
+  ADMIN_USER="testadmin_sudo_${BATS_TEST_NUMBER}_$$"
+  ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForTesting test@example.com"
   DRY_RUN="true"
 
   run ensure_admin_access
   assert_success
   assert_output --partial "passwordless sudo"
+  [ ! -f "/etc/sudoers.d/${ADMIN_USER}" ]
 }
 
 # ── SSH key handling ────────────────────────────────────────────────────────────
@@ -60,6 +74,7 @@ setup() {
   run ensure_admin_access
   assert_success
   assert_output --partial ".ssh"
+  [ ! -d "/home/${ADMIN_USER}/.ssh" ]
 }
 
 @test "ensure_admin_access: adds public key to authorized_keys" {
@@ -70,6 +85,7 @@ setup() {
   run ensure_admin_access
   assert_success
   assert_output --partial "authorized_keys"
+  [ ! -f "/home/${ADMIN_USER}/.ssh/authorized_keys" ]
 }
 
 # ── Input validation for admin user ─────────────────────────────────────────────
