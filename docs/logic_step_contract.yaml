@@ -563,6 +563,10 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::auditd_check: executes and
     records audit status outcomes'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::auditd_check: fails when
+    max_log_file_action is not keep_logs'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::auditd_check: fails when
+    queue loss exceeds threshold'
 - id: LS-VAL-004
   script_path: validate_hardening.sh
   function: banner_check
@@ -662,6 +666,10 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::docker_user_check: fails fast
     when iptables is unavailable'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_user_check: fails
+    when wan-drop rule is missing'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_user_check: fails
+    in tunnel mode when wan-web rule exists'
 - id: LS-VAL-015
   script_path: validate_hardening.sh
   function: docker_user_lifecycle_check
@@ -693,12 +701,13 @@ entries:
   script_path: validate_hardening.sh
   function: is_true
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_functions.bats::validate is_true: ''false''
-    returns 1'
+  behavior_test: 'tests/unit/test_validate_check_outcomes_robust.bats::validate runtime
+    is_true: false returns failure'
   checks:
-  - 'tests/unit/test_validate_functions.bats::validate is_true: ''false'' returns
-    1'
-  - 'tests/unit/test_validate_functions.bats::validate is_true: ''1'' returns 0'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::validate runtime is_true:
+    false returns failure'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::validate runtime is_true:
+    true returns success'
 - id: LS-VAL-019
   script_path: validate_hardening.sh
   function: journald_check
@@ -780,6 +789,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::ssh_check: records PASS for
     expected hardened sshd output'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::ssh_check: fails when external
+    root login is allowed'
 - id: LS-VAL-028
   script_path: validate_hardening.sh
   function: swap_check
@@ -798,6 +809,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::sysctl_check: records PASS
     when expected values are present'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::sysctl_check: fails when
+    hardened value deviates from expected'
 - id: LS-VAL-030
   script_path: validate_hardening.sh
   function: tailscale_check
@@ -825,6 +838,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::ufw_check: records active
     firewall and tailscale-scoped rules'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::ufw_check: fails when dashboard
+    is exposed on WAN interface'
 - id: LS-VAL-033
   script_path: validate_hardening.sh
   function: unattended_upgrades_check
@@ -895,8 +910,8 @@ entries:
   behavior_test: 'tests/integration/test_deploy.bats::deploy: parse_args extracts
     --server-ip'
   checks:
-  - 'tests/unit/test_functions.bats::parse_args: unknown flag fails'
-  - 'tests/unit/test_functions.bats::parse_args: --admin-user sets ADMIN_USER'
+  - 'tests/integration/test_deploy.bats::deploy: parse_args rejects unknown option'
+  - 'tests/integration/test_deploy.bats::deploy: parse_args extracts --admin-user'
   - 'tests/integration/test_deploy.bats::deploy: parse_args extracts --server-ip'
 - id: LS-DEP-007
   script_path: deploy.sh
@@ -1025,7 +1040,6 @@ entries:
   behavior_test: 'tests/integration/test_deploy.bats::deploy: usage documents required
     flags'
   checks:
-  - 'tests/unit/test_functions.bats::usage: prints required and optional flag sections'
   - 'tests/integration/test_deploy.bats::deploy: usage documents required flags'
 - id: LS-DEP-021
   script_path: deploy.sh
@@ -1034,9 +1048,10 @@ entries:
   behavior_test: 'tests/integration/test_deploy.bats::deploy: validate_inputs rejects
     invalid server IP'
   checks:
-  - 'tests/unit/test_admin.bats::validate_inputs: rejects root as admin user'
-  - 'tests/unit/test_dashboard_binding.bats::validate_inputs: accepts BIND_DASHBOARD_TO_TAILSCALE=true
-    in dry-run'
+  - 'tests/integration/test_deploy.bats::deploy: validate_inputs rejects root as admin
+    user'
+  - 'tests/integration/test_deploy.bats::deploy: validate_inputs rejects invalid admin
+    username (uppercase)'
   - 'tests/integration/test_deploy.bats::deploy: validate_inputs rejects invalid server
     IP'
 - id: LS-DEP-022
@@ -1073,7 +1088,6 @@ entries:
   behavior_test: 'tests/unit/test_setup_workflow_contract.bats::setup: parse_args
     extracts --server-ip'
   checks:
-  - 'tests/unit/test_functions.bats::parse_args: unknown flag fails'
   - 'tests/unit/test_setup_workflow_contract.bats::setup: parse_args extracts --server-ip'
 - id: LS-SET-004
   script_path: setup.sh
@@ -1128,10 +1142,9 @@ entries:
   behavior_test: 'tests/unit/test_setup_workflow_contract.bats::setup: gate E requires
     operator laptop verification'
   checks:
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: gate E fails when exposure
-    checks do not pass'
   - 'tests/unit/test_setup_workflow_contract.bats::setup: gate E requires operator
     laptop verification'
+  - 'tests/unit/test_setup_workflow_contract.bats::setup: final validation is executed'
 - id: LS-SET-010
   script_path: setup.sh
   function: preflight
@@ -1167,8 +1180,6 @@ entries:
   checks:
   - 'tests/unit/test_setup_workflow_contract.bats::setup: validate_inputs rejects
     invalid server IP'
-  - 'tests/unit/test_dashboard_binding.bats::validate_inputs: accepts BIND_DASHBOARD_TO_TAILSCALE=true
-    in dry-run'
 - id: LS-SET-014
   script_path: setup.sh
   function: verify_docker_user_gate_local
@@ -1374,7 +1385,6 @@ entries:
   checks:
   - 'tests/unit/test_common_additional_behavior.bats::die helper: exits non-zero with
     fatal message'
-  - 'tests/unit/test_functions.bats::detect_os: FORCE=true allows non-24.04 versions'
 - id: LS-COM-023
   script_path: lib/coolify-common.sh
   function: fail
