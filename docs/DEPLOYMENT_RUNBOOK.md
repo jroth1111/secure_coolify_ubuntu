@@ -7,13 +7,28 @@ This guide walks through the complete journey from a fresh Ubuntu 24.04 VPS to a
 For a fully automated deployment, use `deploy.sh` (from your laptop) or `setup.sh` (from the server). These scripts automate hardening, gate checks, Cloudflare Tunnel creation, and DNS configuration:
 
 ```bash
-# Tunnel mode (default — recommended)
+# Tunnel mode (default — recommended), combined token model
 bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
-  --domain <fqdn> --cf-api-token <token> --yes
+  --domain <fqdn> --cf-api-token-file /secure/path/cf_api.token --yes
 
-# Standard mode (open public 80/443)
+# Tunnel mode (split-token model: DNS token + tunnel token)
 bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
-  --domain <fqdn> --cf-api-token <token> --mode standard --yes
+  --domain <fqdn> --cf-api-token-file /secure/path/cf_dns.token \
+  --cf-tunnel-api-token-file /secure/path/cf_tunnel.token --yes
+
+# Standard mode (open public 80/443), DNS token only
+bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
+  --domain <fqdn> --cf-api-token-file /secure/path/cf_api.token --mode standard --yes
+```
+
+Token input options:
+- `CF_API_TOKEN` and optional `CF_TUNNEL_API_TOKEN` environment variables
+- `--cf-api-token-file` and optional `--cf-tunnel-api-token-file`
+
+For fast permission validation before touching the server, run:
+
+```bash
+bash deploy.sh --domain <fqdn> --cf-api-token-file /secure/path/cf_api.token --preflight-only
 ```
 
 See `deploy.sh --help` for all options. The manual procedure below remains the reference for understanding each step.

@@ -123,7 +123,7 @@ Just point your AI assistant to `AGENTS_DEPLOY.md` and it can guide you through 
 | **Domain on Cloudflare** | [Move your domain to Cloudflare](https://developers.cloudflare.com/dns/zone-setups/) (free) |
 | **Tailscale account** | Sign up at [tailscale.com](https://tailscale.com) (free for personal use) |
 | **Tailscale auth key** | [Generate here](https://login.tailscale.com/admin/settings/keys) — use "Reusable" and "Ephemeral" |
-| **Cloudflare API token** | [Create here](https://dash.cloudflare.com/profile/api-tokens) with permissions: `Zone:DNS:Edit` + `Account:Cloudflare Tunnel:Edit` |
+| **Cloudflare API token(s)** | [Create here](https://dash.cloudflare.com/profile/api-tokens): either one combined token (`Zone:Zone:Read` + `Zone:DNS:Edit` + `Account:Cloudflare Tunnel:Edit`) or two split tokens (DNS token + Tunnel token) |
 | **SSH key pair** | Run `ssh-keygen -t ed25519` if you don't have one |
 
 <details>
@@ -151,7 +151,7 @@ curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/secure_coolify_ubuntu
   --root-pass-file /secure/path/root.pass \
   --tailscale-auth-key tskey-auth-... \
   --domain app.example.com \
-  --cf-api-token <cloudflare-token> \
+  --cf-api-token-file /secure/path/cf_api.token \
   --yes
 ```
 
@@ -329,15 +329,21 @@ make test-all            # Full suite with Docker
 | `--root-pass-file <path>` | optional | Read root password from file (recommended for automation) |
 | `--tailscale-auth-key <key>` | *(required)* | Tailscale auth key (`tskey-auth-...`) |
 | `--domain <fqdn>` | *(required)* | Domain name for Coolify |
-| `--cf-api-token <token>` | *(required)* | Cloudflare API token |
+| `--cf-api-token-file <path>` | optional* | Cloudflare API token file (`*`required unless `CF_API_TOKEN` env var or interactive prompt) |
+| `--cf-tunnel-api-token-file <path>` | optional | Cloudflare tunnel API token file (defaults to API token when omitted) |
 | `--admin-user <name>` | `coolifyadmin` | Admin username |
 | `--pubkey-file <path>` | `~/.ssh/id_ed25519.pub` | SSH public key file |
 | `--mode <tunnel\|standard>` | `tunnel` | Deployment mode |
 | `--cf-zone <zone>` | derived from domain | Cloudflare zone |
+| `--cf-zone-id <id>` | none | Cloudflare zone ID override (32-char hex) |
+| `--cf-account-id <id>` | none | Cloudflare account ID override (32-char hex) |
 | `--swap-size <size>` | `2G` | Swap file size |
 | `--tailscale-direct-wan` | `false` | Open WAN UDP 41641 for direct Tailscale paths (optional optimization) |
 | `--no-tailscale-direct-wan` | `true` | Keep WAN UDP 41641 closed (default behavior) |
+| `--preflight-only` | `false` | Run local + Cloudflare checks only (no server changes) |
 | `--yes` | `false` | Skip confirmation prompts |
+
+Legacy flags removed (breaking change): `--cf-api-token`, `--cf-tunnel-api-token`.
 
 </details>
 
@@ -423,9 +429,9 @@ ssh admin@100.x.x.x  # Use the Tailscale IP output by the script
 
 **Cause:** API token missing required permissions.
 
-**Solution:** Ensure token has both:
-- `Zone:DNS:Edit`
-- `Account:Cloudflare Tunnel:Edit`
+**Solution:** Use either:
+- Combined token: `Zone:Zone:Read` + `Zone:DNS:Edit` + `Account:Cloudflare Tunnel:Edit`
+- Split tokens: DNS token with `Zone:Zone:Read` + `Zone:DNS:Edit`, and tunnel token with `Account:Cloudflare Tunnel:Edit`
 
 ### Validation Failures
 

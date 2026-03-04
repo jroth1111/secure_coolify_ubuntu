@@ -44,7 +44,7 @@ Ask for these first — they define what we're deploying and where:
 
 The default app subdomain scope is `apex` — apps auto-assign at `appname.ZONE` (e.g. `appname.example.com`), which works with Cloudflare Free Universal SSL. The alternative `vps` scope puts apps at `appname.DOMAIN` (e.g. `appname.vps.example.com`), scoped to this server, but requires paid ACM or an Enterprise plan for proxied SSL when DOMAIN is a subdomain. See `--app-domain-mode` below.
 
-**TLS note**: When DOMAIN is a subdomain (e.g. `vps.example.com`) living in a parent Cloudflare zone, `vps` mode produces two-level URLs (`app.vps.example.com`) that are not covered by Free Universal SSL (`*.example.com` only covers one level). `vps` mode is safe without paid certs only when DOMAIN is itself the zone apex. For proxied SSL on the **free plan** with a subdomain DOMAIN: (a) `--app-domain-mode apex` — simplest, apps at `app.example.com`; (b) Cloudflare for SaaS Custom Hostnames — issues per-hostname certs at any depth, 100 free then $0.10/hostname/month, fully proxied, but each hostname must be registered individually via the CF API (not automated by these scripts; requires an additional `SSL and Certificates: Write` token permission beyond what `--cf-api-token` covers). Wildcard custom hostnames are Enterprise-only. Outside the proxied path: DNS-only (grey-cloud) + origin TLS (Traefik/Let's Encrypt). Paid options: Advanced Certificate Manager; or Cloudflare Subdomain Setup (child zone delegation — Enterprise only).
+**TLS note**: When DOMAIN is a subdomain (e.g. `vps.example.com`) living in a parent Cloudflare zone, `vps` mode produces two-level URLs (`app.vps.example.com`) that are not covered by Free Universal SSL (`*.example.com` only covers one level). `vps` mode is safe without paid certs only when DOMAIN is itself the zone apex. For proxied SSL on the **free plan** with a subdomain DOMAIN: (a) `--app-domain-mode apex` — simplest, apps at `app.example.com`; (b) Cloudflare for SaaS Custom Hostnames — issues per-hostname certs at any depth, 100 free then $0.10/hostname/month, fully proxied, but each hostname must be registered individually via the CF API (not automated by these scripts; requires an additional `SSL and Certificates: Write` token permission beyond baseline deployment token permissions). Wildcard custom hostnames are Enterprise-only. Outside the proxied path: DNS-only (grey-cloud) + origin TLS (Traefik/Let's Encrypt). Paid options: Advanced Certificate Manager; or Cloudflare Subdomain Setup (child zone delegation — Enterprise only).
 
 ### Step 3: Mode recommendation (informed by domain + workload)
 
@@ -67,7 +67,9 @@ Now collect the values that only the user can provide:
 |-------|---------|-------|
 | Root password | *(secret)* | For initial SSH to the VPS. **After a VPS rebuild**, providers auto-generate a new root password — verify against the VPS control panel before deploying. |
 | Tailscale auth key | `tskey-auth-xxxxx` | From Tailscale admin console > Settings > Keys. Must start with `tskey-auth-`. |
-| Cloudflare API token | *(secret)* | Must have Zone:DNS:Edit **and** Account:Cloudflare Tunnel:Edit permissions |
+| Cloudflare token model | `combined` or `split` | Combined = one token for DNS+tunnel; Split = DNS token + tunnel token |
+| Cloudflare DNS token | *(secret)* | Required for both modes. Must include `Zone:Zone:Read` + `Zone:DNS:Edit` |
+| Cloudflare tunnel token | *(secret, tunnel mode)* | Optional if DNS token is combined. Must include `Account:Cloudflare Tunnel:Edit` |
 
 **Do not guess or fabricate** any of these — ask explicitly for each.
 
@@ -92,6 +94,8 @@ Show the full configuration summary (with secrets masked) and confirm before exe
 | SSH pubkey file | `~/.ssh/id_ed25519.pub` | Path on the machine running the script |
 | Swap size | `2G` | Format: `<N>G` or `<N>M` |
 | Cloudflare zone | derived from domain | Override if domain's zone differs |
+| Cloudflare zone ID | none | Optional explicit `--cf-zone-id` override |
+| Cloudflare account ID | none | Optional explicit `--cf-account-id` override |
 
 ## Operator Machine Prerequisites
 
@@ -167,23 +171,37 @@ tailscale status
 
 If the user has a Cloudflare account but no API token with the right permissions:
 
-> "Create a token at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens):
-> 1. Click **Create Token**
-> 2. Start with the **Edit zone DNS** template
-> 3. Under **Permissions**, add a second permission: **Account** > **Cloudflare Tunnel** > **Edit**
-> 4. Under **Zone Resources**, select **All zones** (or the specific zone for your domain)
-> 5. Click **Continue to summary** → **Create Token**
-> 6. Copy the token value — you'll need it in Step 4"
+Two valid models:
 
-The token needs exactly two permissions:
-- **Zone : DNS : Edit** — for creating A/CNAME records (including wildcard)
-- **Account : Cloudflare Tunnel : Edit** — for creating the tunnel (tunnel mode only, but always included since tunnel is the default)
+1. **Combined token** (recommended): one token with all permissions
+2. **Split tokens**: one DNS token + one Tunnel token
+
+Required permission groups:
+- **Zone : Zone : Read** — zone discovery/verification
+- **Zone : DNS : Edit** — create/update A/CNAME records
+- **Account : Cloudflare Tunnel : Edit** — create/update tunnel (tunnel mode)
+
+Token delivery to scripts (secure):
+- `CF_API_TOKEN` / `CF_TUNNEL_API_TOKEN` env vars, or
+- `--cf-api-token-file` / `--cf-tunnel-api-token-file`
+
+Legacy CLI token-value flags are removed:
+- `--cf-api-token`
+- `--cf-tunnel-api-token`
 
 ## Invocation
 
 ### From operator laptop (preferred)
 
 ```bash
+# Create secure token files (example)
+printf '%s' '<dns-or-combined-token>' > /secure/path/cf_api.token
+chmod 600 /secure/path/cf_api.token
+
+# Optional split tunnel token file
+printf '%s' '<tunnel-token>' > /secure/path/cf_tunnel.token
+chmod 600 /secure/path/cf_tunnel.token
+
 # Tunnel mode, apex app scope (default — apps at appname.example.com, works with Free Universal SSL)
 bash deploy.sh \
   --server-ip <ip> \
@@ -192,7 +210,7 @@ bash deploy.sh \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
   --domain <fqdn> \
-  --cf-api-token <token> \
+  --cf-api-token-file /secure/path/cf_api.token \
   --yes
 
 # Tunnel mode, vps app scope (apps at appname.vps.example.com — requires paid ACM or Enterprise for proxied SSL when DOMAIN is a subdomain)
@@ -203,7 +221,7 @@ bash deploy.sh \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
   --domain <fqdn> \
-  --cf-api-token <token> \
+  --cf-api-token-file /secure/path/cf_api.token \
   --app-domain-mode vps \
   --yes
 
@@ -216,7 +234,19 @@ bash deploy.sh \
   --tailscale-auth-key <key> \
   --mode standard \
   --domain <fqdn> \
-  --cf-api-token <token> \
+  --cf-api-token-file /secure/path/cf_api.token \
+  --yes
+
+# Tunnel mode with split tokens (optional; when not using combined token)
+bash deploy.sh \
+  --server-ip <ip> \
+  --root-pass-file <path> \
+  --admin-user <user> \
+  --pubkey-file <path> \
+  --tailscale-auth-key <key> \
+  --domain <fqdn> \
+  --cf-api-token-file /secure/path/cf_api.token \
+  --cf-tunnel-api-token-file /secure/path/cf_tunnel.token \
   --yes
 ```
 
@@ -230,7 +260,7 @@ sudo bash setup.sh \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
   --domain <fqdn> \
-  --cf-api-token <token> \
+  --cf-api-token-file /secure/path/cf_api.token \
   --yes
 
 # Tunnel mode, vps app scope (apps at appname.vps.example.com — requires paid ACM or Enterprise for proxied SSL when DOMAIN is a subdomain)
@@ -240,7 +270,7 @@ sudo bash setup.sh \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
   --domain <fqdn> \
-  --cf-api-token <token> \
+  --cf-api-token-file /secure/path/cf_api.token \
   --app-domain-mode vps \
   --yes
 
@@ -252,7 +282,18 @@ sudo bash setup.sh \
   --tailscale-auth-key <key> \
   --mode standard \
   --domain <fqdn> \
-  --cf-api-token <token> \
+  --cf-api-token-file /secure/path/cf_api.token \
+  --yes
+
+# Tunnel mode with split tokens (optional; when not using combined token)
+sudo bash setup.sh \
+  --server-ip <ip> \
+  --admin-user <user> \
+  --pubkey-file <path> \
+  --tailscale-auth-key <key> \
+  --domain <fqdn> \
+  --cf-api-token-file /secure/path/cf_api.token \
+  --cf-tunnel-api-token-file /secure/path/cf_tunnel.token \
   --yes
 ```
 
@@ -270,7 +311,7 @@ Omitting `--mode` defaults to `tunnel`. Only pass `--mode standard` if the user 
 
 Steps are numbered `[0/5]`–`[5/5]` in the output; phase references in AGENTS.md use these step numbers.
 
-- **[0/5] Pre-flight** — validates tools, SSH pubkey, Cloudflare token + zone + account, SSH connectivity
+- **[0/5] Pre-flight** — validates tools, SSH pubkey, Cloudflare token(s) + zone + account, DNS/tunnel permission probes, SSH connectivity
 - **[1/5] Harden** — uploads scripts via root password SSH, runs `bootstrap_hardening.sh` (installs Tailscale, hardens SSH/UFW). Bootstrap prints `HARDEN_RESULT_TAILSCALE_IP=<ip>` sentinel on stdout; deploy.sh captures it via `tee` — this is the only safe way to get the TS_IP since UFW blocks all public-IP SSH after hardening completes. Skipped when `--ts-ip` is provided.
 - **[2/5] Gates** — cleans up `deploy.env` from server (root SSH blocked post-hardening, so done here via admin key), verifies SSH transition to admin@tailscale-IP (Gate A–B), re-syncs companion scripts via admin SCP so the latest versions are always used (Gate B+), runs `validate_hardening.sh --json` (Gate C)
 - **[3/5] Docker + Coolify** — installs Docker (skips if already installed), starts DOCKER-USER rules (Gate D), installs Coolify (skips if already installed)
@@ -295,9 +336,9 @@ Both modes use Cloudflare's edge for user-facing TLS. No wildcard cert is needed
 - **Tunnel mode**: Cloudflare terminates TLS. Tunnel routing: `DOMAIN + /terminal/ws → localhost:6002` (terminal WebSocket path, must be listed before dashboard ingress), `DOMAIN → localhost:8000` (Coolify dashboard), `*.APP_DOMAIN → localhost:80` (Traefik/coolify-proxy — routes by hostname to app containers), `ws.DOMAIN → localhost:6001` (Soketi WebSocket). Dashboard gets its own port-8000 rule; wildcard app traffic goes through Traefik on port 80 so each app resolves to its container. No origin cert.
 - **Standard mode** (proxied + Full SSL): Cloudflare terminates edge TLS. Full mode accepts any origin cert (self-signed OK).
 
-The `--cf-api-token` is used for DNS record management via Cloudflare's REST API. Wrangler CLI is not applicable (it only manages Workers/R2/D1/Pages — no DNS commands).
+The Cloudflare API token input (`CF_API_TOKEN` env or `--cf-api-token-file`) is used for DNS record management via Cloudflare's REST API. Wrangler CLI is not applicable (it only manages Workers/R2/D1/Pages — no DNS commands).
 
-If the user asks about origin wildcard certs (Traefik DNS-01 with Cloudflare token): this requires editing Coolify's Traefik proxy config in the Coolify UI (Servers > Proxy), not our scripts. The same `--cf-api-token` works as `CF_DNS_API_TOKEN` in Traefik. See [Coolify wildcard cert docs](https://coolify.io/docs/knowledge-base/proxy/traefik/wildcard-certs).
+If the user asks about origin wildcard certs (Traefik DNS-01 with Cloudflare token): this requires editing Coolify's Traefik proxy config in the Coolify UI (Servers > Proxy), not our scripts. The same DNS-capable token works as `CF_DNS_API_TOKEN` in Traefik. See [Coolify wildcard cert docs](https://coolify.io/docs/knowledge-base/proxy/traefik/wildcard-certs).
 
 ## Execution Notes
 
@@ -321,7 +362,7 @@ If the user asks about origin wildcard certs (Traefik DNS-01 with Cloudflare tok
   bash deploy.sh ... --ts-ip 100.x.x.x --yes
   ```
   Neither `--root-pass-file` nor `--tailscale-auth-key` is required when `--ts-ip` is supplied (hardening is skipped).
-- **Secrets in process list**: prefer `--root-pass-file` (not `--root-pass`, which is disabled). `--cf-api-token` still appears in process args at invocation time. The script uses `SSHPASS` env var internally for SSH operations.
+- **Secrets in process list**: prefer `--root-pass-file` (not `--root-pass`, which is disabled). Cloudflare token value flags were removed; use token files or env vars. The script uses `SSHPASS` env var internally for SSH operations.
 
 ## Error Handling
 
@@ -353,7 +394,7 @@ Follow the Collection Sequence above. This tree handles branching decisions:
    - If none apply, `tunnel` is the best choice (zero inbound ports, no IP exposure)
 3. **Missing external accounts?** (Collection Step 4):
    - No Tailscale -> walk through Tailscale Setup Guide above (account + install + auth key)
-   - No Cloudflare API token -> they need to create one at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) with **Zone:DNS:Edit** and **Account:Cloudflare Tunnel:Edit** permissions
+   - No Cloudflare API token -> they need to create one at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) with **Zone:Zone:Read** + **Zone:DNS:Edit** (and **Account:Cloudflare Tunnel:Edit** for tunnel mode)
 4. **Laptop or server?**
    - Laptop -> `deploy.sh` (use `--root-pass-file` or interactive prompt)
    - Server -> `setup.sh` (no root password needed)
