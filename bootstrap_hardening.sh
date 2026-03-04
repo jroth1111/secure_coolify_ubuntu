@@ -50,6 +50,7 @@ INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-false}"
 TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
 TAILSCALE_DIRECT_WAN="${TAILSCALE_DIRECT_WAN:-false}"
 STRICT_DOCKER_SSH_CIDRS="${STRICT_DOCKER_SSH_CIDRS:-true}"
+INSECURE_ENV="${INSECURE_ENV:-false}"
 DOCKER_NPROC_HARD="${DOCKER_NPROC_HARD:-8192}"
 DOCKER_NPROC_SOFT="${DOCKER_NPROC_SOFT:-4096}"
 
@@ -125,6 +126,7 @@ Optional:
   --no-tailscale-direct-wan     Keep WAN UDP 41641 closed (default; DERP fallback remains available)
   --upgrade-mail <address>      Email for unattended-upgrade failure reports (optional)
   --env-file <path>             Source variables from file before parsing flags
+  --insecure-env                Allow env file with insecure permissions (dangerous; for automation only)
   --dry-run                     Print actions without changing system
   --force                       Override non-Tailscale SSH-session safety gate
   -h, --help                    Show this help
@@ -194,7 +196,13 @@ parse_args() {
     local file_perms
     file_perms="$(stat -c '%a' "${env_file}" 2>/dev/null || stat -f '%Lp' "${env_file}" 2>/dev/null || echo "unknown")"
     if [[ "${file_perms}" != "unknown" && "${file_perms}" != "600" && "${file_perms}" != "400" ]]; then
-      warn "Env file ${env_file} has permissions ${file_perms}; recommend 0600 or stricter."
+      die "Env file ${env_file} has permissions ${file_perms}; refusing to proceed (requires 0600 or 400). Fix with: chmod 600 \" or \"chmod 400 \" and re-run with --insecure-env to bypass"
+    fi
+    # Allow --insecure-env to flag to bypass this check for automation/CI scenarios
+    if is_true "${INSECURE_ENV}"; then
+      warn "--insecure-env used: proceeding with env file ${env_file} with insecure permissions ${file_perms}"
+    else
+      die "Env file ${env_file} has permissions ${file_perms}; refusing to proceed (requires 0600 or 400). Fix with: chmod 600\" or \"chmod 400\" and re-run with --insecure-env to bypass"
     fi
     # shellcheck disable=SC1090
     source "${env_file}"
@@ -268,6 +276,10 @@ parse_args() {
         require_value "$1" "${2:-}"
         DOCKER_NPROC_HARD="$2"
         shift 2
+        ;;
+          --insecure-env)
+        INSECURE_ENV="true"
+        shift
         ;;
       --docker-nproc-soft)
         require_value "$1" "${2:-}"

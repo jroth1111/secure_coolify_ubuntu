@@ -60,8 +60,8 @@ cleanup_temp_files() {
 
 init_ssh_options() {
   # Use accept-new: accept on first connect, reject changed keys (OpenSSH 7.6+).
-  DEPLOY_KNOWN_HOSTS="$(mktemp)"
-  ADMIN_KNOWN_HOSTS="$(mktemp)"
+  DEPLOY_KNOWN_HOSTS="$(mktemp)" || die "Failed to create temp file for deploy known hosts"
+  ADMIN_KNOWN_HOSTS="$(mktemp)" || die "Failed to create temp file for admin known hosts"
   trap 'cleanup_temp_files' EXIT
 
   SSH_OPTS=(
@@ -86,7 +86,7 @@ init_root_password_auth() {
     return 0
   fi
   [[ -n "${ROOT_PASS}" ]] || die "Root password is required for phase 1."
-  ROOT_PASS_RUNTIME_FILE="$(mktemp)"
+  ROOT_PASS_RUNTIME_FILE="$(mktemp)" || die "Failed to create temp file for root password"
   chmod 600 "${ROOT_PASS_RUNTIME_FILE}"
   printf '%s' "${ROOT_PASS}" > "${ROOT_PASS_RUNTIME_FILE}"
   ROOT_PASS=""
@@ -365,7 +365,7 @@ phase1_upload_harden() {
   local tunnel_flag="false"
   [[ "${DEPLOY_MODE}" == "tunnel" ]] && tunnel_flag="true"
   local deploy_env_tmp
-  deploy_env_tmp="$(mktemp)"
+  deploy_env_tmp="$(mktemp)" || die "Failed to create temp file for deploy env"
   {
     printf 'ADMIN_USER=%q\n' "${ADMIN_USER}"
     printf 'ADMIN_PUBKEY=%q\n' "${ADMIN_PUBKEY}"
@@ -390,7 +390,7 @@ phase1_upload_harden() {
   # prints 'HARDEN_RESULT_TAILSCALE_IP=<ip>' as the last stdout line; we parse that.
   log "Running bootstrap_hardening.sh (this may take a few minutes)..."
   local harden_tmp
-  harden_tmp="$(mktemp)"
+  harden_tmp="$(mktemp)" || die "Failed to create temp file for hardening output"
 
   # Capture stdout/stderr while preserving failure semantics from the SSH command.
   if ! ssh_root "/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force" \

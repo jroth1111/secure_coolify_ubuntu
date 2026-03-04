@@ -101,8 +101,15 @@ cf_api() {
   local url="https://api.cloudflare.com/client/v4${endpoint}"
   local args=(-s -X "${method}" -H "Content-Type: application/json")
   [[ -n "${body}" ]] && args+=(-d "${body}")
-  printf -- '-H "Authorization: Bearer %s"\n' "${CF_API_TOKEN}" \
-    | curl --config - "${args[@]}" "${url}"
+  # Use a secure temp file instead of pipe to avoid race condition
+  # where the token could be read by other processes
+  local curl_config
+  curl_config="$(mktemp)" || die "Failed to create temp file for curl config"
+  # Clean up the temp file when we're done
+  trap 'rm -f "${curl_config}"' RETURN
+  printf -- '-H "Authorization: Bearer %s"\n' "${CF_API_TOKEN}" > "${curl_config}"
+  chmod 600 "${curl_config}"
+  curl --config "${curl_config}" "${args[@]}" "${url}"
 }
 
 cf_verify_token() {
@@ -502,7 +509,7 @@ daemon_json="/etc/docker/daemon.json"
 state_file="/var/lib/bootstrap-hardening/state"
 nproc_hard="8192"
 nproc_soft="4096"
-tmp="$(mktemp)"
+tmp="$(mktemp)" || { echo "Failed to create temp file for daemon.json merge" >&2; exit 1; }
 
 if [[ -f "${state_file}" ]]; then
   nproc_hard="$(grep -m1 '^docker_nproc_hard=' "${state_file}" | cut -d= -f2- || echo "8192")"
@@ -577,7 +584,10 @@ fi
 cat "${tmp}" > "${daemon_json}"
 chmod 0644 "${daemon_json}"
 rm -f "${tmp}"
-systemctl restart docker
+if ! systemctl restart docker; then
+  echo "Failed to restart Docker after daemon.json update" >&2
+  exit 1
+fi
 EOF
 }
 
@@ -594,6 +604,11 @@ db_pass="$(grep -m1 '^DB_PASSWORD=' "${coolify_env}" | cut -d= -f2- || true)"
 db_user="${db_user:-coolify}"
 db_name="${db_name:-coolify}"
 [[ -n "${db_pass}" ]] || { echo "DB_PASSWORD missing in ${coolify_env}" >&2; exit 1; }
+# Verify coolify-db container is running before attempting docker exec
+if ! docker ps --filter "name=coolify-db" --filter "status=running" --format "{{.Names}}" 2>/dev/null | grep -q "coolify-db"; then
+  echo "coolify-db container is not running" >&2
+  exit 1
+fi
 sql="UPDATE server_settings SET wildcard_domain = 'http://${APP_DOMAIN}' WHERE server_id = 0;"
 docker exec -i coolify-db sh -ceu '
   IFS= read -r PGPASSWORD
