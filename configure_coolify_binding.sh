@@ -118,7 +118,16 @@ ufw allow in on tailscale0 proto tcp to any port 6002 comment "coolify-hardening
 
 ufw_status="$(ufw status verbose 2>/dev/null || true)"
 for port in 8000 6001 6002; do
-  if ! grep -qiE "${port}/tcp.*ALLOW( IN)?.*tailscale0|tailscale0.*ALLOW( IN)?.*${port}/tcp" <<< "${ufw_status}"; then
+  if ! awk -v p="${port}/tcp" '
+      BEGIN { found=0 }
+      {
+        line=tolower($0)
+        if (index(line, tolower(p)) && index(line, "tailscale0") && index(line, "allow")) {
+          found=1
+        }
+      }
+      END { exit(found ? 0 : 1) }
+    ' <<< "${ufw_status}"; then
     die "UFW rule missing for ${port}/tcp on tailscale0 after apply."
   fi
 done
