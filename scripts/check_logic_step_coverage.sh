@@ -169,11 +169,21 @@ def file_sources_target(file_text: str, script_path: str) -> bool:
 
 
 def has_assertion(body: str) -> bool:
-    if re.search(r"\bassert_(success|failure|output|line|regex|equal|not_equal)\b", body):
+    if re.search(r"\bassert_[A-Za-z0-9_]+\b", body):
         return True
     if re.search(r"(^|\n)\s*\[\[?\s*[^\n]+\s*\]\]?\s*$", body, re.M):
         return True
     return False
+
+
+def outcome_statuses(body: str) -> set[str]:
+    statuses: set[str] = set()
+    for status in ("PASS", "FAIL", "INFO"):
+        if re.search(rf'assert_json_check_status[^\n]*"{status}"', body):
+            statuses.add(status)
+        if re.search(rf'assert_output\s+--partial\s+"\[{status}\]"', body):
+            statuses.add(status)
+    return statuses
 
 
 def run_command_token(line: str) -> str | None:
@@ -375,6 +385,31 @@ for idx, entry in enumerate(entries, start=1):
         if not independent_checks:
             errors.append(
                 f"[{entry_id}] critical validator check requires an independent check ref distinct from behavior_test"
+            )
+
+        pass_refs: list[str] = []
+        nonpass_refs: list[str] = []
+        for ref in [behavior_ref, *[c for c in checks if isinstance(c, str)]]:
+            try:
+                ref_file, ref_title = parse_test_ref(ref)
+            except ValueError:
+                continue
+            body = tests.get(ref_file, {}).get(ref_title, "")
+            if not body or not calls_function(body, fn, script_path):
+                continue
+            statuses = outcome_statuses(body)
+            if "PASS" in statuses:
+                pass_refs.append(ref)
+            if "FAIL" in statuses or "INFO" in statuses:
+                nonpass_refs.append(ref)
+
+        if not pass_refs:
+            errors.append(
+                f"[{entry_id}] robust validator check requires at least one PASS-path test ref"
+            )
+        if not nonpass_refs:
+            errors.append(
+                f"[{entry_id}] robust validator check requires at least one FAIL/INFO-path test ref"
             )
 
 # Inventory completeness.

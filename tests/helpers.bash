@@ -53,7 +53,9 @@ unset _helpers_loaded
 #   2. The script's run() function shadowing BATS's run builtin
 source_script() {
   # Save BATS's run function before it gets overwritten
-  eval "$(declare -f run | sed '1s/^run /bats_run /')" 2>/dev/null || true
+  if declare -f run >/dev/null 2>&1; then
+    eval "$(declare -f run | sed '1s/^run /bats_run /')" 2>/dev/null
+  fi
 
   local _old_opts
   _old_opts="$(set +o)"          # capture current shell options as restore commands
@@ -79,7 +81,9 @@ source_script() {
 # Same guards as source_script() above.
 source_deploy_script() {
   # Save BATS's run function before it gets overwritten
-  eval "$(declare -f run | sed '1s/^run /bats_run /')" 2>/dev/null || true
+  if declare -f run >/dev/null 2>&1; then
+    eval "$(declare -f run | sed '1s/^run /bats_run /')" 2>/dev/null
+  fi
 
   local _old_opts
   _old_opts="$(set +o)"
@@ -105,7 +109,9 @@ source_deploy_script() {
 # Same guards as source_script() above.
 source_setup_script() {
   # Save BATS's run function before it gets overwritten
-  eval "$(declare -f run | sed '1s/^run /bats_run /')" 2>/dev/null || true
+  if declare -f run >/dev/null 2>&1; then
+    eval "$(declare -f run | sed '1s/^run /bats_run /')" 2>/dev/null
+  fi
 
   local _old_opts
   _old_opts="$(set +o)"
@@ -131,7 +137,9 @@ source_setup_script() {
 # Same guards as source_script() above.
 source_validate_script() {
   # Save BATS's run function before it gets overwritten
-  eval "$(declare -f run | sed '1s/^run /bats_run /')" 2>/dev/null || true
+  if declare -f run >/dev/null 2>&1; then
+    eval "$(declare -f run | sed '1s/^run /bats_run /')" 2>/dev/null
+  fi
 
   local _old_opts
   _old_opts="$(set +o)"
@@ -153,7 +161,9 @@ source_validate_script() {
 # Source shared common library for direct unit testing.
 source_common_lib() {
   # Save BATS's run function before it gets overwritten
-  eval "$(declare -f run | sed '1s/^run /bats_run /')" 2>/dev/null || true
+  if declare -f run >/dev/null 2>&1; then
+    eval "$(declare -f run | sed '1s/^run /bats_run /')" 2>/dev/null
+  fi
 
   local _old_opts
   _old_opts="$(set +o)"

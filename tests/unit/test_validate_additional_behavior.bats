@@ -133,6 +133,37 @@ UFW
   assert_json_fail_count "${json}" "0"
 }
 
+@test "swap_check: passes when swap is active and fstab has a single entry" {
+  swap_size="2G"
+  IS_CONTAINER="false"
+
+  swapon() {
+    if [[ "${1:-}" == "--show" && "${2:-}" == "--noheadings" && "${3:-}" == "--bytes" ]]; then
+      echo "/swapfile file 2147483648 0 -2"
+      return 0
+    fi
+    if [[ "${1:-}" == "--show" && "${2:-}" == "--noheadings" ]]; then
+      echo "/swapfile file 2G 0B -2"
+      return 0
+    fi
+    return 0
+  }
+
+  grep() {
+    if [[ "${1:-}" == "-cE" && "${2:-}" == "^/swapfile[[:space:]]" && "${3:-}" == "/etc/fstab" ]]; then
+      echo 1
+      return 0
+    fi
+    command grep "$@"
+  }
+
+  swap_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "swap: active (2048M)" "PASS"
+  assert_json_check_status "${json}" "swap: single fstab entry" "PASS"
+}
+
 @test "apparmor_check: passes when aa-status reports enabled" {
   aa-status() {
     [[ "$1" == "--enabled" ]] && return 0
@@ -166,6 +197,86 @@ SS
   assert_success
 }
 
+@test "coolify_ssh_check: records FAIL when key directory exists without ssh_key entries" {
+  local key_dir="/data/coolify/ssh/keys"
+  if [[ -d "${key_dir}" ]] && compgen -G "${key_dir}/ssh_key@*" >/dev/null; then
+    skip "existing Coolify ssh keys present"
+  fi
+
+  mkdir -p "${key_dir}" 2>/dev/null || skip "unable to create ${key_dir}"
+
+  coolify_ssh_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "coolify: ssh key exists" "FAIL"
+  assert_json_fail_count "${json}" "1"
+
+  rmdir "${key_dir}" 2>/dev/null || true
+  rmdir "/data/coolify/ssh" 2>/dev/null || true
+  rmdir "/data/coolify" 2>/dev/null || true
+}
+
+@test "coolify_ssh_check: records PASS when host key path is usable" {
+  local key_dir="/data/coolify/ssh/keys"
+  local key_file="${key_dir}/ssh_key@test-$$"
+  local auth_file="/root/.ssh/authorized_keys"
+  local auth_backup=""
+  local had_auth="false"
+  local pubkey="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyData coolify@test"
+
+  if [[ -d "${key_dir}" ]] && compgen -G "${key_dir}/ssh_key@*" >/dev/null; then
+    skip "existing Coolify ssh keys present"
+  fi
+
+  mkdir -p "${key_dir}" 2>/dev/null || skip "unable to create ${key_dir}"
+  mkdir -p "/root/.ssh" 2>/dev/null || skip "unable to create /root/.ssh"
+
+  if [[ -f "${auth_file}" ]]; then
+    had_auth="true"
+    auth_backup="$(mktemp)"
+    cp "${auth_file}" "${auth_backup}"
+  fi
+
+  : > "${key_file}"
+  printf '%s\n' "${pubkey}" > "${auth_file}"
+
+  ssh-keygen() {
+    if [[ "${1:-}" == "-y" ]]; then
+      echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyData generated@test"
+      return 0
+    fi
+    return 1
+  }
+
+  ssh() { return 0; }
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 1
+    fi
+    builtin command "$@"
+  }
+
+  coolify_ssh_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "coolify: ssh key exists" "PASS"
+  assert_json_check_status "${json}" "coolify: key in root authorized_keys" "PASS"
+  assert_json_check_status "${json}" "coolify: root@127.0.0.1 SSH functional" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  rm -f "${key_file}"
+  if [[ "${had_auth}" == "true" ]]; then
+    cp "${auth_backup}" "${auth_file}"
+  else
+    rm -f "${auth_file}"
+  fi
+  rm -f "${auth_backup}"
+  rmdir "${key_dir}" 2>/dev/null || true
+  rmdir "/data/coolify/ssh" 2>/dev/null || true
+  rmdir "/data/coolify" 2>/dev/null || true
+}
+
 @test "cloudflared_check: reports info when cloudflared is not installed" {
   systemctl() { return 1; }
   cloudflared_check
@@ -173,6 +284,31 @@ SS
   json="$(emit_validate_results_json)"
   assert_json_check_status "${json}" "cloudflared: not installed" "INFO"
   assert_json_fail_count "${json}" "0"
+}
+
+@test "cloudflared_check: records PASS when service is active" {
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "cloudflared" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  systemctl() {
+    if [[ "${1:-}" == "list-unit-files" ]]; then
+      echo "cloudflared.service enabled"
+      return 0
+    fi
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "cloudflared" ]]; then
+      return 0
+    fi
+    return 0
+  }
+
+  cloudflared_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "cloudflared: service active" "PASS"
 }
 
 @test "coolify_container_check: reports info when Docker is missing" {
@@ -190,6 +326,41 @@ SS
   assert_json_fail_count "${json}" "0"
 }
 
+@test "coolify_container_check: records PASS when required containers are healthy" {
+  if [[ ! -d "/data/coolify" ]]; then
+    mkdir -p "/data/coolify" 2>/dev/null || skip "unable to create /data/coolify"
+  fi
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  docker() {
+    if [[ "${1:-}" == "inspect" && "${2:-}" == "--format" ]]; then
+      case "${3:-}" in
+        "{{.State.Status}}")
+          echo running
+          return 0
+          ;;
+        "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}")
+          echo healthy
+          return 0
+          ;;
+      esac
+    fi
+    return 0
+  }
+
+  coolify_container_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "coolify-containers: coolify running (healthy)" "PASS"
+  assert_json_check_status "${json}" "coolify-containers: coolify-db running (healthy)" "PASS"
+}
+
 @test "admin_sudo_check: reports info when admin user is not configured" {
   ADMIN_USER=""
   admin_sudo_check
@@ -197,6 +368,54 @@ SS
   json="$(emit_validate_results_json)"
   assert_json_check_status "${json}" "admin: sudo" "INFO"
   assert_json_fail_count "${json}" "0"
+}
+
+@test "admin_sudo_check: passes when configured admin has sudo and valid authorized_keys" {
+  local tmphome
+  tmphome="$(mktemp -d)"
+  mkdir -p "${tmphome}/.ssh"
+  cat > "${tmphome}/.ssh/authorized_keys" <<'EOF'
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyData admin@test
+EOF
+
+  ADMIN_USER="alice"
+
+  id() {
+    if [[ "${1:-}" == "alice" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "-nG" && "${2:-}" == "alice" ]]; then
+      echo "alice sudo"
+      return 0
+    fi
+    command id "$@"
+  }
+
+  getent() {
+    if [[ "${1:-}" == "passwd" && "${2:-}" == "alice" ]]; then
+      echo "alice:x:1000:1000:Alice:${tmphome}:/bin/bash"
+      return 0
+    fi
+    command getent "$@"
+  }
+
+  sudo() {
+    if [[ "${1:-}" == "-l" && "${2:-}" == "-U" && "${3:-}" == "alice" ]]; then
+      echo "(ALL) NOPASSWD: ALL"
+      return 0
+    fi
+    return 1
+  }
+
+  admin_sudo_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "admin: in sudo group" "PASS"
+  assert_json_check_status "${json}" "admin: passwordless sudo (via other config)" "PASS"
+  assert_json_check_status "${json}" "admin: authorized_keys format" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  rm -rf "${tmphome}"
 }
 
 @test "auditd_check: executes and records audit status outcomes" {
@@ -212,6 +431,54 @@ SS
   assert_json_fail_count "${json}" "1"
 }
 
+@test "auditd_check: records PASS when auditd service, rules, and policy are compliant" {
+  local tmp_auditd_conf
+  tmp_auditd_conf="$(mktemp)"
+  cat > "${tmp_auditd_conf}" <<'EOF'
+max_log_file_action = keep_logs
+disk_full_action = suspend
+disk_error_action = suspend
+space_left = 100
+space_left_action = syslog
+admin_space_left = 50
+admin_space_left_action = suspend
+EOF
+
+  IS_CONTAINER="false"
+  AUDITD_CONF="${tmp_auditd_conf}"
+
+  systemctl() { return 0; }
+  auditctl() {
+    if [[ "${1:-}" == "-l" ]]; then
+      cat <<'RULES'
+-a always,exit -F arch=b64 -S sethostname -k identity
+-a always,exit -F arch=b64 -S chmod -k sudoers-change
+-a always,exit -F arch=b64 -S init_module -k kernel-module
+-a always,exit -F arch=b64 -S execve -k user_commands
+RULES
+      return 0
+    fi
+    if [[ "${1:-}" == "-s" ]]; then
+      cat <<'STATUS'
+lost 0
+backlog 5
+STATUS
+      return 0
+    fi
+    return 1
+  }
+
+  auditd_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "auditd: active" "PASS"
+  assert_json_check_status "${json}" "auditd: max_log_file_action=keep_logs" "PASS"
+  assert_json_check_status "${json}" "auditd: queue loss (lost=0)" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  rm -f "${tmp_auditd_conf}"
+}
+
 @test "banner_check: records banner verification result" {
   banner_check
   local json
@@ -221,12 +488,68 @@ SS
   [[ -n "${status}" ]]
 }
 
+@test "banner_check: records PASS when AUTHORIZED marker check succeeds" {
+  if [[ ! -f /etc/issue.net ]]; then
+    skip "/etc/issue.net missing in test environment"
+  fi
+
+  grep() { return 0; }
+
+  banner_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "banner: /etc/issue.net present" "PASS"
+}
+
 @test "coolify_binding_check: records binding guard posture" {
   BIND_DASHBOARD_TO_TAILSCALE="false"
   coolify_binding_check
   local json
   json="$(emit_validate_results_json)"
   assert_json_check_status "${json}" "coolify: dashboard UFW restriction" "INFO"
+  assert_json_fail_count "${json}" "0"
+}
+
+@test "coolify_binding_check: records PASS when tailscale-scoped UFW rules and guard timer are active" {
+  BIND_DASHBOARD_TO_TAILSCALE="true"
+  TAILSCALE_IFACE="tailscale0"
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "ufw" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  ufw() {
+    if [[ "${1:-}" == "status" ]]; then
+      cat <<'UFW'
+Status: active
+8000/tcp                   ALLOW IN    on tailscale0
+6001/tcp                   ALLOW IN    on tailscale0
+6002/tcp                   ALLOW IN    on tailscale0
+UFW
+      return 0
+    fi
+    return 0
+  }
+
+  ss() {
+    echo "LISTEN 0 4096 0.0.0.0:8000 0.0.0.0:* users:(\"docker\",pid=1,fd=1)"
+  }
+
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "coolify-binding-guard.timer" ]]; then
+      return 0
+    fi
+    return 0
+  }
+
+  coolify_binding_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "coolify: UFW rule port 8000 on tailscale0" "PASS"
+  assert_json_check_status "${json}" "coolify: UFW binding-guard timer active" "PASS"
   assert_json_fail_count "${json}" "0"
 }
 
@@ -263,6 +586,67 @@ SS
   assert_json_fail_count "${json}" "0"
 }
 
+@test "docker_daemon_check: records PASS when managed daemon settings are present" {
+  local daemon_json="/etc/docker/daemon.json"
+  local daemon_backup=""
+  local had_daemon="false"
+
+  mkdir -p "/etc/docker" 2>/dev/null || skip "unable to create /etc/docker"
+  if [[ -f "${daemon_json}" ]]; then
+    had_daemon="true"
+    daemon_backup="$(mktemp)"
+    cp "${daemon_json}" "${daemon_backup}"
+  fi
+
+  cat > "${daemon_json}" <<'EOF'
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m"
+  },
+  "live-restore": true,
+  "default-ipc-mode": "private",
+  "storage-driver": "overlay2",
+  "default-ulimits": {
+    "nofile": {"Name":"nofile","Hard":1048576,"Soft":1048576},
+    "nproc": {"Name":"nproc","Hard":65535,"Soft":65535}
+  }
+}
+EOF
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  docker() {
+    if [[ "${1:-}" == "info" && "${2:-}" == "--format" ]]; then
+      echo "json-file"
+      return 0
+    fi
+    if [[ "${1:-}" == "info" ]]; then
+      return 0
+    fi
+    return 0
+  }
+
+  docker_daemon_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-daemon: log-driver is json-file" "PASS"
+  assert_json_check_status "${json}" "docker-daemon: default-ipc-mode is private" "PASS"
+  assert_json_check_status "${json}" "docker-daemon: live log-driver is json-file" "PASS"
+
+  if [[ "${had_daemon}" == "true" ]]; then
+    cp "${daemon_backup}" "${daemon_json}"
+  else
+    rm -f "${daemon_json}"
+  fi
+  rm -f "${daemon_backup}"
+}
+
 @test "docker_trust_boundary_check: records info when Docker is unavailable" {
   command() {
     if [[ "$1" == "-v" && "$2" == "docker" ]]; then
@@ -276,6 +660,62 @@ SS
   json="$(emit_validate_results_json)"
   assert_json_check_status "${json}" "docker-trust: docker" "INFO"
   assert_json_fail_count "${json}" "0"
+}
+
+@test "docker_trust_boundary_check: records PASS when socket ownership and boundaries are sane" {
+  if [[ ! -S "/var/run/docker.sock" ]]; then
+    skip "/var/run/docker.sock unavailable in test environment"
+  fi
+
+  ADMIN_USER="alice"
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  stat() {
+    if [[ "${2:-}" == "/var/run/docker.sock" ]]; then
+      case "${1:-}" in
+        -c)
+          case "${3:-}" in
+            %a) echo 660 ;;
+            %U) echo root ;;
+            %G) echo docker ;;
+          esac
+          return 0
+          ;;
+      esac
+    fi
+    command stat "$@"
+  }
+
+  getent() {
+    if [[ "${1:-}" == "group" && "${2:-}" == "docker" ]]; then
+      echo "docker:x:999:"
+      return 0
+    fi
+    command getent "$@"
+  }
+
+  docker() {
+    if [[ "${1:-}" == "ps" && "${2:-}" == "-q" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "inspect" ]]; then
+      return 0
+    fi
+    return 0
+  }
+
+  docker_trust_boundary_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-trust: socket world-writable check" "PASS"
+  assert_json_check_status "${json}" "docker-trust: socket owner is root" "PASS"
+  assert_json_check_status "${json}" "docker-trust: admin user not in docker group" "PASS"
 }
 
 @test "docker_user_check: fails fast when iptables is unavailable" {
@@ -324,6 +764,57 @@ SS
   assert_json_fail_count "${json}" "0"
 }
 
+@test "docker_user_check: records PASS when managed rules are present and tunnel mode has no wan-web bypass" {
+  TUNNEL_MODE="true"
+  DOCKER_RULES_APPLIED="true"
+
+  command() {
+    if [[ "${1:-}" == "-v" ]]; then
+      case "${2:-}" in
+        iptables|docker|systemctl) return 0 ;;
+        ip6tables) return 1 ;;
+      esac
+    fi
+    builtin command "$@"
+  }
+
+  docker() {
+    if [[ "${1:-}" == "info" ]]; then
+      echo "iptables: true"
+      return 0
+    fi
+    return 0
+  }
+
+  systemctl() {
+    if [[ "${1:-}" == "list-unit-files" ]]; then
+      echo "docker.service enabled"
+      return 0
+    fi
+    return 0
+  }
+
+  iptables() {
+    if [[ "${1:-}" == "-t" && "${2:-}" == "filter" && "${3:-}" == "-S" && "${4:-}" == "DOCKER-USER" ]]; then
+      cat <<'EOF'
+-N DOCKER-USER
+-A DOCKER-USER -m comment --comment coolify-hardening-wan-drop -j DROP
+-A DOCKER-USER -m comment --comment coolify-hardening-bridge-docker0 -j RETURN
+EOF
+      return 0
+    fi
+    return 0
+  }
+
+  docker_user_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-user: IPv4 wan-drop" "PASS"
+  assert_json_check_status "${json}" "docker-user: IPv4 bridge-docker0" "PASS"
+  assert_json_check_status "${json}" "docker-user: tunnel-mode no wan-web" "PASS"
+  assert_json_fail_count "${json}" "0"
+}
+
 @test "docker_user_lifecycle_check: records info when Docker is not installed" {
   command() {
     if [[ "$1" == "-v" && "$2" == "docker" ]]; then
@@ -339,6 +830,63 @@ SS
   assert_json_fail_count "${json}" "0"
 }
 
+@test "docker_user_lifecycle_check: records PASS when unit wiring and lifecycle are valid" {
+  local unit_file="/etc/systemd/system/docker-user-hardening.service"
+  local backup=""
+  local had_unit="false"
+
+  mkdir -p "/etc/systemd/system" 2>/dev/null || skip "unable to create /etc/systemd/system"
+  if [[ -f "${unit_file}" ]]; then
+    had_unit="true"
+    backup="$(mktemp)"
+    cp "${unit_file}" "${backup}"
+  fi
+
+  cat > "${unit_file}" <<'EOF'
+[Unit]
+Description=docker user hardening
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/true
+
+[Install]
+WantedBy=docker.service
+EOF
+
+  systemctl() {
+    if [[ "${1:-}" == "show" && "${2:-}" == "docker-user-hardening.service" ]]; then
+      case "${3:-}" in
+        --property=ActiveState)
+          echo inactive
+          return 0
+          ;;
+        --property=Result)
+          echo success
+          return 0
+          ;;
+      esac
+    fi
+    return 0
+  }
+
+  docker_user_lifecycle_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-user: PartOf=docker.service" "PASS"
+  assert_json_check_status "${json}" "docker-user: WantedBy=docker.service" "PASS"
+  assert_json_check_status "${json}" "docker-user: service completed successfully" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  if [[ "${had_unit}" == "true" ]]; then
+    cp "${backup}" "${unit_file}"
+  else
+    rm -f "${unit_file}"
+  fi
+  rm -f "${backup}"
+}
+
 @test "fail2ban_check: records fail/info when fail2ban is absent" {
   systemctl() { return 1; }
   fail2ban_check
@@ -346,6 +894,64 @@ SS
   json="$(emit_validate_results_json)"
   assert_json_check_status "${json}" "fail2ban: active" "FAIL"
   assert_json_fail_count "${json}" "1"
+}
+
+@test "fail2ban_check: records PASS when service, jail, ignoreip, and backend are healthy" {
+  local jail_file="/etc/fail2ban/jail.d/coolify-hardening.local"
+  local jail_backup=""
+  local had_jail="false"
+
+  mkdir -p "/etc/fail2ban/jail.d" 2>/dev/null || skip "unable to create /etc/fail2ban/jail.d"
+  if [[ -f "${jail_file}" ]]; then
+    had_jail="true"
+    jail_backup="$(mktemp)"
+    cp "${jail_file}" "${jail_backup}"
+  fi
+
+  cat > "${jail_file}" <<'EOF'
+[DEFAULT]
+ignoreip = 127.0.0.1/8 100.64.0.0/10
+banaction = iptables-multiport
+EOF
+
+  TAILSCALE_CIDR="100.64.0.0/10"
+
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "fail2ban" ]]; then
+      return 0
+    fi
+    return 0
+  }
+
+  fail2ban-client() {
+    if [[ "${1:-}" == "status" && "${2:-}" == "sshd" ]]; then
+      return 0
+    fi
+    return 1
+  }
+
+  iptables() {
+    if [[ "${1:-}" == "-L" && "${2:-}" == "f2b-sshd" ]]; then
+      return 0
+    fi
+    return 0
+  }
+
+  fail2ban_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "fail2ban: active" "PASS"
+  assert_json_check_status "${json}" "fail2ban: sshd jail enabled" "PASS"
+  assert_json_check_status "${json}" "fail2ban: ignoreip includes Tailscale CIDR" "PASS"
+  assert_json_check_status "${json}" "fail2ban: f2b-sshd iptables chain present" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  if [[ "${had_jail}" == "true" ]]; then
+    cp "${jail_backup}" "${jail_file}"
+  else
+    rm -f "${jail_file}"
+  fi
+  rm -f "${jail_backup}"
 }
 
 @test "journald_check: records journald persistence posture" {
@@ -451,12 +1057,133 @@ SSHD
   assert_json_fail_count "${json}" "1"
 }
 
+@test "tailscale_check: records PASS when interface, BackendState, and IPv4 are present" {
+  TAILSCALE_IFACE="tailscale0"
+
+  ip() {
+    if [[ "${1:-}" == "link" && "${2:-}" == "show" && "${3:-}" == "tailscale0" ]]; then
+      return 0
+    fi
+    return 1
+  }
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "tailscale" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  tailscale() {
+    if [[ "${1:-}" == "status" && "${2:-}" == "--json" ]]; then
+      echo '{"BackendState":"Running","Peer":[]}'
+      return 0
+    fi
+    if [[ "${1:-}" == "ip" && "${2:-}" == "-4" ]]; then
+      echo "100.64.0.2"
+      return 0
+    fi
+    return 0
+  }
+
+  tailscale_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "tailscale: tailscale0 present" "PASS"
+  assert_json_check_status "${json}" "tailscale: BackendState=Running" "PASS"
+  assert_json_check_status "${json}" "tailscale: IPv4 assigned (100.64.0.2)" "PASS"
+}
+
 @test "unattended_upgrades_check: fails when local policy file is missing" {
   unattended_upgrades_check
   local json
   json="$(emit_validate_results_json)"
   assert_json_check_status "${json}" "auto-updates: local config" "FAIL"
   assert_json_fail_count "${json}" "1"
+}
+
+@test "unattended_upgrades_check: records PASS for security-only profile with active timers" {
+  local apt_local="/etc/apt/apt.conf.d/52unattended-upgrades-local"
+  local apt_backup=""
+  local had_apt_local="false"
+  local override1="/etc/systemd/system/apt-daily.timer.d/override.conf"
+  local override2="/etc/systemd/system/apt-daily-upgrade.timer.d/override.conf"
+  local override1_backup=""
+  local override2_backup=""
+  local had_override1="false"
+  local had_override2="false"
+
+  mkdir -p "/etc/apt/apt.conf.d" 2>/dev/null || skip "unable to create /etc/apt/apt.conf.d"
+  mkdir -p "/etc/systemd/system/apt-daily.timer.d" 2>/dev/null || skip "unable to create apt-daily timer override dir"
+  mkdir -p "/etc/systemd/system/apt-daily-upgrade.timer.d" 2>/dev/null || skip "unable to create apt-daily-upgrade timer override dir"
+
+  if [[ -f "${apt_local}" ]]; then
+    had_apt_local="true"
+    apt_backup="$(mktemp)"
+    cp "${apt_local}" "${apt_backup}"
+  fi
+  if [[ -f "${override1}" ]]; then
+    had_override1="true"
+    override1_backup="$(mktemp)"
+    cp "${override1}" "${override1_backup}"
+  fi
+  if [[ -f "${override2}" ]]; then
+    had_override2="true"
+    override2_backup="$(mktemp)"
+    cp "${override2}" "${override2_backup}"
+  fi
+
+  cat > "${apt_local}" <<'EOF'
+"origin=Ubuntu,codename=${distro_codename}-security,label=Ubuntu";
+Unattended-Upgrade::Automatic-Reboot "false";
+EOF
+
+  cat > "${override1}" <<'EOF'
+[Timer]
+Persistent=false
+EOF
+  cat > "${override2}" <<'EOF'
+[Timer]
+Persistent=false
+EOF
+
+  UPDATE_PROFILE="security-only"
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" ]]; then
+      return 0
+    fi
+    return 1
+  }
+
+  unattended_upgrades_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "auto-updates: Ubuntu security origin covered" "PASS"
+  assert_json_check_status "${json}" "auto-updates: Ubuntu updates origin excluded (security-only)" "PASS"
+  assert_json_check_status "${json}" "auto-updates: Docker CE origin excluded (security-only)" "PASS"
+  assert_json_check_status "${json}" "auto-updates: apt-daily.timer active" "PASS"
+  assert_json_check_status "${json}" "auto-updates: apt-daily-upgrade.timer active" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  if [[ "${had_apt_local}" == "true" ]]; then
+    cp "${apt_backup}" "${apt_local}"
+  else
+    rm -f "${apt_local}"
+  fi
+
+  if [[ "${had_override1}" == "true" ]]; then
+    cp "${override1_backup}" "${override1}"
+  else
+    rm -f "${override1}"
+  fi
+
+  if [[ "${had_override2}" == "true" ]]; then
+    cp "${override2_backup}" "${override2}"
+  else
+    rm -f "${override2}"
+  fi
+
+  rm -f "${apt_backup}" "${override1_backup}" "${override2_backup}"
 }
 
 @test "validate_timer_check: records timer state outcome" {

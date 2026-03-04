@@ -237,7 +237,7 @@ entries:
   behavior_test: 'tests/unit/test_functions.bats::die: exits 1 with ERROR message'
   checks:
   - 'tests/unit/test_functions.bats::die: exits 1 with ERROR message'
-  - 'tests/unit/test_functions.bats::detect_os: FORCE=true allows non-24.04 versions'
+  - 'tests/unit/test_functions.bats::die: exits 1 with ERROR message'
 - id: LS-BOOT-027
   script_path: bootstrap_hardening.sh
   function: disable_unused_services
@@ -541,7 +541,7 @@ entries:
   function: admin_sudo_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::admin_sudo_check:
-    reports info when admin user is not configured'
+    passes when configured admin has sudo and valid authorized_keys'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::admin_sudo_check: reports
     info when admin user is not configured'
@@ -563,7 +563,7 @@ entries:
   function: auditd_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::auditd_check:
-    executes and records audit status outcomes'
+    records PASS when auditd service, rules, and policy are compliant'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::auditd_check: executes and
     records audit status outcomes'
@@ -576,7 +576,7 @@ entries:
   function: banner_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::banner_check:
-    records banner verification result'
+    records PASS when AUTHORIZED marker check succeeds'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::banner_check: records banner
     verification result'
@@ -596,7 +596,7 @@ entries:
   function: cloudflared_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::cloudflared_check:
-    reports info when cloudflared is not installed'
+    records PASS when service is active'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::cloudflared_check: reports
     info when cloudflared is not installed'
@@ -607,7 +607,7 @@ entries:
   function: coolify_binding_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::coolify_binding_check:
-    records binding guard posture'
+    records PASS when tailscale-scoped UFW rules and guard timer are active'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::coolify_binding_check: records
     binding guard posture'
@@ -618,23 +618,19 @@ entries:
   function: coolify_container_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::coolify_container_check:
-    reports info when Docker is missing'
+    records PASS when required containers are healthy'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::coolify_container_check: reports
     info when Docker is missing'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::coolify_container_check:
-    skips cleanly when Coolify data directory is absent'
 - id: LS-VAL-009
   script_path: validate_hardening.sh
   function: coolify_ssh_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::coolify_ssh_check:
-    returns cleanly when Coolify SSH dir is absent'
+    records PASS when host key path is usable'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::coolify_ssh_check: returns
-    cleanly when Coolify SSH dir is absent'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::coolify_ssh_check: no-ops
-    when Coolify ssh key directory is absent'
+  - 'tests/unit/test_validate_additional_behavior.bats::coolify_ssh_check: records
+    FAIL when key directory exists without ssh_key entries'
 - id: LS-VAL-010
   script_path: validate_hardening.sh
   function: detect_container_runtime
@@ -660,7 +656,7 @@ entries:
   function: docker_daemon_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_daemon_check:
-    records daemon config status'
+    records PASS when managed daemon settings are present'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::docker_daemon_check: records
     daemon config status'
@@ -671,7 +667,7 @@ entries:
   function: docker_trust_boundary_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_trust_boundary_check:
-    records info when Docker is unavailable'
+    records PASS when socket ownership and boundaries are sane'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::docker_trust_boundary_check:
     records info when Docker is unavailable'
@@ -682,10 +678,12 @@ entries:
   function: docker_user_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_user_check:
-    fails fast when iptables is unavailable'
+    records PASS when managed rules are present and tunnel mode has no wan-web bypass'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::docker_user_check: fails fast
     when iptables is unavailable'
+  - 'tests/unit/test_validate_additional_behavior.bats::docker_user_check: records
+    info when docker service is unavailable and apply was deferred'
   - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_user_check: fails
     when wan-drop rule is missing'
   - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_user_check: fails
@@ -695,7 +693,7 @@ entries:
   function: docker_user_lifecycle_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_user_lifecycle_check:
-    records info when Docker is not installed'
+    records PASS when unit wiring and lifecycle are valid'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::docker_user_lifecycle_check:
     records info when Docker is not installed'
@@ -706,7 +704,7 @@ entries:
   function: fail2ban_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::fail2ban_check:
-    records fail/info when fail2ban is absent'
+    records PASS when service, jail, ignoreip, and backend are healthy'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::fail2ban_check: records fail/info
     when fail2ban is absent'
@@ -821,8 +819,8 @@ entries:
   script_path: validate_hardening.sh
   function: swap_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::swap_check: reports
-    disabled swap when swap_size is 0'
+  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::swap_check: passes
+    when swap is active and fstab has a single entry'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::swap_check: reports disabled
     swap when swap_size is 0'
@@ -844,7 +842,7 @@ entries:
   function: tailscale_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::tailscale_check:
-    fails when tailscale interface is missing'
+    records PASS when interface, BackendState, and IPv4 are present'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::tailscale_check: fails when
     tailscale interface is missing'
@@ -877,7 +875,7 @@ entries:
   function: unattended_upgrades_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::unattended_upgrades_check:
-    fails when local policy file is missing'
+    records PASS for security-only profile with active timers'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::unattended_upgrades_check:
     fails when local policy file is missing'
