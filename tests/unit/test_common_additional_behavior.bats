@@ -7,6 +7,43 @@ setup() {
   source_common_lib
 }
 
+@test "is_true (common): truthy and falsy values return expected status" {
+  run is_true "true"
+  assert_success
+
+  run is_true "no"
+  assert_failure
+}
+
+@test "log/warn helpers: emit expected prefixes" {
+  run log "hello"
+  assert_success
+  assert_output --partial "hello"
+
+  run warn "careful"
+  assert_success
+  assert_output --partial "WARN: careful"
+}
+
+@test "die helper: exits non-zero with fatal message" {
+  run die "boom"
+  assert_failure
+  assert_output --partial "FATAL: boom"
+}
+
+@test "step/pass/fail helpers: print formatted status output" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    step "1/5" "phase"
+    pass "ok"
+    fail "bad"
+  '
+  assert_success
+  assert_output --partial "1/5"
+  assert_output --partial "PASS"
+  assert_output --partial "FAIL"
+}
+
 @test "confirm: AUTO_YES=true skips prompt and returns success" {
   AUTO_YES="true"
   run confirm "Continue?"

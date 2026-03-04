@@ -3,6 +3,44 @@
 
 load '../helpers'
 
+@test "setup: parse_args extracts --server-ip" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    parse_args --server-ip "203.0.113.10"
+    [[ "${SERVER_IP}" == "203.0.113.10" ]]
+  '
+  assert_success
+}
+
+@test "setup: usage documents required flags" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    usage
+  '
+  assert_success
+  assert_output --partial "--server-ip"
+  assert_output --partial "--cf-api-token"
+}
+
+@test "setup: validate_inputs rejects invalid server IP" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    id() { [[ "$1" == "-u" ]] && { echo 0; return 0; }; command id "$@"; }
+    SERVER_IP="bad-ip"
+    ADMIN_USER="alice"
+    PUBKEY_FILE="/tmp/nonexistent.pub"
+    TAILSCALE_AUTH_KEY="tskey-auth-test"
+    DEPLOY_MODE="tunnel"
+    APP_DOMAIN_MODE="apex"
+    DOMAIN="example.com"
+    CF_API_TOKEN="token"
+    SWAP_SIZE="2G"
+    validate_inputs
+  '
+  assert_failure
+  assert_output --partial "Invalid server IP"
+}
+
 @test "setup: preflight phase marker exists" {
   run bash -c '
     source "'"${SETUP_SCRIPT}"'"
