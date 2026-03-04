@@ -19,7 +19,7 @@ load '../helpers'
   '
   assert_success
   assert_output --partial "--server-ip"
-  assert_output --partial "--cf-api-token"
+  assert_output --partial "--cf-api-token-file"
 }
 
 @test "setup: validate_inputs rejects invalid server IP" {
@@ -54,7 +54,9 @@ EOF
     command() { [[ "$1" == "-v" ]] && return 0; builtin command "$@"; }
     cf_verify_token() { :; }
     cf_get_zone_id() { CF_ZONE_ID="zone123"; }
+    cf_verify_dns_write_token() { :; }
     cf_get_account_id() { :; }
+    cf_verify_tunnel_token() { :; }
     resolve_app_domain() { :; }
 
     SERVER_IP="203.0.113.10"
@@ -107,6 +109,7 @@ EOF
     ADMIN_USER="coolifyadmin"
 
     pause_for_operator() { echo "$1"; }
+    docker() { return 1; }
     tmphome="$(mktemp -d)"
     mkdir -p "${tmphome}/.ssh"
     getent() { echo "coolifyadmin:x:1001:1001::${tmphome}:/bin/bash"; }
@@ -154,6 +157,7 @@ EOF
     TS_IP="100.64.0.25"
     ADMIN_USER="coolifyadmin"
     pause_for_operator() { :; }
+    docker() { return 1; }
     tmphome="$(mktemp -d)"
     mkdir -p "${tmphome}/.ssh"
     getent() { echo "coolifyadmin:x:1001:1001::${tmphome}:/bin/bash"; }

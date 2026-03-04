@@ -16,7 +16,9 @@ EOF
     command() { [[ "$1" == "-v" ]] && return 0; builtin command "$@"; }
     cf_verify_token() { :; }
     cf_get_zone_id() { CF_ZONE_ID="zone123"; }
+    cf_verify_dns_write_token() { :; }
     cf_get_account_id() { :; }
+    cf_verify_tunnel_token() { :; }
     resolve_app_domain() { :; }
     ssh_probe=0
     ssh_root() { ssh_probe=1; return 0; }
