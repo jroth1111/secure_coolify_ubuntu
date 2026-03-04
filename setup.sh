@@ -260,6 +260,15 @@ phase2_gates() {
   fi
 
   # Gate C: Validation passes
+  # Resume safety: if Docker is already present from a prior partial run, re-apply
+  # hardening-owned Docker settings before Gate C validation.
+  if docker version >/dev/null 2>&1; then
+    log "Gate C pre-check: Docker detected; reconciling daemon and bridge-SSH rules..."
+    reconcile_docker_daemon_local
+    systemctl start docker-user-hardening.service 2>/dev/null || true
+    systemctl start docker-ssh-cidr-sync.service 2>/dev/null || true
+  fi
+
   log "Gate C: Running validate_hardening.sh..."
   local validate_json
   validate_json="$("${SCRIPT_DIR}/validate_hardening.sh" --json 2>/dev/null)" || true

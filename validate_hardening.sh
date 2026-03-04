@@ -1314,6 +1314,13 @@ listening_ports_info() {
 
 coolify_ssh_check() {
   local ssh_dir="/data/coolify/ssh/keys"
+  local coolify_env="/data/coolify/source/.env"
+
+  # Gate-C safe: if Coolify environment is not present yet, treat this as
+  # pre-install state and skip SSH key checks.
+  if [[ ! -f "${coolify_env}" ]]; then
+    return 0
+  fi
 
   # Skip entirely if Coolify hasn't been installed yet (Gate C runs before install)
   if [[ ! -d "${ssh_dir}" ]]; then
@@ -1530,7 +1537,10 @@ coolify_container_check() {
     return
   fi
 
-  if [[ ! -d "/data/coolify" ]]; then
+  # Gate-C safe: only enforce Coolify container health after Coolify environment
+  # has been created. Partial directories from interrupted installs should not
+  # fail pre-phase3 validation.
+  if [[ ! -d "/data/coolify" || ! -f "${COOLIFY_ENV_FILE}" ]]; then
     return 0
   fi
 

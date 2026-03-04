@@ -450,6 +450,16 @@ phase2_gates() {
   # This ensures the latest versions are used even when phase 1 (root upload) was skipped.
   sync_companion_scripts
 
+  # Resume safety: if Docker was already installed by a prior partial run, re-apply
+  # hardening-owned Docker settings before Gate C validation. This keeps --ts-ip
+  # resumes from failing on expected pre-phase3 drift.
+  if ssh_admin_sudo 'docker version >/dev/null 2>&1'; then
+    log "Gate C pre-check: Docker detected; reconciling daemon and bridge-SSH rules..."
+    reconcile_docker_daemon_remote
+    ssh_admin_sudo 'systemctl start docker-user-hardening.service 2>/dev/null || true'
+    ssh_admin_sudo 'systemctl start docker-ssh-cidr-sync.service 2>/dev/null || true'
+  fi
+
   # Gate C: Validation passes
   log "Gate C: Running validate_hardening.sh..."
   local validate_json
