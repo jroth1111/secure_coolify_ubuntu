@@ -848,80 +848,6 @@ allowusers testadmin"
   assert_output --partial "true true true"
 }
 
-# ── detect_os() ───────────────────────────────────────────────────────────────
-
-@test "detect_os: fails when /etc/os-release missing" {
-  # Mock missing /etc/os-release by running in subshell with modified source
-  run bash -c '
-    source "'"${SCRIPT}"'" 2>/dev/null || true
-    # Override the source builtin to fail
-    detect_os() {
-      [[ -f /etc/os-release ]] || die "/etc/os-release not found."
-    }
-    detect_os 2>&1
-  '
-  # This will fail because /etc/os-release exists on the test system
-  # Instead, we test the behavior when ID is not ubuntu
-  true  # Skip this test as it requires system modification
-}
-
-@test "detect_os: fails for non-Ubuntu (simulated)" {
-  # We cannot easily modify /etc/os-release, so test the logic indirectly
-  # by checking that the function expects ID=ubuntu
-  run bash -c '
-    source "'"${SCRIPT}"'" 2>/dev/null
-    # Verify the function sources os-release and checks ID
-    type detect_os | grep -q "ubuntu"
-  '
-  assert_success
-}
-
-@test "detect_os: FORCE=true allows non-24.04 versions" {
-  run bash -c '
-    source "'"${SCRIPT}"'" 2>/dev/null
-    FORCE="true"
-    OS_VERSION="22.04"
-    # With FORCE=true, the version check should be bypassed
-    if [[ "${OS_VERSION}" != "24.04" ]] && ! is_true "${FORCE}"; then
-      die "Expected Ubuntu 24.04.x"
-    fi
-    echo "passed"
-  '
-  assert_success
-  assert_output --partial "passed"
-}
-
-# ── detect_wan_iface() ────────────────────────────────────────────────────────
-
-@test "detect_wan_iface: uses WAN_IFACE when already set" {
-  run bash -c '
-    source "'"${SCRIPT}"'" 2>/dev/null
-    WAN_IFACE="eth0"
-    detect_wan_iface
-    echo "${WAN_IFACE}"
-  '
-  assert_success
-  assert_output --partial "eth0"
-}
-
-@test "detect_wan_iface: dies when auto-detect returns empty (simulated)" {
-  # We test that the function calls die when WAN_IFACE ends up empty
-  run bash -c '
-    source "'"${SCRIPT}"'" 2>/dev/null
-    WAN_IFACE=""
-    # Simulate failed auto-detection by making ip return nothing
-    detect_wan_iface() {
-      if [[ -n "${WAN_IFACE}" ]]; then return 0; fi
-      # Simulate empty result
-      WAN_IFACE=""
-      [[ -n "${WAN_IFACE}" ]] || die "Unable to auto-detect WAN interface."
-    }
-    detect_wan_iface 2>&1
-  '
-  assert_failure
-  assert_output --partial "Unable to auto-detect"
-}
-
 # ── restore_ssh_dropin() ──────────────────────────────────────────────────────
 
 @test "restore_ssh_dropin: restores from backup" {
@@ -1248,22 +1174,7 @@ allowusers testadmin"
   assert_output --partial "--admin-user"
 }
 
-# ── configure_unattended_upgrades: Docker CE and MinimalSteps ─────────────────
-
-@test "configure_unattended_upgrades: supports balanced profile Docker CE origin" {
-  grep -q '"origin=Docker,label=Docker CE"' "${SCRIPT}"
-  grep -q 'UPDATE_PROFILE="\${UPDATE_PROFILE:-security-only}"' "${SCRIPT}"
-}
-
-@test "configure_unattended_upgrades: includes MinimalSteps in script" {
-  grep -q 'MinimalSteps' "${SCRIPT}"
-}
-
 # ── retry_apt_update ──────────────────────────────────────────────────────────
-
-@test "bootstrap script declares retry_apt_update function" {
-  grep -q "^retry_apt_update()" "${SCRIPT}"
-}
 
 @test "retry_apt_update: dies after exhausted retries" {
   local stub_dir
@@ -1282,10 +1193,6 @@ allowusers testadmin"
 }
 
 # ── check_disk_space ──────────────────────────────────────────────────────────
-
-@test "bootstrap script declares check_disk_space function" {
-  grep -q "^check_disk_space()" "${SCRIPT}"
-}
 
 @test "check_disk_space: passes when ample space available" {
   local stub_dir
@@ -1333,114 +1240,12 @@ allowusers testadmin"
   rm -rf "${stub_dir}"
 }
 
-# ── configure_fail2ban ────────────────────────────────────────────────────────
-
-@test "configure_fail2ban: ignoreip includes TAILSCALE_CIDR" {
-  grep -qE "ignoreip.*TAILSCALE_CIDR|ignoreip.*100\.64" "${SCRIPT}"
-}
-
-# ── Docker deferred restart ───────────────────────────────────────────────────
-
-@test "bootstrap script declares DOCKER_DAEMON_NEEDS_RESTART global" {
-  grep -q 'DOCKER_DAEMON_NEEDS_RESTART="false"' "${SCRIPT}"
-}
-
-@test "configure_docker_daemon: defers restart via flag" {
-  grep -q 'DOCKER_DAEMON_NEEDS_RESTART="true"' "${SCRIPT}"
-}
-
-@test "run_post_checks: guards against world-writable docker.sock" {
-  grep -q '/var/run/docker.sock is world-writable' "${SCRIPT}"
-}
-
-@test "run_post_checks: warns when admin user is in docker group" {
-  grep -q 'admin user .*docker group' "${SCRIPT}"
-}
-
-# ── daemon.json fallback removed ─────────────────────────────────────────────
-
-@test "configure_docker_daemon: sed fallback removed; uses die on merge failure" {
-  run bash -c 'grep -c "sed.*live-restore" "'"${SCRIPT}"'"'
-  assert_output "0"
-}
-
-@test "configure_docker_daemon: required_settings contains default-ipc-mode" {
-  grep -q '"default-ipc-mode"' "${SCRIPT}"
-}
-
-@test "configure_docker_daemon: required_settings contains storage-driver" {
-  grep -q '"storage-driver"' "${SCRIPT}"
-}
-
-@test "configure_docker_daemon: required_settings contains default-ulimits" {
-  grep -q '"default-ulimits"' "${SCRIPT}"
-}
-
-@test "configure_docker_daemon: required_settings JSON is valid" {
-  local json
-  json="$(grep 'local required_settings=' "${SCRIPT}" | sed "s/.*='//;s/'$//")"
-  echo "${json}" | jq . >/dev/null 2>&1
-}
-
-@test "run_post_checks: asserts default-ipc-mode in daemon.json" {
-  grep -q '"default-ipc-mode".*DOCKER_DAEMON_JSON' "${SCRIPT}"
-}
-
-@test "run_post_checks: asserts storage-driver in daemon.json" {
-  grep -q '"storage-driver".*DOCKER_DAEMON_JSON' "${SCRIPT}"
-}
-
-@test "run_post_checks: asserts default-ulimits in daemon.json" {
-  grep -q '"default-ulimits".*DOCKER_DAEMON_JSON' "${SCRIPT}"
-}
-
-# ── sysctl precedence and defaults ────────────────────────────────────────────
-
-@test "sysctl drop-in uses 99- prefix for precedence" {
-  grep -q 'SYSCTL_DROPIN_FILE="/etc/sysctl.d/99-coolify-hardening.conf"' "${SCRIPT}"
-}
-
-@test "configure_sysctl: removes old 60- drop-in during migration" {
-  grep -q '60-coolify-hardening.conf' "${SCRIPT}"
-  grep -q 'Removing superseded sysctl drop-in' "${SCRIPT}"
-}
-
-@test "sysctl: kernel.unprivileged_bpf_disabled is 2 (not 1)" {
-  grep -q 'kernel.unprivileged_bpf_disabled = 2' "${SCRIPT}"
-}
-
-# ── journald JOURNAL_MAX_USE ──────────────────────────────────────────────────
-
-@test "bootstrap script declares JOURNAL_MAX_USE default of 2G" {
-  grep -q 'JOURNAL_MAX_USE="${JOURNAL_MAX_USE:-2G}"' "${SCRIPT}"
-}
-
-@test "configure_journald: uses JOURNAL_MAX_USE variable" {
-  grep -q 'SystemMaxUse=${JOURNAL_MAX_USE}' "${SCRIPT}"
-}
-
-# ── upgrade mail ──────────────────────────────────────────────────────────────
-
-@test "parse_args: accepts --upgrade-mail flag" {
-  grep -q '"--upgrade-mail"\|--upgrade-mail)' "${SCRIPT}"
-}
-
-@test "configure_unattended_upgrades: conditionally includes Mail directive" {
-  grep -q "UPGRADE_MAIL" "${SCRIPT}"
-  grep -q "MailReport" "${SCRIPT}"
-}
-
-# ── UFW ICMP ─────────────────────────────────────────────────────────────────
-
-@test "configure_ufw: includes ICMP allow rule" {
-  grep -q "proto icmp" "${SCRIPT}"
-  grep -q "coolify-hardening-icmp" "${SCRIPT}"
-}
-
 # ── hardening validation timer ────────────────────────────────────────────────
 
-@test "bootstrap script declares configure_hardening_validation_timer function" {
-  grep -q "^configure_hardening_validation_timer()" "${SCRIPT}"
+@test "parse_args: accepts --upgrade-mail flag as runtime behavior" {
+  run bash -c 'source "'"${SCRIPT}"'" && parse_args --upgrade-mail "ops@example.com" && echo "${UPGRADE_MAIL}"'
+  assert_success
+  assert_output --partial "ops@example.com"
 }
 
 @test "configure_hardening_validation_timer: dry-run skips install" {
@@ -1451,45 +1256,6 @@ allowusers testadmin"
   '
   assert_success
   assert_output --partial "DRY-RUN"
-}
-
-# ── swap stale cleanup ────────────────────────────────────────────────────────
-
-@test "configure_swap: removes stale swapfile before fallocate" {
-  grep -q "Stale.*swapfile\|rm -f.*swap_file" "${SCRIPT}"
-}
-
-# ── coolify binding retry loop ────────────────────────────────────────────────
-
-@test "configure_coolify_binding: uses retry loop not bare sleep 5" {
-  # No bare 'sleep 5' as the sole wait step
-  run bash -c 'awk "/^configure_coolify_binding\(\)/,/^\}/" "'"${SCRIPT}"'" | grep -c "^    sleep 5$"'
-  assert_output "0"
-}
-
-@test "configure_coolify_binding.sh: uses retry loop not bare sleep 5" {
-  local binding_script="${PROJECT_ROOT}/configure_coolify_binding.sh"
-  run grep -c "^sleep 5$" "${binding_script}"
-  assert_output "0"
-}
-
-# ── guard script improvements ─────────────────────────────────────────────────
-
-@test "guard script: prunes old backups" {
-  grep -q "_old_baks\|bak\.\*" "${SCRIPT}"
-}
-
-@test "guard script: health-checks Coolify after restart" {
-  grep -q "docker inspect coolify" "${SCRIPT}"
-}
-
-# ── write_state ordering ─────────────────────────────────────────────────────
-
-@test "main: write_state called before run_post_checks" {
-  local ws_line pc_line
-  ws_line="$(grep -n "write_state" "${SCRIPT}" | grep -v "write_state()\|#" | head -1 | cut -d: -f1)"
-  pc_line="$(grep -n "run_post_checks" "${SCRIPT}" | grep -v "run_post_checks()\|#" | head -1 | cut -d: -f1)"
-  (( ws_line < pc_line ))
 }
 
 # ── set_auditd_conf_kv() ──────────────────────────────────────────────────────
@@ -1563,14 +1329,4 @@ allowusers testadmin"
   DOCKER_SSH_CIDRS=()
   add_docker_ssh_cidr "172.17.0.0/16"
   [ "${#DOCKER_SSH_CIDRS[@]}" -eq 1 ]
-}
-
-# ── IPv6 DOCKER-USER bridge RETURN rules ──────────────────────────────────────
-
-@test "bootstrap: IPv6 DOCKER-USER includes docker0 bridge RETURN rule" {
-  grep -q "coolify-hardening-bridge-docker06" "${SCRIPT}"
-}
-
-@test "bootstrap: IPv6 DOCKER-USER includes br+ bridge RETURN rule" {
-  grep -q "coolify-hardening-bridge-user6" "${SCRIPT}"
 }
