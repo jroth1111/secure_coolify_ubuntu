@@ -299,12 +299,12 @@ Gate E passes when the dashboard is reachable over Tailscale and not reachable o
 
 ### 4.3 DNS Configuration
 
-- **Tunnel mode (default)**: `deploy.sh`/`setup.sh` automatically creates proxied CNAME records for:
-  - `<domain>` (dashboard)
-  - `ws.<domain>` (Coolify realtime websocket/Soketi)
-  - `*.app-domain` (app routing wildcard)
-  - `*.zone` when `app-domain` differs from zone root
-  All point to `<tunnel-id>.cfargotunnel.com`.
+- **Tunnel mode (default, private-only dashboard/realtime)**:
+  - Removes exact host DNS records for `<domain>` and `ws.<domain>` on every deploy/redeploy
+  - Creates/updates proxied wildcard CNAMEs for app routing:
+    - `*.app-domain`
+    - `*.zone` when `app-domain` differs from zone root
+  - Wildcards point to `<tunnel-id>.cfargotunnel.com`
 - **Standard mode**: `deploy.sh`/`setup.sh` automatically creates an A record for your domain **and** a wildcard A record (`*.example.com`) pointing to the server's public IP (Cloudflare-proxied).
 
 ### 4.4 Post-Deploy: Enable Automatic SSL + Subdomains
@@ -325,7 +325,7 @@ After these steps, the end-to-end flow for every new app is: deploy in Coolify �
 
 Both deployment modes use Cloudflare's edge for user-facing TLS via Universal SSL (`*.example.com`). No wildcard certificate is needed on the origin server:
 
-- **Tunnel mode**: Cloudflare terminates TLS at the edge. The tunnel delivers HTTP to `localhost:80` (Traefik). No origin cert required.
+- **Tunnel mode**: Cloudflare terminates TLS at the edge. Public tunnel ingress is wildcard-app only (`*.app-domain` to `localhost:80`). Dashboard/realtime hosts are blocked (`http_status:404`) and expected to be accessed over Tailscale. No origin cert required.
 - **Standard mode** (proxied + Full SSL): Cloudflare terminates edge TLS and connects to the origin via HTTPS, but Full mode accepts any cert — including self-signed or Traefik's default. No wildcard cert required.
 
 **Optional: origin wildcard certs.** If you need Full (Strict) SSL or DNS-only subdomains where Traefik terminates TLS, configure Traefik's DNS-01 challenge with your Cloudflare API token in the Coolify UI (Servers > Proxy). See [Coolify wildcard cert docs](https://coolify.io/docs/knowledge-base/proxy/traefik/wildcard-certs). Add `CF_DNS_API_TOKEN` as an environment variable in the Traefik container. This is a Coolify-level config change — our hardening scripts do not modify it.
@@ -353,13 +353,11 @@ sudo apt-get install -y cloudflared
 cloudflared tunnel login
 cloudflared tunnel create coolify-tunnel
 
-# Route DNS: dashboard + realtime websocket + wildcard for apps
-cloudflared tunnel route dns coolify-tunnel your-domain.com
-cloudflared tunnel route dns coolify-tunnel ws.your-domain.com
+# Route DNS: wildcard apps only (private-only dashboard/realtime profile)
 cloudflared tunnel route dns coolify-tunnel "*.your-domain.com"
 ```
 
-Then write `/etc/cloudflared/config.yml` with dashboard/realtime/terminal ingress:
+Then write `/etc/cloudflared/config.yml` with private-only ingress defaults:
 
 ```yaml
 tunnel: <tunnel-id>
@@ -367,16 +365,20 @@ credentials-file: /etc/cloudflared/<tunnel-id>.json
 
 ingress:
   - hostname: your-domain.com
-    path: /terminal/ws
-    service: http://localhost:6002
-  - hostname: your-domain.com
-    service: http://localhost:8000
+    service: http_status:404
   - hostname: ws.your-domain.com
-    service: http://localhost:6001
+    service: http_status:404
   - hostname: "*.your-domain.com"
     service: http://localhost:80
   - service: http_status:404
-  - service: http_status:404
+```
+
+Also set Coolify realtime env vars to Tailscale:
+
+```bash
+sudo sed -i '/^PUSHER_HOST=/d;/^PUSHER_PORT=/d;/^PUSHER_SCHEME=/d' /data/coolify/source/.env
+printf '%s\n' "PUSHER_HOST=<tailscale-ip>" "PUSHER_PORT=6001" "PUSHER_SCHEME=http" | sudo tee -a /data/coolify/source/.env >/dev/null
+docker compose -f /data/coolify/source/docker-compose.yml -f /data/coolify/source/docker-compose.prod.yml up -d --force-recreate coolify soketi
 ```
 
 Start the service:
@@ -414,13 +416,18 @@ ssh coolifyadmin@<tailscale-ip>           # Should work
 ssh coolifyadmin@<public-ip> 2>&1 || true # Should fail/timeout
 
 # Coolify dashboard (after split-horizon binding):
-curl -s -o /dev/null -w '%{http_code}' http://<tailscale-ip>:8000  # Should return 200
+curl -s -o /dev/null -w '%{http_code}' http://<tailscale-ip>:8000  # Should return 2xx/3xx
 curl -s -o /dev/null -w '%{http_code}' http://<public-ip>:8000     # Should fail
 
-# Tunnel mode: verify cloudflared is running and no public HTTP ports
+# Realtime websocket reachability boundaries:
+curl -s -o /dev/null -w '%{http_code}' http://<tailscale-ip>:6001  # Should return non-000
+curl -s -o /dev/null -w '%{http_code}' http://<public-ip>:6001     # Should fail
+
+# Tunnel mode: verify cloudflared is running and public dashboard/ws hosts are blocked
 sudo systemctl status cloudflared        # Should be active
 sudo ufw status verbose                  # Should NOT show 80/443 ALLOW on WAN
-curl -s -o /dev/null -w '%{http_code}' https://<your-domain>  # Should return 200 (via tunnel)
+curl -s -o /dev/null -w '%{http_code}' https://<your-domain>       # Should NOT be 2xx/3xx
+curl -s -o /dev/null -w '%{http_code}' https://ws.<your-domain>    # Should NOT be 2xx/3xx
 
 # Standard mode: verify public web access
 curl -s -o /dev/null -w '%{http_code}' http://<public-ip>     # Should return 200 (or redirect)
