@@ -44,6 +44,39 @@ REQUIRED_KEYS = {
 }
 
 VALID_CRITICALITY = {"security", "orchestration", "utility"}
+ROBUST_VALIDATE_CHECK_FUNCTIONS = {
+    "ssh_check",
+    "ufw_check",
+    "docker_user_check",
+    "sysctl_check",
+    "auditd_check",
+}
+
+SOURCE_PATTERNS = {
+    "bootstrap_hardening.sh": [
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap_hardening\.sh)",
+    ],
+    "validate_hardening.sh": [
+        r"\bsource_validate_script\b",
+        r"\bsource\b[^\n]*(?:VALIDATE_SCRIPT|validate_hardening\.sh)",
+    ],
+    "deploy.sh": [
+        r"\bsource_deploy_script\b",
+        r"\bsource\b[^\n]*(?:DEPLOY_SCRIPT|deploy\.sh)",
+    ],
+    "setup.sh": [
+        r"\bsource_setup_script\b",
+        r"\bsource\b[^\n]*(?:SETUP_SCRIPT|setup\.sh)",
+    ],
+    "lib/coolify-common.sh": [
+        r"\bsource_common_lib\b",
+        r"\bsource_deploy_script\b",
+        r"\bsource_setup_script\b",
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:COMMON_LIB|coolify-common\.sh|DEPLOY_SCRIPT|SETUP_SCRIPT|SCRIPT)",
+    ],
+}
 
 
 def strip_heredocs(text: str) -> str:
@@ -87,13 +120,15 @@ def extract_functions(script_rel: str) -> list[str]:
     return names
 
 
-def parse_bats_tests() -> dict[str, dict[str, str]]:
+def parse_bats_tests() -> tuple[dict[str, dict[str, str]], dict[str, str]]:
     tests: dict[str, dict[str, str]] = {}
+    file_texts: dict[str, str] = {}
     for suite in (repo / "tests" / "unit", repo / "tests" / "integration"):
         for path in sorted(suite.glob("*.bats")):
             txt = path.read_text(encoding="utf-8")
             rel = path.relative_to(repo).as_posix()
             tests[rel] = {}
+            file_texts[rel] = txt
 
             for m in re.finditer(r'@test\s+"([^\"]+)"\s*\{', txt):
                 title = m.group(1)
@@ -108,7 +143,11 @@ def parse_bats_tests() -> dict[str, dict[str, str]]:
                     i += 1
                 body = txt[start : i - 1]
                 tests[rel][title] = body
-    return tests
+    return tests, file_texts
+
+
+def file_sources_target(file_text: str, script_path: str) -> bool:
+    return any(re.search(pattern, file_text) for pattern in SOURCE_PATTERNS[script_path])
 
 
 def has_assertion(body: str) -> bool:
@@ -194,7 +233,7 @@ if not isinstance(entries, list):
     raise SystemExit(2)
 
 inventory: dict[str, set[str]] = {script: set(extract_functions(script)) for script in SCRIPT_TARGETS}
-tests = parse_bats_tests()
+tests, file_texts = parse_bats_tests()
 
 errors: list[str] = []
 seen_ids: set[str] = set()
@@ -257,6 +296,11 @@ for idx, entry in enumerate(entries, start=1):
     if behavior_file not in tests:
         errors.append(f"[{entry_id}] behavior test file not found: {behavior_file}")
         continue
+    if not file_sources_target(file_texts.get(behavior_file, ""), script_path):
+        errors.append(
+            f"[{entry_id}] behavior test file does not source {script_path}: {behavior_file}"
+        )
+        continue
     if behavior_title not in tests[behavior_file]:
         errors.append(
             f"[{entry_id}] behavior test title not found in {behavior_file}: {behavior_title}"
@@ -287,6 +331,11 @@ for idx, entry in enumerate(entries, start=1):
         if check_file not in tests:
             errors.append(f"[{entry_id}] check test file not found: {check_file}")
             continue
+        if not file_sources_target(file_texts.get(check_file, ""), script_path):
+            errors.append(
+                f"[{entry_id}] check file does not source {script_path}: {check_file}"
+            )
+            continue
         if check_title not in tests[check_file]:
             errors.append(
                 f"[{entry_id}] check test title not found in {check_file}: {check_title}"
@@ -301,6 +350,13 @@ for idx, entry in enumerate(entries, start=1):
         if not calls_function(check_body, fn, script_path):
             errors.append(
                 f"[{entry_id}] check does not execute {fn}: {check_file}::{check_title}"
+            )
+
+    if script_path == "validate_hardening.sh" and fn in ROBUST_VALIDATE_CHECK_FUNCTIONS:
+        independent_checks = [c for c in checks if isinstance(c, str) and c != behavior_ref]
+        if not independent_checks:
+            errors.append(
+                f"[{entry_id}] critical validator check requires an independent check ref distinct from behavior_test"
             )
 
 # Inventory completeness.

@@ -32,6 +32,7 @@ ALLOWED_TEST_FILES = {
     },
     "validate_hardening.sh": {
         "tests/unit/test_validate_additional_behavior.bats",
+        "tests/unit/test_validate_check_outcomes_robust.bats",
         "tests/unit/test_validate_functions.bats",
         "tests/integration/test_validate_script.bats",
         "tests/integration/test_validate_negative_matrix.bats",
@@ -53,6 +54,32 @@ ALLOWED_TEST_FILES = {
         "tests/unit/test_deploy_workflow_contract.bats",
         "tests/unit/test_setup_workflow_contract.bats",
     },
+}
+
+SOURCE_PATTERNS = {
+    "bootstrap_hardening.sh": [
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap_hardening\.sh)",
+    ],
+    "validate_hardening.sh": [
+        r"\bsource_validate_script\b",
+        r"\bsource\b[^\n]*(?:VALIDATE_SCRIPT|validate_hardening\.sh)",
+    ],
+    "deploy.sh": [
+        r"\bsource_deploy_script\b",
+        r"\bsource\b[^\n]*(?:DEPLOY_SCRIPT|deploy\.sh)",
+    ],
+    "setup.sh": [
+        r"\bsource_setup_script\b",
+        r"\bsource\b[^\n]*(?:SETUP_SCRIPT|setup\.sh)",
+    ],
+    "lib/coolify-common.sh": [
+        r"\bsource_common_lib\b",
+        r"\bsource_deploy_script\b",
+        r"\bsource_setup_script\b",
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:COMMON_LIB|coolify-common\.sh|DEPLOY_SCRIPT|SETUP_SCRIPT|SCRIPT)",
+    ],
 }
 
 
@@ -99,12 +126,14 @@ class TestBlock:
         self.body = body
 
 
-def parse_bats_tests() -> list[TestBlock]:
+def parse_bats_tests() -> tuple[list[TestBlock], dict[str, str]]:
     blocks: list[TestBlock] = []
+    file_texts: dict[str, str] = {}
     for suite in (Path("tests/unit"), Path("tests/integration")):
         for path in sorted(suite.glob("*.bats")):
             txt = path.read_text(encoding="utf-8")
             rel = path.as_posix()
+            file_texts[rel] = txt
 
             for m in re.finditer(r'@test\s+"([^\"]+)"\s*\{', txt):
                 title = m.group(1)
@@ -119,7 +148,11 @@ def parse_bats_tests() -> list[TestBlock]:
                     i += 1
                 body = txt[start : i - 1]
                 blocks.append(TestBlock(rel, title, body))
-    return blocks
+    return blocks, file_texts
+
+
+def file_sources_target(file_text: str, script_path: str) -> bool:
+    return any(re.search(pattern, file_text) for pattern in SOURCE_PATTERNS[script_path])
 
 
 def has_assertion(body: str) -> bool:
@@ -168,7 +201,7 @@ def calls_function(body: str, fn: str, script_path: str) -> bool:
     return False
 
 
-all_tests = parse_bats_tests()
+all_tests, file_texts = parse_bats_tests()
 inventory = {script: extract_functions(script) for script in SCRIPT_TARGETS}
 
 missing: list[tuple[str, str]] = []
@@ -185,7 +218,10 @@ for script in SCRIPT_TARGETS:
         candidates = [
             t
             for t in all_tests
-            if t.file in allowed and has_assertion(t.body) and calls_function(t.body, fn, script)
+            if t.file in allowed
+            and file_sources_target(file_texts.get(t.file, ""), script)
+            and has_assertion(t.body)
+            and calls_function(t.body, fn, script)
         ]
         if candidates:
             script_covered += 1
