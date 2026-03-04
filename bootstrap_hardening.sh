@@ -1149,10 +1149,27 @@ reload_ssh_service() {
 add_docker_ssh_cidr() {
   local cidr="$1"
   local existing
+  local normalized_cidr
 
   [[ -n "${cidr}" ]] || return 0
   # SSH/UFW rules here are IPv4-focused.
   [[ "${cidr}" =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/([0-9]|[12][0-9]|3[0-2])$ ]] || return 0
+
+  # Normalize host/prefix form (e.g. 10.0.0.1/24) to canonical network/prefix
+  # (10.0.0.0/24) so Match Address and UFW rules remain valid.
+  normalized_cidr="$(python3 - "${cidr}" <<'PY'
+import ipaddress
+import sys
+try:
+    net = ipaddress.ip_network(sys.argv[1], strict=False)
+    if isinstance(net, ipaddress.IPv4Network):
+        print(str(net))
+except Exception:
+    pass
+PY
+)"
+  [[ -n "${normalized_cidr}" ]] || return 0
+  cidr="${normalized_cidr}"
 
   for existing in "${DOCKER_SSH_CIDRS[@]}"; do
     [[ "${existing}" == "${cidr}" ]] && return 0
@@ -2307,16 +2324,32 @@ is_valid_cidr() {
   [[ "$1" =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/([0-9]|[12][0-9]|3[0-2])$ ]]
 }
 
+normalize_cidr() {
+  python3 - "$1" <<'PY'
+import ipaddress
+import sys
+try:
+    net = ipaddress.ip_network(sys.argv[1], strict=False)
+    if isinstance(net, ipaddress.IPv4Network):
+        print(str(net))
+except Exception:
+    pass
+PY
+}
+
 declare -a cidrs=()
 declare -A seen=()
 
 add_cidr() {
   local cidr="$1"
+  local normalized
   [[ -n "${cidr}" ]] || return 0
   is_valid_cidr "${cidr}" || return 0
-  if [[ -z "${seen[${cidr}]:-}" ]]; then
-    cidrs+=("${cidr}")
-    seen["${cidr}"]=1
+  normalized="$(normalize_cidr "${cidr}")"
+  [[ -n "${normalized}" ]] || return 0
+  if [[ -z "${seen[${normalized}]:-}" ]]; then
+    cidrs+=("${normalized}")
+    seen["${normalized}"]=1
   fi
 }
 
