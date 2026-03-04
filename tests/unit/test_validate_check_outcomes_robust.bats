@@ -359,3 +359,440 @@ STATUS
   assert_output --partial "[FAIL]"
   assert_output --partial "auditd: queue loss"
 }
+
+@test "admin_sudo_check: fails when configured admin user does not exist" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+    ADMIN_USER="missingadmin"
+
+    id() {
+      if [[ "$1" == "missingadmin" ]]; then
+        return 1
+      fi
+      command id "$@"
+    }
+
+    admin_sudo_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "admin: user"
+}
+
+@test "apparmor_check: fails when aa-status is unavailable outside container" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+    IS_CONTAINER="false"
+
+    command() {
+      if [[ "$1" == "-v" && "$2" == "aa-status" ]]; then
+        return 1
+      fi
+      builtin command "$@"
+    }
+
+    apparmor_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "apparmor: aa-status"
+}
+
+@test "banner_check: fails when AUTHORIZED marker is missing" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+
+    grep() { return 1; }
+
+    banner_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "banner: /etc/issue.net"
+}
+
+@test "cloudflared_check: fails when service is installed but inactive" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+
+    command() {
+      if [[ "$1" == "-v" && "$2" == "cloudflared" ]]; then
+        return 0
+      fi
+      builtin command "$@"
+    }
+
+    systemctl() {
+      if [[ "$1" == "list-unit-files" ]]; then
+        echo "cloudflared.service enabled"
+        return 0
+      fi
+      if [[ "$1" == "is-active" && "$2" == "--quiet" && "$3" == "cloudflared" ]]; then
+        return 1
+      fi
+      if [[ "$1" == "is-active" && "$2" == "cloudflared" ]]; then
+        echo "inactive"
+        return 3
+      fi
+      return 0
+    }
+
+    cloudflared_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "cloudflared: service active"
+}
+
+@test "coolify_binding_check: fails when dashboard binding is enabled but ufw is missing" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+    BIND_DASHBOARD_TO_TAILSCALE="true"
+
+    command() {
+      if [[ "$1" == "-v" && "$2" == "ufw" ]]; then
+        return 1
+      fi
+      builtin command "$@"
+    }
+
+    coolify_binding_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "coolify: ufw"
+}
+
+@test "coolify_container_check: skips cleanly when Coolify data directory is absent" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+
+    command() {
+      if [[ "$1" == "-v" && "$2" == "docker" ]]; then
+        return 0
+      fi
+      builtin command "$@"
+    }
+
+    coolify_container_check
+    [[ "${PASS_COUNT}" -eq 0 ]]
+    [[ "${FAIL_COUNT}" -eq 0 ]]
+    [[ "${INFO_COUNT}" -eq 0 ]]
+  '
+  assert_success
+}
+
+@test "coolify_ssh_check: no-ops when Coolify ssh key directory is absent" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+
+    coolify_ssh_check
+    [[ "${PASS_COUNT}" -eq 0 ]]
+    [[ "${FAIL_COUNT}" -eq 0 ]]
+    [[ "${INFO_COUNT}" -eq 0 ]]
+  '
+  assert_success
+}
+
+@test "disabled_services_check: fails when rpcbind service is enabled" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+
+    systemctl() {
+      if [[ "$1" == "is-enabled" ]]; then
+        case "$2" in
+          rpcbind.service) echo "enabled"; return 0 ;;
+          *) echo "masked"; return 0 ;;
+        esac
+      fi
+      return 0
+    }
+
+    disabled_services_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "disabled: rpcbind"
+}
+
+@test "docker_daemon_check: fails when Docker is installed but daemon.json is missing" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+
+    command() {
+      if [[ "$1" == "-v" && "$2" == "docker" ]]; then
+        return 0
+      fi
+      builtin command "$@"
+    }
+
+    docker_daemon_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "docker-daemon: daemon.json"
+}
+
+@test "docker_trust_boundary_check: records INFO when docker socket is absent" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+
+    command() {
+      if [[ "$1" == "-v" && "$2" == "docker" ]]; then
+        return 0
+      fi
+      builtin command "$@"
+    }
+
+    docker_trust_boundary_check
+  '
+  assert_success
+  assert_output --partial "[INFO]"
+  assert_output --partial "docker-trust: socket"
+}
+
+@test "docker_user_lifecycle_check: fails when docker-user-hardening unit is missing" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+
+    command() {
+      if [[ "$1" == "-v" && "$2" == "docker" ]]; then
+        return 0
+      fi
+      builtin command "$@"
+    }
+
+    docker_user_lifecycle_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "docker-user: unit file"
+}
+
+@test "fail2ban_check: fails when fail2ban service is inactive" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+
+    systemctl() { return 1; }
+
+    fail2ban_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "fail2ban: active"
+}
+
+@test "journald_check: fails when persistent drop-in is missing" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+    JOURNALD_DROPIN="/tmp/nonexistent-journald-dropin.conf"
+
+    journald_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "journald: persistent storage config"
+}
+
+@test "swap_check: fails when swap is expected but inactive" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+    IS_CONTAINER="false"
+    swap_size="2G"
+
+    swapon() { return 0; }
+
+    swap_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "swap: active"
+}
+
+@test "tailscale_check: fails when BackendState is not Running" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+    TAILSCALE_IFACE="tailscale0"
+
+    ip() {
+      if [[ "$1" == "link" && "$2" == "show" && "$3" == "tailscale0" ]]; then
+        return 0
+      fi
+      return 1
+    }
+
+    command() {
+      if [[ "$1" == "-v" && "$2" == "tailscale" ]]; then
+        return 0
+      fi
+      builtin command "$@"
+    }
+
+    tailscale() {
+      if [[ "$1" == "status" && "$2" == "--json" ]]; then
+        cat <<TS
+{"BackendState":"Stopped","Peer":[]}
+TS
+        return 0
+      fi
+      if [[ "$1" == "ip" && "$2" == "-4" ]]; then
+        return 0
+      fi
+      return 0
+    }
+
+    tailscale_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "tailscale: BackendState"
+}
+
+@test "timesync_check: fails when NTP is inactive outside container" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+    IS_CONTAINER="false"
+
+    timedatectl() {
+      if [[ "$1" == "show" && "$2" == "--property=NTP" ]]; then
+        echo no
+        return 0
+      fi
+      if [[ "$1" == "show" && "$2" == "--property=NTPSynchronized" ]]; then
+        echo no
+        return 0
+      fi
+      return 0
+    }
+
+    timesync_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "timesync: NTP"
+}
+
+@test "unattended_upgrades_check: records a fail outcome when validation preconditions are not met" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+
+    # Guarantee timer-related failures if local config exists; still fail fast if config is absent.
+    systemctl() { return 1; }
+
+    unattended_upgrades_check
+    [[ "${FAIL_COUNT}" -ge 1 ]]
+  '
+  assert_success
+}
+
+@test "validate_timer_check: fails when timer is installed but inactive" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    PASS_COUNT=0
+    FAIL_COUNT=0
+    INFO_COUNT=0
+    RESULTS=()
+    JSON_MODE="false"
+
+    systemctl() {
+      if [[ "$1" == "is-active" && "$2" == "--quiet" && "$3" == "hardening-validate.timer" ]]; then
+        return 1
+      fi
+      if [[ "$1" == "list-unit-files" ]]; then
+        echo "hardening-validate.timer enabled"
+        return 0
+      fi
+      return 1
+    }
+
+    validate_timer_check
+  '
+  assert_success
+  assert_output --partial "[FAIL]"
+  assert_output --partial "validate-timer: active"
+}

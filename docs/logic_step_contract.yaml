@@ -545,6 +545,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::admin_sudo_check: reports
     info when admin user is not configured'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::admin_sudo_check: fails
+    when configured admin user does not exist'
 - id: LS-VAL-002
   script_path: validate_hardening.sh
   function: apparmor_check
@@ -554,6 +556,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::apparmor_check: passes when
     aa-status reports enabled'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::apparmor_check: fails when
+    aa-status is unavailable outside container'
 - id: LS-VAL-003
   script_path: validate_hardening.sh
   function: auditd_check
@@ -576,6 +580,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::banner_check: records banner
     verification result'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::banner_check: fails when
+    AUTHORIZED marker is missing'
 - id: LS-VAL-005
   script_path: validate_hardening.sh
   function: check
@@ -594,6 +600,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::cloudflared_check: reports
     info when cloudflared is not installed'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::cloudflared_check: fails
+    when service is installed but inactive'
 - id: LS-VAL-007
   script_path: validate_hardening.sh
   function: coolify_binding_check
@@ -603,6 +611,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::coolify_binding_check: records
     binding guard posture'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::coolify_binding_check:
+    fails when dashboard binding is enabled but ufw is missing'
 - id: LS-VAL-008
   script_path: validate_hardening.sh
   function: coolify_container_check
@@ -612,6 +622,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::coolify_container_check: reports
     info when Docker is missing'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::coolify_container_check:
+    skips cleanly when Coolify data directory is absent'
 - id: LS-VAL-009
   script_path: validate_hardening.sh
   function: coolify_ssh_check
@@ -621,6 +633,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::coolify_ssh_check: returns
     cleanly when Coolify SSH dir is absent'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::coolify_ssh_check: no-ops
+    when Coolify ssh key directory is absent'
 - id: LS-VAL-010
   script_path: validate_hardening.sh
   function: detect_container_runtime
@@ -639,6 +653,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::disabled_services_check: passes
     when services are masked'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::disabled_services_check:
+    fails when rpcbind service is enabled'
 - id: LS-VAL-012
   script_path: validate_hardening.sh
   function: docker_daemon_check
@@ -648,6 +664,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::docker_daemon_check: records
     daemon config status'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_daemon_check: fails
+    when Docker is installed but daemon.json is missing'
 - id: LS-VAL-013
   script_path: validate_hardening.sh
   function: docker_trust_boundary_check
@@ -657,6 +675,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::docker_trust_boundary_check:
     records info when Docker is unavailable'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_trust_boundary_check:
+    records INFO when docker socket is absent'
 - id: LS-VAL-014
   script_path: validate_hardening.sh
   function: docker_user_check
@@ -679,6 +699,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::docker_user_lifecycle_check:
     records info when Docker is not installed'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_user_lifecycle_check:
+    fails when docker-user-hardening unit is missing'
 - id: LS-VAL-016
   script_path: validate_hardening.sh
   function: fail2ban_check
@@ -688,6 +710,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::fail2ban_check: records fail/info
     when fail2ban is absent'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::fail2ban_check: fails when
+    fail2ban service is inactive'
 - id: LS-VAL-017
   script_path: validate_hardening.sh
   function: infer_update_profile
@@ -717,6 +741,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::journald_check: records journald
     persistence posture'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::journald_check: fails when
+    persistent drop-in is missing'
 - id: LS-VAL-020
   script_path: validate_hardening.sh
   function: listening_ports_info
@@ -800,6 +826,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::swap_check: reports disabled
     swap when swap_size is 0'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::swap_check: fails when swap
+    is expected but inactive'
 - id: LS-VAL-029
   script_path: validate_hardening.sh
   function: sysctl_check
@@ -820,6 +848,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::tailscale_check: fails when
     tailscale interface is missing'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::tailscale_check: fails when
+    BackendState is not Running'
 - id: LS-VAL-031
   script_path: validate_hardening.sh
   function: timesync_check
@@ -829,6 +859,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::timesync_check: passes when
     timedatectl reports synchronized NTP'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::timesync_check: fails when
+    NTP is inactive outside container'
 - id: LS-VAL-032
   script_path: validate_hardening.sh
   function: ufw_check
@@ -849,6 +881,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::unattended_upgrades_check:
     fails when local policy file is missing'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::unattended_upgrades_check:
+    records a fail outcome when validation preconditions are not met'
 - id: LS-VAL-034
   script_path: validate_hardening.sh
   function: validate_timer_check
@@ -858,6 +892,8 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::validate_timer_check: records
     timer state outcome'
+  - 'tests/unit/test_validate_check_outcomes_robust.bats::validate_timer_check: fails
+    when timer is installed but inactive'
 - id: LS-DEP-001
   script_path: deploy.sh
   function: cleanup_temp_files
