@@ -306,7 +306,10 @@ Gate E passes when the dashboard is reachable over Tailscale and not reachable o
 ### 4.3 DNS Configuration
 
 - **Tunnel mode (default, private-only dashboard/realtime)**:
-  - Removes exact host DNS records for `<domain>` and `ws.<domain>` on every deploy/redeploy
+  - Rebuilds exact host DNS `A` records for `<domain>` and `ws.<domain>` on every deploy/redeploy:
+    - content: server `100.x` Tailscale IP
+    - proxy status: DNS-only (grey cloud)
+  - Writes managed private proxy routes for dashboard/realtime hostnames at `/data/coolify/proxy/dynamic/coolify-private-dashboard.yaml`
   - Creates/updates proxied wildcard CNAMEs for app routing:
     - `*.app-domain`
     - `*.zone` when `app-domain` differs from zone root
@@ -331,7 +334,7 @@ After these steps, the end-to-end flow for every new app is: deploy in Coolify �
 
 Both deployment modes use Cloudflare's edge for user-facing TLS via Universal SSL (`*.example.com`). No wildcard certificate is needed on the origin server:
 
-- **Tunnel mode**: Cloudflare terminates TLS at the edge. Public tunnel ingress is wildcard-app only (`*.app-domain` to `localhost:80`). Dashboard/realtime hosts are blocked (`http_status:404`) and expected to be accessed over Tailscale. No origin cert required.
+- **Tunnel mode**: Cloudflare terminates TLS at the edge. Public tunnel ingress is wildcard-app only (`*.app-domain` to `localhost:80`). Dashboard/realtime hosts stay blocked in cloudflared (`http_status:404`), while exact host DNS (`DOMAIN`, `ws.DOMAIN`) is pinned to the server `TS_IP` as DNS-only for private Tailscale access. No origin cert required.
 - **Standard mode** (proxied + Full SSL): Cloudflare terminates edge TLS and connects to the origin via HTTPS, but Full mode accepts any cert — including self-signed or Traefik's default. No wildcard cert required.
 
 **Optional: origin wildcard certs.** If you need Full (Strict) SSL or DNS-only subdomains where Traefik terminates TLS, configure Traefik's DNS-01 challenge with your Cloudflare API token in the Coolify UI (Servers > Proxy). See [Coolify wildcard cert docs](https://coolify.io/docs/knowledge-base/proxy/traefik/wildcard-certs). Add `CF_DNS_API_TOKEN` as an environment variable in the Traefik container. This is a Coolify-level config change — our hardening scripts do not modify it.
@@ -377,6 +380,15 @@ ingress:
   - hostname: "*.your-domain.com"
     service: http://localhost:80
   - service: http_status:404
+```
+
+Then pin dashboard/realtime host DNS to the server Tailscale IP (DNS-only):
+
+```bash
+# Dashboard + realtime exact hosts are private-only via Tailscale
+cloudflare_api="https://api.cloudflare.com/client/v4"
+# Create/update A your-domain.com -> <tailscale-ip> (proxied=false)
+# Create/update A ws.your-domain.com -> <tailscale-ip> (proxied=false)
 ```
 
 Also set Coolify realtime env vars to Tailscale:
@@ -429,11 +441,13 @@ curl -s -o /dev/null -w '%{http_code}' http://<public-ip>:8000     # Should fail
 curl -s -o /dev/null -w '%{http_code}' http://<tailscale-ip>:6001  # Should return non-000
 curl -s -o /dev/null -w '%{http_code}' http://<public-ip>:6001     # Should fail
 
-# Tunnel mode: verify cloudflared is running and public dashboard/ws hosts are blocked
+# Tunnel mode: verify cloudflared is running, private domain routes work, and public origin stays blocked
 sudo systemctl status cloudflared        # Should be active
 sudo ufw status verbose                  # Should NOT show 80/443 ALLOW on WAN
-curl -s -o /dev/null -w '%{http_code}' https://<your-domain>       # Should NOT be 2xx/3xx
-curl -s -o /dev/null -w '%{http_code}' https://ws.<your-domain>    # Should NOT be 2xx/3xx
+curl -s -o /dev/null -w '%{http_code}' http://<your-domain>        # Should be 2xx/3xx on Tailscale clients
+curl -s -o /dev/null -w '%{http_code}' http://ws.<your-domain>     # Should be non-000 on Tailscale clients
+curl -s -o /dev/null -w '%{http_code}' http://<public-ip>          # Should fail/timeout
+curl -k -s -o /dev/null -w '%{http_code}' https://<public-ip>      # Should fail/timeout
 
 # Standard mode: verify public web access
 curl -s -o /dev/null -w '%{http_code}' http://<public-ip>     # Should return 200 (or redirect)

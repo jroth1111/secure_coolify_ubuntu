@@ -449,7 +449,7 @@ ssh admin@100.x.x.x  # Use the Tailscale IP output by the script
 **Solution (tunnel mode, private-only default):**
 1. Check Coolify env: `PUSHER_HOST=<tailscale-ip>`, `PUSHER_PORT=6001`, `PUSHER_SCHEME=http`
 2. Check `/etc/cloudflared/config.yml` does **not** route `localhost:8000`, `localhost:6001`, or `localhost:6002`
-3. Check Cloudflare DNS only has wildcard app records (no public `DOMAIN` / `ws.DOMAIN` host records)
+3. Check Cloudflare DNS has `A` records for `DOMAIN` and `ws.DOMAIN` pointing to the server `100.x` Tailscale IP with proxy disabled (DNS-only)
 
 ### Validation Failures
 
