@@ -26,23 +26,26 @@ TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
 DEPLOY_MODE="${DEPLOY_MODE:-}"
 DOMAIN="${DOMAIN:-}"
 CF_API_TOKEN="${CF_API_TOKEN:-}"
+CF_API_TOKEN_FILE="${CF_API_TOKEN_FILE:-}"
 CF_TUNNEL_API_TOKEN="${CF_TUNNEL_API_TOKEN:-}"
+CF_TUNNEL_API_TOKEN_FILE="${CF_TUNNEL_API_TOKEN_FILE:-}"
 CF_ZONE="${CF_ZONE:-}"
+CF_ZONE_ID="${CF_ZONE_ID:-}"
+CF_ACCOUNT_ID="${CF_ACCOUNT_ID:-}"
 APP_DOMAIN_MODE="${APP_DOMAIN_MODE:-}"
 SWAP_SIZE="${SWAP_SIZE:-}"
 TAILSCALE_DIRECT_WAN="${TAILSCALE_DIRECT_WAN:-false}"
 AUTO_YES="${AUTO_YES:-false}"
 SKIP_HARDEN="${SKIP_HARDEN:-false}"  # set via --ts-ip to resume after partial harden
+PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-false}"
 
 # ── Derived at runtime ──────────────────────────────────────────────────────
 
 ADMIN_PUBKEY=""
 PRIVATE_KEY=""
 TS_IP=""
-CF_ZONE_ID=""
 CF_ZONE_NAME=""
 APP_DOMAIN=""
-CF_ACCOUNT_ID=""
 TUNNEL_ID=""
 TUNNEL_SECRET=""
 
@@ -83,7 +86,7 @@ init_ssh_options() {
 }
 
 init_root_password_auth() {
-  if is_true "${SKIP_HARDEN}"; then
+  if is_true "${SKIP_HARDEN}" || is_true "${PREFLIGHT_ONLY}"; then
     return 0
   fi
   [[ -n "${ROOT_PASS}" ]] || die "Root password is required for phase 1."
@@ -108,22 +111,27 @@ If any are missing, prompts for them (mixed mode supported).
 
 Required:
   --server-ip <ip>              Server public IPv4 address
-  Root password                 Provide via --root-pass-file or interactive prompt
-  --tailscale-auth-key <key>    Tailscale auth key (tskey-auth-...)
+  Root password                 Required unless --preflight-only or --ts-ip is used
+  --tailscale-auth-key <key>    Required unless --preflight-only or --ts-ip is used
   --domain <fqdn>               Domain name for Coolify
-  --cf-api-token <token>        Cloudflare API token
+  Cloudflare API token          Provide via CF_API_TOKEN, --cf-api-token-file, or prompt
 
 Optional:
-  --cf-tunnel-api-token <token> Cloudflare tunnel API token (optional; defaults to --cf-api-token)
+  --cf-api-token-file <path>    File containing Cloudflare API token
+  --cf-tunnel-api-token-file <path>
+                                File containing Cloudflare tunnel API token (optional; defaults to API token)
   --admin-user <name>           Admin username (default: coolifyadmin)
   --root-pass-file <path>       Read root password from file (recommended for automation)
   --pubkey-file <path>          SSH public key file (default: ~/.ssh/id_ed25519.pub)
   --mode <tunnel|standard>       Deployment mode (default: tunnel)
   --app-domain-mode <vps|apex>  App subdomain scope: vps=appname.DOMAIN, apex=appname.ZONE (default: apex)
   --cf-zone <zone>              Cloudflare zone (default: derived from domain)
+  --cf-zone-id <id>             Cloudflare zone ID override (32-char hex)
+  --cf-account-id <id>          Cloudflare account ID override (32-char hex)
   --swap-size <size>            Swap size (default: 2G)
   --tailscale-direct-wan        Allow WAN UDP 41641 for direct Tailscale paths (optional optimization)
   --no-tailscale-direct-wan     Keep WAN UDP 41641 closed (default; DERP fallback remains available)
+  --preflight-only              Run local/Cloudflare preflight checks only, then exit
   --yes                         Skip confirmation prompts (for automation)
   --ts-ip <ip>                  Skip phase 1 (hardening already done); set Tailscale IP directly
   -h, --help                    Show this help
@@ -145,13 +153,22 @@ parse_args() {
       --tailscale-auth-key) TAILSCALE_AUTH_KEY="${2:?--tailscale-auth-key requires a value}"; shift 2 ;;
       --mode)            DEPLOY_MODE="${2:?--mode requires a value}"; shift 2 ;;
       --domain)          DOMAIN="${2:?--domain requires a value}"; shift 2 ;;
-      --cf-api-token)    CF_API_TOKEN="${2:?--cf-api-token requires a value}"; shift 2 ;;
-      --cf-tunnel-api-token) CF_TUNNEL_API_TOKEN="${2:?--cf-tunnel-api-token requires a value}"; shift 2 ;;
+      --cf-api-token)
+        die "--cf-api-token is removed for security. Use CF_API_TOKEN env var or --cf-api-token-file."
+        ;;
+      --cf-tunnel-api-token)
+        die "--cf-tunnel-api-token is removed for security. Use CF_TUNNEL_API_TOKEN env var or --cf-tunnel-api-token-file."
+        ;;
+      --cf-api-token-file) CF_API_TOKEN_FILE="${2:?--cf-api-token-file requires a value}"; shift 2 ;;
+      --cf-tunnel-api-token-file) CF_TUNNEL_API_TOKEN_FILE="${2:?--cf-tunnel-api-token-file requires a value}"; shift 2 ;;
       --cf-zone)         CF_ZONE="${2:?--cf-zone requires a value}"; shift 2 ;;
+      --cf-zone-id)      CF_ZONE_ID="${2:?--cf-zone-id requires a value}"; shift 2 ;;
+      --cf-account-id)   CF_ACCOUNT_ID="${2:?--cf-account-id requires a value}"; shift 2 ;;
       --app-domain-mode) APP_DOMAIN_MODE="${2:?--app-domain-mode requires a value}"; shift 2 ;;
       --swap-size)       SWAP_SIZE="${2:?--swap-size requires a value}"; shift 2 ;;
       --tailscale-direct-wan) TAILSCALE_DIRECT_WAN="true"; shift ;;
       --no-tailscale-direct-wan) TAILSCALE_DIRECT_WAN="false"; shift ;;
+      --preflight-only)  PREFLIGHT_ONLY="true"; shift ;;
       --yes)             AUTO_YES="true"; shift ;;
       --ts-ip)           TS_IP="${2:?--ts-ip requires a value}"; SKIP_HARDEN="true"; shift 2 ;;
       -h|--help)         usage; exit 0 ;;
@@ -163,14 +180,17 @@ parse_args() {
 # ── Input collection (flag → prompt fallback) ──────────────────────────────
 
 collect_inputs() {
-  # When hardening is being skipped (--ts-ip), tailscale auth key is not needed.
+  # When hardening is being skipped (--ts-ip) or only preflight is requested,
+  # tailscale auth key is not needed.
   # Pre-populate to bypass the interactive prompt in collect_common_inputs so that
   # automated --yes --ts-ip runs don't block on read waiting for a key.
-  if is_true "${SKIP_HARDEN}" && [[ -z "${TAILSCALE_AUTH_KEY}" ]]; then
+  if { is_true "${SKIP_HARDEN}" || is_true "${PREFLIGHT_ONLY}"; } \
+    && [[ -z "${TAILSCALE_AUTH_KEY}" ]]; then
     TAILSCALE_AUTH_KEY="(not-needed)"
   fi
   collect_common_inputs
-  if ! is_true "${SKIP_HARDEN}" && [[ -z "${ROOT_PASS}" ]] && [[ -n "${ROOT_PASS_FILE}" ]]; then
+  if ! is_true "${SKIP_HARDEN}" && ! is_true "${PREFLIGHT_ONLY}" \
+    && [[ -z "${ROOT_PASS}" ]] && [[ -n "${ROOT_PASS_FILE}" ]]; then
     [[ -f "${ROOT_PASS_FILE}" ]] || die "Root password file not found: ${ROOT_PASS_FILE}"
     local file_perms
     file_perms="$(stat -c '%a' "${ROOT_PASS_FILE}" 2>/dev/null || stat -f '%Lp' "${ROOT_PASS_FILE}" 2>/dev/null || echo "unknown")"
@@ -182,7 +202,7 @@ collect_inputs() {
     ROOT_PASS="${ROOT_PASS%$'\r'}"
   fi
   # ROOT_PASS not needed when --ts-ip is supplied (hardening already done)
-  if ! is_true "${SKIP_HARDEN}"; then
+  if ! is_true "${SKIP_HARDEN}" && ! is_true "${PREFLIGHT_ONLY}"; then
     [[ -n "${ROOT_PASS}" ]] || prompt_secret ROOT_PASS "Root password"
   fi
 }
@@ -191,8 +211,10 @@ collect_inputs() {
 
 validate_inputs() {
   [[ "${SERVER_IP}" =~ ${IPV4_RE} ]]      || die "Invalid server IP: ${SERVER_IP}"
-  # ROOT_PASS not required when --ts-ip is supplied (hardening already done)
-  if ! is_true "${SKIP_HARDEN}"; then
+  finalize_cloudflare_tokens
+
+  # ROOT_PASS not required when --ts-ip or --preflight-only is supplied.
+  if ! is_true "${SKIP_HARDEN}" && ! is_true "${PREFLIGHT_ONLY}"; then
     [[ -n "${ROOT_PASS}" ]]               || die "Root password is required."
   fi
   [[ "${ADMIN_USER}" =~ ${LINUX_USER_RE} ]] || die "Invalid admin username: ${ADMIN_USER}"
@@ -205,8 +227,8 @@ validate_inputs() {
   PRIVATE_KEY="${PUBKEY_FILE%.pub}"
   [[ -f "${PRIVATE_KEY}" ]] || die "Private key not found: ${PRIVATE_KEY} (expected alongside ${PUBKEY_FILE})"
 
-  # Auth key only required when hardening will run; --ts-ip skips hardening.
-  if ! is_true "${SKIP_HARDEN}"; then
+  # Auth key only required when hardening will run; --ts-ip / --preflight-only skip hardening.
+  if ! is_true "${SKIP_HARDEN}" && ! is_true "${PREFLIGHT_ONLY}"; then
     [[ "${TAILSCALE_AUTH_KEY}" == tskey-auth-* ]] \
       || die "Tailscale auth key must start with 'tskey-auth-' (got: ${TAILSCALE_AUTH_KEY:0:12}...)"
   fi
@@ -225,7 +247,10 @@ validate_inputs() {
 
   [[ "${DOMAIN}" =~ ${FQDN_RE} ]]         || die "Invalid domain: ${DOMAIN}"
   [[ -n "${CF_API_TOKEN}" ]]               || die "Cloudflare API token is required."
-  [[ -n "${CF_TUNNEL_API_TOKEN}" ]]        || die "Cloudflare tunnel API token is required (or omit --cf-tunnel-api-token to reuse --cf-api-token)."
+  [[ -z "${CF_ZONE_ID}" || "${CF_ZONE_ID}" =~ ${CF_ID_RE} ]] \
+    || die "Invalid --cf-zone-id: ${CF_ZONE_ID} (expected 32-char hex)"
+  [[ -z "${CF_ACCOUNT_ID}" || "${CF_ACCOUNT_ID}" =~ ${CF_ID_RE} ]] \
+    || die "Invalid --cf-account-id: ${CF_ACCOUNT_ID} (expected 32-char hex)"
   [[ "${SWAP_SIZE}" =~ ${SWAP_RE} ]]       || die "Invalid swap size: ${SWAP_SIZE} (expected e.g. 2G, 512M)"
   case "${TAILSCALE_DIRECT_WAN,,}" in
     true|false|1|0|yes|no|y|n|on|off) ;;
@@ -339,9 +364,9 @@ preflight() {
   resolve_app_domain
   pass "Cloudflare API verified (zone: ${CF_ZONE_ID})"
 
-  # Test SSH connectivity (skipped when --ts-ip is used; root SSH is disabled post-harden)
-  if is_true "${SKIP_HARDEN}"; then
-    log "Skipping root SSH check (--ts-ip mode; hardening already applied)."
+  # Test SSH connectivity (skipped for --ts-ip and --preflight-only).
+  if is_true "${SKIP_HARDEN}" || is_true "${PREFLIGHT_ONLY}"; then
+    log "Skipping root SSH check (--ts-ip/--preflight-only mode)."
   else
     log "Testing SSH to root@${SERVER_IP}..."
     if ssh_root 'echo ok' >/dev/null 2>&1; then
@@ -657,11 +682,16 @@ main() {
   log "  Domain:    ${DOMAIN}"
   log "  App scope: ${APP_DOMAIN_MODE}"
   log "  Swap:      ${SWAP_SIZE}"
+  is_true "${PREFLIGHT_ONLY}" && log "  Mode:      preflight-only (no server changes)"
   [[ "${CF_TUNNEL_API_TOKEN}" != "${CF_API_TOKEN}" ]] && log "  CF tunnel token: custom"
   is_true "${SKIP_HARDEN}" && log "  TS IP:     ${TS_IP} (--ts-ip; skipping phase 1)"
   confirm "Proceed with deployment?"
 
   preflight
+  if is_true "${PREFLIGHT_ONLY}"; then
+    pass "Preflight-only checks completed. Exiting without deployment changes."
+    return 0
+  fi
   if is_true "${SKIP_HARDEN}"; then
     log "Skipping phase 1 (--ts-ip supplied; hardening already complete on ${TS_IP})"
   else

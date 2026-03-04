@@ -14,6 +14,7 @@ IPV4_RE='^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]
 LINUX_USER_RE='^[a-z_][a-z0-9_-]*$'
 FQDN_RE='^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$'
 SWAP_RE='^[0-9]+[GM]$'
+CF_ID_RE='^[a-f0-9]{32}$'
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,45 @@ prompt_choice() {
   declare -g "${var_name}=${val}"
 }
 
+read_secret_file() {
+  local path="$1" label="$2"
+  [[ -f "${path}" ]] || die "${label} file not found: ${path}"
+  local file_perms
+  file_perms="$(stat -c '%a' "${path}" 2>/dev/null || stat -f '%Lp' "${path}" 2>/dev/null || echo "unknown")"
+  if [[ "${file_perms}" != "unknown" && "${file_perms}" != "600" && "${file_perms}" != "400" ]]; then
+    warn "${label} file ${path} has permissions ${file_perms}; recommend 0600 or stricter."
+  fi
+  local secret
+  secret="$(cat "${path}")"
+  secret="${secret%$'\n'}"
+  secret="${secret%$'\r'}"
+  [[ -n "${secret}" ]] || die "${label} file is empty: ${path}"
+  printf '%s' "${secret}"
+}
+
+load_cloudflare_tokens_from_files() {
+  if [[ -n "${CF_API_TOKEN_FILE:-}" ]]; then
+    CF_API_TOKEN="$(read_secret_file "${CF_API_TOKEN_FILE}" "Cloudflare API token")"
+  fi
+  if [[ -n "${CF_TUNNEL_API_TOKEN_FILE:-}" ]]; then
+    CF_TUNNEL_API_TOKEN="$(read_secret_file "${CF_TUNNEL_API_TOKEN_FILE}" "Cloudflare tunnel API token")"
+  fi
+}
+
+finalize_cloudflare_tokens() {
+  CF_API_TOKEN="${CF_API_TOKEN:-}"
+  CF_TUNNEL_API_TOKEN="${CF_TUNNEL_API_TOKEN:-}"
+  CF_API_TOKEN="${CF_API_TOKEN%$'\n'}"
+  CF_API_TOKEN="${CF_API_TOKEN%$'\r'}"
+  CF_TUNNEL_API_TOKEN="${CF_TUNNEL_API_TOKEN%$'\n'}"
+  CF_TUNNEL_API_TOKEN="${CF_TUNNEL_API_TOKEN%$'\r'}"
+
+  # Single-token mode: if no dedicated tunnel token is provided, reuse CF_API_TOKEN.
+  if [[ -z "${CF_TUNNEL_API_TOKEN:-}" && -n "${CF_API_TOKEN:-}" ]]; then
+    CF_TUNNEL_API_TOKEN="${CF_API_TOKEN}"
+  fi
+}
+
 # ── Cloudflare API ─────────────────────────────────────────────────────────
 
 cf_api_with_token() {
@@ -144,6 +184,24 @@ cf_verify_token() {
 }
 
 cf_get_zone_id() {
+  # Explicit zone ID override (operator already knows the exact zone).
+  if [[ -n "${CF_ZONE_ID:-}" ]]; then
+    [[ "${CF_ZONE_ID}" =~ ${CF_ID_RE} ]] || die "Invalid --cf-zone-id value: ${CF_ZONE_ID}"
+    local zone_resp zone_ok zone_name
+    zone_resp="$(cf_api GET "/zones/${CF_ZONE_ID}")"
+    zone_ok="$(printf '%s' "${zone_resp}" | jq -r '.success // false')"
+    [[ "${zone_ok}" == "true" ]] || die "Cloudflare zone ID lookup failed for '${CF_ZONE_ID}': $(printf '%s' "${zone_resp}" | jq -r '.errors[0].message // "unknown"')"
+    zone_name="$(printf '%s' "${zone_resp}" | jq -r '.result.name // empty')"
+    [[ -n "${zone_name}" ]] || die "Cloudflare zone name missing for zone ID '${CF_ZONE_ID}'"
+    if [[ -n "${CF_ZONE:-}" && "${CF_ZONE}" != "${zone_name}" ]]; then
+      die "--cf-zone (${CF_ZONE}) and --cf-zone-id (${CF_ZONE_ID} => ${zone_name}) do not match."
+    fi
+    CF_ZONE_NAME="${zone_name}"
+    CF_ZONE="${zone_name}"
+    log "Cloudflare zone ID override: ${CF_ZONE_ID} (${CF_ZONE_NAME})"
+    return 0
+  fi
+
   # If --cf-zone was specified, use it directly
   if [[ -n "${CF_ZONE}" ]]; then
     local resp
@@ -174,6 +232,12 @@ cf_get_zone_id() {
 }
 
 cf_get_account_id() {
+  if [[ -n "${CF_ACCOUNT_ID:-}" ]]; then
+    [[ "${CF_ACCOUNT_ID}" =~ ${CF_ID_RE} ]] || die "Invalid --cf-account-id value: ${CF_ACCOUNT_ID}"
+    log "Cloudflare account ID override: ${CF_ACCOUNT_ID}"
+    return 0
+  fi
+
   local resp
   resp="$(cf_api GET /accounts)"
   CF_ACCOUNT_ID="$(printf '%s' "${resp}" | jq -r '.result[0].id // empty')"
@@ -197,18 +261,29 @@ cf_get_account_id() {
   die "No Cloudflare account found (both /accounts and zone account lookup were empty)."
 }
 
-cf_expect_not_auth_error() {
-  local action="$1" resp="$2"
+cf_expect_probe_authorized_or_validation_error() {
+  local action="$1" resp="$2" expected_codes_csv="$3"
   local success code msg
   success="$(printf '%s' "${resp}" | jq -r '.success // false' 2>/dev/null || echo "false")"
   [[ "${success}" == "true" ]] && return 0
   code="$(printf '%s' "${resp}" | jq -r '.errors[0].code // empty' 2>/dev/null || true)"
   msg="$(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"' 2>/dev/null || echo "unknown")"
-  case "${code}" in
-    10000|9109)
-      die "${action} failed: ${msg} (code ${code}). Ask the user for a token with the required permissions."
-      ;;
-  esac
+  if [[ "${code}" == "10000" || "${code}" == "9109" ]]; then
+    die "${action} failed: ${msg} (code ${code}). Ask the user for a token with the required permissions."
+  fi
+
+  if [[ -z "${expected_codes_csv}" ]]; then
+    die "${action} failed unexpectedly: ${msg} (code ${code:-unknown})."
+  fi
+
+  local expected
+  IFS=',' read -r -a expected <<< "${expected_codes_csv}"
+  local allow
+  for allow in "${expected[@]}"; do
+    [[ "${code}" == "${allow}" ]] && return 0
+  done
+
+  die "${action} failed unexpectedly: ${msg} (code ${code:-unknown})."
 }
 
 cf_verify_dns_write_token() {
@@ -216,7 +291,8 @@ cf_verify_dns_write_token() {
   # Expected outcome when authorized: validation error (non-auth) and no mutation.
   local resp
   resp="$(cf_api POST "/zones/${CF_ZONE_ID}/dns_records" '{}')"
-  cf_expect_not_auth_error "Cloudflare DNS write permission check" "${resp}"
+  cf_expect_probe_authorized_or_validation_error \
+    "Cloudflare DNS write permission check" "${resp}" "9000,1004"
   log "Cloudflare DNS write permission verified."
 }
 
@@ -224,7 +300,8 @@ cf_verify_tunnel_token() {
   [[ "${DEPLOY_MODE}" == "tunnel" ]] || return 0
   local resp
   resp="$(cf_tunnel_api GET "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel?per_page=1")"
-  cf_expect_not_auth_error "Cloudflare Tunnel read permission check" "${resp}"
+  cf_expect_probe_authorized_or_validation_error \
+    "Cloudflare Tunnel read permission check" "${resp}" ""
   local status err
   status="$(printf '%s' "${resp}" | jq -r '.success // false')"
   if [[ "${status}" != "true" ]]; then
@@ -235,7 +312,8 @@ cf_verify_tunnel_token() {
   # Probe tunnel create authorization with an intentionally invalid payload.
   # Expected outcome when authorized: validation error (non-auth) and no mutation.
   resp="$(cf_tunnel_api POST "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel" '{}')"
-  cf_expect_not_auth_error "Cloudflare Tunnel write permission check" "${resp}"
+  cf_expect_probe_authorized_or_validation_error \
+    "Cloudflare Tunnel write permission check" "${resp}" "1030,1004"
   log "Cloudflare tunnel API token verified (read/write)."
 }
 
@@ -867,15 +945,19 @@ EOF
 # collect_common_inputs — Prompt for inputs shared by both deploy.sh and setup.sh.
 # Each script calls this then adds its own script-specific prompts.
 collect_common_inputs() {
+  load_cloudflare_tokens_from_files
   [[ -n "${SERVER_IP}" ]]   || prompt_value  SERVER_IP "Server public IP" "" "${IPV4_RE}"
   [[ -n "${ADMIN_USER}" ]]  || prompt_value  ADMIN_USER "Admin username" "coolifyadmin" "${LINUX_USER_RE}"
   [[ -n "${PUBKEY_FILE}" ]] || prompt_value  PUBKEY_FILE "SSH public key file" "${HOME}/.ssh/id_ed25519.pub"
   [[ -n "${TAILSCALE_AUTH_KEY}" ]] || prompt_value TAILSCALE_AUTH_KEY "Tailscale auth key (tskey-auth-...)" ""
   [[ -n "${DEPLOY_MODE}" ]] || prompt_choice DEPLOY_MODE "Deployment mode" "tunnel" "tunnel" "standard"
   [[ -n "${DOMAIN}" ]]      || prompt_value  DOMAIN "Domain name (FQDN)" "" "${FQDN_RE}"
-  [[ -n "${CF_API_TOKEN}" ]] || prompt_secret CF_API_TOKEN "Cloudflare API token"
-  # Optional second token for tunnel API calls; defaults to CF_API_TOKEN.
-  [[ -n "${CF_TUNNEL_API_TOKEN:-}" ]] || CF_TUNNEL_API_TOKEN="${CF_API_TOKEN}"
+  if [[ -z "${CF_API_TOKEN:-}" ]]; then
+    if is_true "${AUTO_YES}"; then
+      die "Cloudflare API token is required in non-interactive mode. Set CF_API_TOKEN or use --cf-api-token-file."
+    fi
+    prompt_secret CF_API_TOKEN "Cloudflare API token"
+  fi
   # CF_ZONE intentionally left as-is (derived from domain when empty; --cf-zone overrides)
   [[ -n "${SWAP_SIZE}" ]]   || SWAP_SIZE="2G"
   # App subdomain scope: where Coolify auto-assigns app URLs.

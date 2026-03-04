@@ -23,21 +23,24 @@ TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
 DEPLOY_MODE="${DEPLOY_MODE:-}"
 DOMAIN="${DOMAIN:-}"
 CF_API_TOKEN="${CF_API_TOKEN:-}"
+CF_API_TOKEN_FILE="${CF_API_TOKEN_FILE:-}"
 CF_TUNNEL_API_TOKEN="${CF_TUNNEL_API_TOKEN:-}"
+CF_TUNNEL_API_TOKEN_FILE="${CF_TUNNEL_API_TOKEN_FILE:-}"
 CF_ZONE="${CF_ZONE:-}"
+CF_ZONE_ID="${CF_ZONE_ID:-}"
+CF_ACCOUNT_ID="${CF_ACCOUNT_ID:-}"
 APP_DOMAIN_MODE="${APP_DOMAIN_MODE:-}"
 SWAP_SIZE="${SWAP_SIZE:-}"
 TAILSCALE_DIRECT_WAN="${TAILSCALE_DIRECT_WAN:-false}"
 AUTO_YES="${AUTO_YES:-false}"
+PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-false}"
 
 # ── Derived at runtime ──────────────────────────────────────────────────────
 
 ADMIN_PUBKEY=""
 TS_IP=""
-CF_ZONE_ID=""
 CF_ZONE_NAME=""
 APP_DOMAIN=""
-CF_ACCOUNT_ID=""
 TUNNEL_ID=""
 TUNNEL_SECRET=""
 
@@ -65,18 +68,23 @@ Required:
   --server-ip <ip>              Server public IPv4 address
   --admin-user <name>           Admin username
   --pubkey-file <path>          SSH public key file (on this server)
-  --tailscale-auth-key <key>    Tailscale auth key (tskey-auth-...)
+  --tailscale-auth-key <key>    Required unless --preflight-only
   --domain <fqdn>               Domain name for Coolify
-  --cf-api-token <token>        Cloudflare API token
+  Cloudflare API token          Provide via CF_API_TOKEN, --cf-api-token-file, or prompt
 
 Optional:
-  --cf-tunnel-api-token <token> Cloudflare tunnel API token (optional; defaults to --cf-api-token)
+  --cf-api-token-file <path>    File containing Cloudflare API token
+  --cf-tunnel-api-token-file <path>
+                                File containing Cloudflare tunnel API token (optional; defaults to API token)
   --mode <tunnel|standard>       Deployment mode (default: tunnel)
   --app-domain-mode <vps|apex>  App subdomain scope: vps=appname.DOMAIN, apex=appname.ZONE (default: apex)
   --cf-zone <zone>              Cloudflare zone (default: derived from domain)
+  --cf-zone-id <id>             Cloudflare zone ID override (32-char hex)
+  --cf-account-id <id>          Cloudflare account ID override (32-char hex)
   --swap-size <size>            Swap size (default: 2G)
   --tailscale-direct-wan        Allow WAN UDP 41641 for direct Tailscale paths (optional optimization)
   --no-tailscale-direct-wan     Keep WAN UDP 41641 closed (default; DERP fallback remains available)
+  --preflight-only              Run local/Cloudflare preflight checks only, then exit
   --yes                         Skip confirmation prompts (for automation)
   -h, --help                    Show this help
 EOF
@@ -93,13 +101,22 @@ parse_args() {
       --tailscale-auth-key) TAILSCALE_AUTH_KEY="${2:?--tailscale-auth-key requires a value}"; shift 2 ;;
       --mode)            DEPLOY_MODE="${2:?--mode requires a value}"; shift 2 ;;
       --domain)          DOMAIN="${2:?--domain requires a value}"; shift 2 ;;
-      --cf-api-token)    CF_API_TOKEN="${2:?--cf-api-token requires a value}"; shift 2 ;;
-      --cf-tunnel-api-token) CF_TUNNEL_API_TOKEN="${2:?--cf-tunnel-api-token requires a value}"; shift 2 ;;
+      --cf-api-token)
+        die "--cf-api-token is removed for security. Use CF_API_TOKEN env var or --cf-api-token-file."
+        ;;
+      --cf-tunnel-api-token)
+        die "--cf-tunnel-api-token is removed for security. Use CF_TUNNEL_API_TOKEN env var or --cf-tunnel-api-token-file."
+        ;;
+      --cf-api-token-file) CF_API_TOKEN_FILE="${2:?--cf-api-token-file requires a value}"; shift 2 ;;
+      --cf-tunnel-api-token-file) CF_TUNNEL_API_TOKEN_FILE="${2:?--cf-tunnel-api-token-file requires a value}"; shift 2 ;;
       --cf-zone)         CF_ZONE="${2:?--cf-zone requires a value}"; shift 2 ;;
+      --cf-zone-id)      CF_ZONE_ID="${2:?--cf-zone-id requires a value}"; shift 2 ;;
+      --cf-account-id)   CF_ACCOUNT_ID="${2:?--cf-account-id requires a value}"; shift 2 ;;
       --app-domain-mode) APP_DOMAIN_MODE="${2:?--app-domain-mode requires a value}"; shift 2 ;;
       --swap-size)       SWAP_SIZE="${2:?--swap-size requires a value}"; shift 2 ;;
       --tailscale-direct-wan) TAILSCALE_DIRECT_WAN="true"; shift ;;
       --no-tailscale-direct-wan) TAILSCALE_DIRECT_WAN="false"; shift ;;
+      --preflight-only)  PREFLIGHT_ONLY="true"; shift ;;
       --yes)             AUTO_YES="true"; shift ;;
       -h|--help)         usage; exit 0 ;;
       *)                 die "Unknown option: $1 (use --help)" ;;
@@ -110,13 +127,20 @@ parse_args() {
 # ── Input collection (flag → prompt fallback) ──────────────────────────────
 
 collect_inputs() {
+  if is_true "${PREFLIGHT_ONLY}" && [[ -z "${TAILSCALE_AUTH_KEY}" ]]; then
+    TAILSCALE_AUTH_KEY="(not-needed)"
+  fi
   collect_common_inputs
 }
 
 # ── Input validation ───────────────────────────────────────────────────────
 
 validate_inputs() {
-  [[ "$(id -u)" -eq 0 ]] || die "This script must be run as root (use sudo)."
+  finalize_cloudflare_tokens
+
+  if ! is_true "${PREFLIGHT_ONLY}"; then
+    [[ "$(id -u)" -eq 0 ]] || die "This script must be run as root (use sudo)."
+  fi
   [[ "${SERVER_IP}" =~ ${IPV4_RE} ]]      || die "Invalid server IP: ${SERVER_IP}"
   [[ "${ADMIN_USER}" =~ ${LINUX_USER_RE} ]] || die "Invalid admin username: ${ADMIN_USER}"
   [[ "${ADMIN_USER}" != "root" ]]          || die "Admin user must not be root."
@@ -126,8 +150,10 @@ validate_inputs() {
     || die "Invalid SSH public key: ${PUBKEY_FILE}"
   ADMIN_PUBKEY="$(cat "${PUBKEY_FILE}")"
 
-  [[ "${TAILSCALE_AUTH_KEY}" == tskey-auth-* ]] \
-    || die "Tailscale auth key must start with 'tskey-auth-' (got: ${TAILSCALE_AUTH_KEY:0:12}...)"
+  if ! is_true "${PREFLIGHT_ONLY}"; then
+    [[ "${TAILSCALE_AUTH_KEY}" == tskey-auth-* ]] \
+      || die "Tailscale auth key must start with 'tskey-auth-' (got: ${TAILSCALE_AUTH_KEY:0:12}...)"
+  fi
 
   [[ "${DEPLOY_MODE}" == "standard" || "${DEPLOY_MODE}" == "tunnel" ]] \
     || die "Mode must be 'standard' or 'tunnel' (got: ${DEPLOY_MODE})"
@@ -137,7 +163,10 @@ validate_inputs() {
 
   [[ "${DOMAIN}" =~ ${FQDN_RE} ]]         || die "Invalid domain: ${DOMAIN}"
   [[ -n "${CF_API_TOKEN}" ]]               || die "Cloudflare API token is required."
-  [[ -n "${CF_TUNNEL_API_TOKEN}" ]]        || die "Cloudflare tunnel API token is required (or omit --cf-tunnel-api-token to reuse --cf-api-token)."
+  [[ -z "${CF_ZONE_ID}" || "${CF_ZONE_ID}" =~ ${CF_ID_RE} ]] \
+    || die "Invalid --cf-zone-id: ${CF_ZONE_ID} (expected 32-char hex)"
+  [[ -z "${CF_ACCOUNT_ID}" || "${CF_ACCOUNT_ID}" =~ ${CF_ID_RE} ]] \
+    || die "Invalid --cf-account-id: ${CF_ACCOUNT_ID} (expected 32-char hex)"
   [[ "${SWAP_SIZE}" =~ ${SWAP_RE} ]]       || die "Invalid swap size: ${SWAP_SIZE} (expected e.g. 2G, 512M)"
   case "${TAILSCALE_DIRECT_WAN,,}" in
     true|false|1|0|yes|no|y|n|on|off) ;;
@@ -382,10 +411,15 @@ main() {
   log "  Domain:    ${DOMAIN}"
   log "  App scope: ${APP_DOMAIN_MODE}"
   log "  Swap:      ${SWAP_SIZE}"
+  is_true "${PREFLIGHT_ONLY}" && log "  Mode:      preflight-only (no server changes)"
   [[ "${CF_TUNNEL_API_TOKEN}" != "${CF_API_TOKEN}" ]] && log "  CF tunnel token: custom"
   confirm "Proceed with deployment?"
 
   preflight
+  if is_true "${PREFLIGHT_ONLY}"; then
+    pass "Preflight-only checks completed. Exiting without deployment changes."
+    return 0
+  fi
   phase1_harden
   phase2_gates
   phase3_docker_coolify
