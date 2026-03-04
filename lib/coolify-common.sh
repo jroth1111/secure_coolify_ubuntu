@@ -157,8 +157,24 @@ cf_get_account_id() {
   local resp
   resp="$(cf_api GET /accounts)"
   CF_ACCOUNT_ID="$(printf '%s' "${resp}" | jq -r '.result[0].id // empty')"
-  [[ -n "${CF_ACCOUNT_ID}" ]] || die "No Cloudflare account found."
-  log "Cloudflare account ID: ${CF_ACCOUNT_ID}"
+  if [[ -n "${CF_ACCOUNT_ID}" ]]; then
+    log "Cloudflare account ID: ${CF_ACCOUNT_ID}"
+    return 0
+  fi
+
+  # Some scoped API tokens can manage a specific zone/tunnel but return an empty
+  # list from /accounts. Fall back to resolving account.id from the selected zone.
+  if [[ -n "${CF_ZONE_ID}" ]]; then
+    local zone_resp
+    zone_resp="$(cf_api GET "/zones/${CF_ZONE_ID}")"
+    CF_ACCOUNT_ID="$(printf '%s' "${zone_resp}" | jq -r '.result.account.id // empty')"
+    if [[ -n "${CF_ACCOUNT_ID}" ]]; then
+      log "Cloudflare account ID (from zone ${CF_ZONE_ID}): ${CF_ACCOUNT_ID}"
+      return 0
+    fi
+  fi
+
+  die "No Cloudflare account found (both /accounts and zone account lookup were empty)."
 }
 
 cf_expect_success() {
