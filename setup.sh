@@ -44,6 +44,11 @@ APP_DOMAIN=""
 TUNNEL_ID=""
 TUNNEL_SECRET=""
 
+setup_exit_trap() {
+  local exit_code=$?
+  run_report_finalize "${exit_code}"
+}
+
 pause_for_operator() {
   if is_true "${AUTO_YES}"; then return 0; fi
   local msg="$1"
@@ -397,6 +402,7 @@ phase5_verify() {
 # ── Main ────────────────────────────────────────────────────────────────────
 
 main() {
+  run_report_init "${SCRIPT_NAME}"
   parse_args "$@"
   collect_inputs
   validate_inputs
@@ -429,5 +435,6 @@ main() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  trap 'setup_exit_trap' EXIT
   main "$@"
 fi

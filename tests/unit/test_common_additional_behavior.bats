@@ -44,6 +44,28 @@ setup() {
   assert_output --partial "FAIL"
 }
 
+@test "run_report lifecycle: emits structured JSON with steps and gates" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    report_path="'"${BATS_TEST_TMPDIR}"'/run-report.json"
+    RUN_REPORT_FILE="${report_path}"
+    run_report_init "deploy.sh"
+    step "0/5" "Pre-flight checks"
+    pass "Gate A: ssh ok"
+    step "1/5" "Upload scripts & harden server"
+    fail "Gate B: identity mismatch"
+    RUN_REPORT_ROOT_CAUSE="Gate B failed."
+    run_report_finalize 1
+    [[ -f "${report_path}" ]]
+    jq -e ".script == \"deploy.sh\"" "${report_path}" >/dev/null
+    jq -e ".status == \"fail\"" "${report_path}" >/dev/null
+    jq -e "(.steps | length) >= 2" "${report_path}" >/dev/null
+    jq -e "(.gates | length) >= 2" "${report_path}" >/dev/null
+    jq -e ".root_cause | contains(\"Gate B\")" "${report_path}" >/dev/null
+  '
+  assert_success
+}
+
 @test "confirm: AUTO_YES=true skips prompt and returns success" {
   AUTO_YES="true"
   run confirm "Continue?"

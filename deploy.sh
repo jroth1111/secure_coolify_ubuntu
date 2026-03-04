@@ -62,11 +62,16 @@ cleanup_temp_files() {
   rm -f "${DEPLOY_KNOWN_HOSTS:-}" "${ADMIN_KNOWN_HOSTS:-}" "${ROOT_PASS_RUNTIME_FILE:-}"
 }
 
+deploy_exit_trap() {
+  local exit_code=$?
+  cleanup_temp_files
+  run_report_finalize "${exit_code}"
+}
+
 init_ssh_options() {
   # Use accept-new: accept on first connect, reject changed keys (OpenSSH 7.6+).
   DEPLOY_KNOWN_HOSTS="$(mktemp)" || die "Failed to create temp file for deploy known hosts"
   ADMIN_KNOWN_HOSTS="$(mktemp)" || die "Failed to create temp file for admin known hosts"
-  trap 'cleanup_temp_files' EXIT
 
   SSH_OPTS=(
     -o StrictHostKeyChecking=accept-new
@@ -671,6 +676,7 @@ phase5_verify() {
 # ── Main ────────────────────────────────────────────────────────────────────
 
 main() {
+  run_report_init "${SCRIPT_NAME}"
   init_ssh_options
   parse_args "$@"
   collect_inputs
@@ -711,5 +717,6 @@ main() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  trap 'deploy_exit_trap' EXIT
   main "$@"
 fi

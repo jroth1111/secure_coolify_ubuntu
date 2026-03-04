@@ -59,6 +59,17 @@ EOF
   assert_success
 }
 
+@test "deploy: phase1 skipped marker exists for --ts-ip resumes" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    TS_IP="100.64.0.25"
+    phase1_skipped
+  '
+  assert_success
+  assert_output --partial "1/5"
+  assert_output --partial "skipped"
+}
+
 @test "deploy: hardening invocation uses env-file and tailscale install" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"

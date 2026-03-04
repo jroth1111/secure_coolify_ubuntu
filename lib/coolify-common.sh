@@ -25,12 +25,206 @@ local_tz_offset() {
   printf '%s:%s' "${raw:0:3}" "${raw:3:2}"
 }
 
+# ── Structured run report state (opt-in via run_report_init) ────────────────
+
+RUN_REPORT_ENABLED="${RUN_REPORT_ENABLED:-true}"
+RUN_REPORT_ACTIVE="false"
+RUN_REPORT_FILE="${RUN_REPORT_FILE:-}"
+RUN_REPORT_SCRIPT=""
+RUN_REPORT_START_EPOCH=""
+RUN_REPORT_START_UTC=""
+RUN_REPORT_LOCAL_OFFSET=""
+RUN_REPORT_CURRENT_STEP_ID=""
+RUN_REPORT_CURRENT_STEP_NAME=""
+RUN_REPORT_CURRENT_STEP_START_EPOCH=""
+RUN_REPORT_CURRENT_STEP_START_UTC=""
+RUN_REPORT_STEPS_JSON=""
+RUN_REPORT_GATES_JSON=""
+RUN_REPORT_ROOT_CAUSE=""
+RUN_REPORT_FINALIZED="false"
+
+run_report_close_current_step() {
+  local status="$1" root_cause="${2:-}"
+  [[ "${RUN_REPORT_ACTIVE:-false}" == "true" ]] || return 0
+  [[ -n "${RUN_REPORT_CURRENT_STEP_ID:-}" ]] || return 0
+
+  local end_epoch end_utc duration step_json
+  end_epoch="$(date '+%s')"
+  end_utc="$(utc_now)"
+  duration="$(( end_epoch - RUN_REPORT_CURRENT_STEP_START_EPOCH ))"
+
+  step_json="$(jq -cn \
+    --arg id "${RUN_REPORT_CURRENT_STEP_ID}" \
+    --arg name "${RUN_REPORT_CURRENT_STEP_NAME}" \
+    --arg status "${status}" \
+    --arg started "${RUN_REPORT_CURRENT_STEP_START_UTC}" \
+    --arg ended "${end_utc}" \
+    --arg root "${root_cause}" \
+    --argjson duration "${duration}" \
+    '{
+      id:$id,
+      name:$name,
+      status:$status,
+      started_at_utc:$started,
+      ended_at_utc:$ended,
+      duration_seconds:$duration,
+      root_cause:(if $root == "" then null else $root end)
+    }')"
+  RUN_REPORT_STEPS_JSON+="${step_json}"$'\n'
+
+  RUN_REPORT_CURRENT_STEP_ID=""
+  RUN_REPORT_CURRENT_STEP_NAME=""
+  RUN_REPORT_CURRENT_STEP_START_EPOCH=""
+  RUN_REPORT_CURRENT_STEP_START_UTC=""
+}
+
+run_report_step_start() {
+  local id="$1" name="$2"
+  [[ "${RUN_REPORT_ACTIVE:-false}" == "true" ]] || return 0
+
+  run_report_close_current_step "pass" ""
+  RUN_REPORT_CURRENT_STEP_ID="${id}"
+  RUN_REPORT_CURRENT_STEP_NAME="${name}"
+  RUN_REPORT_CURRENT_STEP_START_EPOCH="$(date '+%s')"
+  RUN_REPORT_CURRENT_STEP_START_UTC="$(utc_now)"
+}
+
+run_report_record_gate() {
+  local status="$1" message="$2"
+  [[ "${RUN_REPORT_ACTIVE:-false}" == "true" ]] || return 0
+  [[ "${message}" == Gate\ *:* ]] || return 0
+
+  local gate_id gate_json
+  gate_id="${message%%:*}"
+  gate_json="$(jq -cn \
+    --arg gate "${gate_id}" \
+    --arg status "${status}" \
+    --arg detail "${message}" \
+    --arg ts "$(utc_now)" \
+    '{
+      gate:$gate,
+      status:$status,
+      detail:$detail,
+      timestamp_utc:$ts
+    }')"
+  RUN_REPORT_GATES_JSON+="${gate_json}"$'\n'
+}
+
+run_report_init() {
+  local script_name="$1"
+  [[ "${RUN_REPORT_ENABLED:-true}" == "true" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+
+  local report_file="${RUN_REPORT_FILE:-}"
+  if [[ -z "${report_file}" ]]; then
+    local report_dir ts
+    report_dir="${RUN_REPORT_DIR:-${PWD}/artifacts/live-run}"
+    mkdir -p "${report_dir}" 2>/dev/null || true
+    if [[ ! -d "${report_dir}" ]]; then
+      report_dir="/tmp/secure-coolify-runs"
+      mkdir -p "${report_dir}" 2>/dev/null || true
+    fi
+    [[ -d "${report_dir}" ]] || return 0
+    ts="$(date -u '+%Y%m%d-%H%M%S')"
+    report_file="${report_dir}/${script_name%.sh}-run-${ts}-$$.json"
+  else
+    mkdir -p "$(dirname "${report_file}")" 2>/dev/null || true
+  fi
+
+  RUN_REPORT_FILE="${report_file}"
+  RUN_REPORT_SCRIPT="${script_name}"
+  RUN_REPORT_START_EPOCH="$(date '+%s')"
+  RUN_REPORT_START_UTC="$(utc_now)"
+  RUN_REPORT_LOCAL_OFFSET="$(local_tz_offset)"
+  RUN_REPORT_CURRENT_STEP_ID=""
+  RUN_REPORT_CURRENT_STEP_NAME=""
+  RUN_REPORT_CURRENT_STEP_START_EPOCH=""
+  RUN_REPORT_CURRENT_STEP_START_UTC=""
+  RUN_REPORT_STEPS_JSON=""
+  RUN_REPORT_GATES_JSON=""
+  RUN_REPORT_ROOT_CAUSE=""
+  RUN_REPORT_FINALIZED="false"
+  RUN_REPORT_ACTIVE="true"
+  log "Run report file: ${RUN_REPORT_FILE}"
+}
+
+run_report_finalize() {
+  local exit_code="${1:-0}"
+  [[ "${RUN_REPORT_ACTIVE:-false}" == "true" ]] || return 0
+  [[ "${RUN_REPORT_FINALIZED:-false}" == "true" ]] && return 0
+  RUN_REPORT_FINALIZED="true"
+
+  local status="pass"
+  if (( exit_code != 0 )); then
+    status="fail"
+  fi
+
+  if [[ "${status}" == "fail" && -z "${RUN_REPORT_ROOT_CAUSE:-}" ]]; then
+    RUN_REPORT_ROOT_CAUSE="Deployment failed; inspect terminal output for details."
+  fi
+  run_report_close_current_step "${status}" "${RUN_REPORT_ROOT_CAUSE:-}"
+
+  local end_epoch end_utc duration steps_json gates_json report_json
+  end_epoch="$(date '+%s')"
+  end_utc="$(utc_now)"
+  duration="$(( end_epoch - RUN_REPORT_START_EPOCH ))"
+
+  if [[ -n "${RUN_REPORT_STEPS_JSON}" ]]; then
+    steps_json="$(printf '%s' "${RUN_REPORT_STEPS_JSON}" | jq -s '.')"
+  else
+    steps_json='[]'
+  fi
+  if [[ -n "${RUN_REPORT_GATES_JSON}" ]]; then
+    gates_json="$(printf '%s' "${RUN_REPORT_GATES_JSON}" | jq -s '.')"
+  else
+    gates_json='[]'
+  fi
+
+  report_json="$(jq -cn \
+    --arg script "${RUN_REPORT_SCRIPT}" \
+    --arg status "${status}" \
+    --arg started "${RUN_REPORT_START_UTC}" \
+    --arg ended "${end_utc}" \
+    --arg local_offset "${RUN_REPORT_LOCAL_OFFSET}" \
+    --arg root "${RUN_REPORT_ROOT_CAUSE:-}" \
+    --argjson duration "${duration}" \
+    --argjson steps "${steps_json}" \
+    --argjson gates "${gates_json}" \
+    '{
+      script:$script,
+      status:$status,
+      started_at_utc:$started,
+      ended_at_utc:$ended,
+      duration_seconds:$duration,
+      local_tz_offset:$local_offset,
+      root_cause:(if $root == "" then null else $root end),
+      steps:$steps,
+      gates:$gates
+    }')"
+  printf '%s\n' "${report_json}" > "${RUN_REPORT_FILE}" || true
+}
+
 log()  { printf '[%s] %s\n' "$(utc_now)" "$*"; }
 warn() { log "WARN: $*"; }
-die()  { log "FATAL: $*" >&2; exit 1; }
-step() { printf '\n\033[1;36m[%s] %s\033[0m\n' "$1" "$2"; }
-pass() { printf '  \033[1;32mPASS\033[0m %s\n' "$*"; }
-fail() { printf '  \033[1;31mFAIL\033[0m %s\n' "$*"; }
+die()  {
+  RUN_REPORT_ROOT_CAUSE="$*"
+  log "FATAL: $*" >&2
+  exit 1
+}
+step() {
+  printf '\n\033[1;36m[%s] %s\033[0m\n' "$1" "$2"
+  run_report_step_start "$1" "$2"
+}
+pass() {
+  local msg="$*"
+  printf '  \033[1;32mPASS\033[0m %s\n' "${msg}"
+  run_report_record_gate "pass" "${msg}"
+}
+fail() {
+  local msg="$*"
+  printf '  \033[1;31mFAIL\033[0m %s\n' "${msg}"
+  run_report_record_gate "fail" "${msg}"
+}
 
 is_true() {
   case "${1,,}" in
