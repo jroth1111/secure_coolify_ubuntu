@@ -57,11 +57,15 @@ teardown_file() {
 }
 
 @test "validate: JSON output has valid structure with check entries" {
+  local validate_json
+
   run bash "${VALIDATE_SCRIPT}" --json
   assert_success
-  run jq -e '.pass >= 0 and .fail >= 0 and .info >= 0 and (.checks | type == "array") and (.checks | length > 0)' <<< "${output}"
+  validate_json="${output}"
+
+  run jq -e '.pass >= 0 and .fail >= 0 and .info >= 0 and (.checks | type == "array") and (.checks | length > 0)' <<< "${validate_json}"
   assert_success
-  run jq -e 'all(.checks[]; has("check") and has("status") and has("detail"))' <<< "${output}"
+  run jq -e 'all(.checks[]; has("check") and has("status") and has("detail"))' <<< "${validate_json}"
   assert_success
 }
 

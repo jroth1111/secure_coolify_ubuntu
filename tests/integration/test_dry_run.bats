@@ -47,6 +47,8 @@ teardown_file() {
 @test "dry-run: logs DRY-RUN prefix" {
   run run_dry_run
   assert_success
+  [ ! -f "${STATE_FILE}" ]
+  [ ! -f "${REPORT_FILE}" ]
   assert_output --partial "DRY-RUN: write"
 }
 
@@ -79,6 +81,8 @@ teardown_file() {
 @test "dry-run: logs every major phase" {
   run run_dry_run
   assert_success
+  [ ! -f "${STATE_FILE}" ]
+  [ ! -f "${REPORT_FILE}" ]
   assert_output --partial "Verifying NTP time synchronization."
   assert_output --partial "Configuring swap."
   assert_output --partial "Disabling unused network services."
@@ -111,6 +115,8 @@ teardown_file() {
     --dry-run \
     --force
   assert_success
+  [ ! -f /swapfile ]
+  [ ! -f "${STATE_FILE}" ]
   assert_output --partial "Swap creation disabled"
 }
 
@@ -124,6 +130,8 @@ teardown_file() {
     --dry-run \
     --force
   assert_success
+  [ ! -f "${STATE_FILE}" ]
+  [ ! -f "${REPORT_FILE}" ]
   assert_output --partial "Tunnel mode: skipping"
 }
 
@@ -135,6 +143,8 @@ teardown_file() {
     --dry-run \
     --force
   assert_failure
+  [ ! -f "${STATE_FILE}" ]
+  [ ! -f "${REPORT_FILE}" ]
   assert_output --partial "Missing ADMIN_USER"
 }
 
@@ -147,6 +157,8 @@ teardown_file() {
     --dry-run \
     --force"
   assert_failure
+  [ ! -f "${STATE_FILE}" ]
+  [ ! -f "${REPORT_FILE}" ]
   assert_output --partial "Run as root"
 }
 
@@ -155,6 +167,8 @@ teardown_file() {
 
   run run_dry_run
   assert_failure
+  [ ! -f "${STATE_FILE}" ]
+  [ ! -f "${REPORT_FILE}" ]
   assert_output --partial "Interface tailscale0 not found"
 
   ip link add tailscale0 type dummy 2>/dev/null || true

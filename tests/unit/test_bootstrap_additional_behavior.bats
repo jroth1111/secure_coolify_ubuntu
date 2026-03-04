@@ -81,34 +81,57 @@ setup() {
 @test "configure_coolify_binding_watchdog: dry-run emits planned timer install" {
   DRY_RUN="true"
   BIND_DASHBOARD_TO_TAILSCALE="true"
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  COOLIFY_BINDING_GUARD_SCRIPT="${tmpdir}/coolify-binding-guard.sh"
+  COOLIFY_BINDING_GUARD_SERVICE="${tmpdir}/coolify-binding-guard.service"
+  COOLIFY_BINDING_GUARD_TIMER="${tmpdir}/coolify-binding-guard.timer"
 
   run configure_coolify_binding_watchdog
   assert_success
   assert_output --partial "DRY-RUN"
+  [ ! -f "${COOLIFY_BINDING_GUARD_SCRIPT}" ]
+  [ ! -f "${COOLIFY_BINDING_GUARD_SERVICE}" ]
+  [ ! -f "${COOLIFY_BINDING_GUARD_TIMER}" ]
+  rm -rf "${tmpdir}"
 }
 
 @test "ensure_timesync: dry-run executes without host mutation" {
   DRY_RUN="true"
+  local marker
+  marker="$(mktemp)"
+  rm -f "${marker}"
+  timedatectl() { echo called > "${marker}"; return 0; }
 
   run ensure_timesync
   assert_success
   assert_output --partial "DRY-RUN"
+  [ ! -f "${marker}" ]
 }
 
 @test "disable_unused_services: dry-run logs service disable actions" {
   DRY_RUN="true"
+  local marker
+  marker="$(mktemp)"
+  rm -f "${marker}"
+  systemctl() { echo called > "${marker}"; return 0; }
 
   run disable_unused_services
   assert_success
   assert_output --partial "DRY-RUN"
+  [ ! -f "${marker}" ]
 }
 
 @test "configure_banner: dry-run logs banner file write" {
   DRY_RUN="true"
+  local before after
+  before="$(sha256sum /etc/issue.net 2>/dev/null || true)"
 
   run configure_banner
   assert_success
   assert_output --partial "/etc/issue.net"
+  after="$(sha256sum /etc/issue.net 2>/dev/null || true)"
+  [ "${before}" = "${after}" ]
 }
 
 @test "discover_docker_ssh_cidrs: collects CIDRs from docker/ip providers" {
@@ -142,18 +165,30 @@ setup() {
   ADMIN_USER="coolifyadmin"
   SSH_PORT="22"
   DOCKER_SSH_CIDRS=("10.42.0.0/16")
+  SSH_DROPIN_FILE="$(mktemp)"
+  rm -f "${SSH_DROPIN_FILE}"
 
   run configure_ssh
   assert_success
   assert_output --partial "DRY-RUN"
+  [ ! -f "${SSH_DROPIN_FILE}" ]
 }
 
 @test "install_docker_user_assets: dry-run logs docker-user asset writes" {
   DRY_RUN="true"
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  DOCKER_USER_SCRIPT="${tmpdir}/docker-user-hardening.sh"
+  DOCKER_USER_ENV_FILE="${tmpdir}/docker-user-hardening.env"
+  DOCKER_USER_UNIT_FILE="${tmpdir}/docker-user-hardening.service"
 
   run install_docker_user_assets
   assert_success
   assert_output --partial "docker-user"
+  [ ! -f "${DOCKER_USER_SCRIPT}" ]
+  [ ! -f "${DOCKER_USER_ENV_FILE}" ]
+  [ ! -f "${DOCKER_USER_UNIT_FILE}" ]
+  rm -rf "${tmpdir}"
 }
 
 @test "detect_docker: marks Docker present when docker command exists" {
@@ -174,10 +209,19 @@ setup() {
 @test "configure_docker_user: dry-run installs/enables service without failure" {
   DRY_RUN="true"
   DOCKER_PRESENT="false"
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  DOCKER_USER_SCRIPT="${tmpdir}/docker-user-hardening.sh"
+  DOCKER_USER_ENV_FILE="${tmpdir}/docker-user-hardening.env"
+  DOCKER_USER_UNIT_FILE="${tmpdir}/docker-user-hardening.service"
 
   run configure_docker_user
   assert_success
   assert_output --partial "docker-user"
+  [ ! -f "${DOCKER_USER_SCRIPT}" ]
+  [ ! -f "${DOCKER_USER_ENV_FILE}" ]
+  [ ! -f "${DOCKER_USER_UNIT_FILE}" ]
+  rm -rf "${tmpdir}"
 }
 
 @test "configure_auditd_policy: updates auditd.conf keys" {
@@ -200,18 +244,24 @@ setup() {
 
 @test "configure_auditd: dry-run renders rules and logs planned actions" {
   DRY_RUN="true"
+  AUDIT_RULES_FILE="$(mktemp)"
+  rm -f "${AUDIT_RULES_FILE}"
 
   run configure_auditd
   assert_success
   assert_output --partial "DRY-RUN"
+  [ ! -f "${AUDIT_RULES_FILE}" ]
 }
 
 @test "generate_report: dry-run exits cleanly without writing report file" {
   DRY_RUN="true"
+  REPORT_FILE="$(mktemp)"
+  rm -f "${REPORT_FILE}"
 
   run generate_report
   assert_success
   assert_output --partial "DRY-RUN"
+  [ ! -f "${REPORT_FILE}" ]
 }
 
 @test "is_container_runtime: returns success when container env is docker" {
@@ -224,10 +274,19 @@ setup() {
 @test "configure_docker_ssh_cidr_sync_timer: dry-run reports timer install" {
   DRY_RUN="true"
   STRICT_DOCKER_SSH_CIDRS="true"
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  DOCKER_SSH_CIDR_SYNC_SCRIPT="${tmpdir}/docker-ssh-cidr-sync.sh"
+  DOCKER_SSH_CIDR_SYNC_SERVICE="${tmpdir}/docker-ssh-cidr-sync.service"
+  DOCKER_SSH_CIDR_SYNC_TIMER="${tmpdir}/docker-ssh-cidr-sync.timer"
 
   run configure_docker_ssh_cidr_sync_timer
   assert_success
   assert_output --partial "docker-ssh-cidr-sync.timer"
+  [ ! -f "${DOCKER_SSH_CIDR_SYNC_SCRIPT}" ]
+  [ ! -f "${DOCKER_SSH_CIDR_SYNC_SERVICE}" ]
+  [ ! -f "${DOCKER_SSH_CIDR_SYNC_TIMER}" ]
+  rm -rf "${tmpdir}"
 }
 
 @test "configure_swap: dry-run logs swap provisioning actions" {
@@ -238,14 +297,18 @@ setup() {
   run configure_swap
   assert_success
   assert_output --partial "DRY-RUN"
+  [ ! -f /swapfile ]
 }
 
 @test "configure_sysctl: dry-run logs sysctl drop-in write" {
   DRY_RUN="true"
+  SYSCTL_DROPIN_FILE="$(mktemp)"
+  rm -f "${SYSCTL_DROPIN_FILE}"
 
   run configure_sysctl
   assert_success
   assert_output --partial "sysctl"
+  [ ! -f "${SYSCTL_DROPIN_FILE}" ]
 }
 
 @test "configure_ufw: dry-run logs firewall rule reconciliation" {
@@ -256,29 +319,40 @@ setup() {
   TUNNEL_MODE="false"
   TAILSCALE_DIRECT_WAN="false"
   DOCKER_SSH_CIDRS=("10.0.0.0/8")
+  local marker
+  marker="$(mktemp)"
+  rm -f "${marker}"
+  ufw() { echo called > "${marker}"; return 0; }
 
   run configure_ufw
   assert_success
   assert_output --partial "DRY-RUN"
+  [ ! -f "${marker}" ]
 }
 
 @test "configure_fail2ban: dry-run logs jail configuration and service action" {
   DRY_RUN="true"
   SSH_PORT="22"
   TAILSCALE_CIDR="100.64.0.0/10"
+  FAIL2BAN_JAIL_FILE="$(mktemp)"
+  rm -f "${FAIL2BAN_JAIL_FILE}"
 
   run configure_fail2ban
   assert_success
   assert_output --partial "DRY-RUN"
   assert_output --partial "fail2ban"
+  [ ! -f "${FAIL2BAN_JAIL_FILE}" ]
 }
 
 @test "configure_journald: dry-run logs journald configuration changes" {
   DRY_RUN="true"
+  JOURNALD_DROPIN_FILE="$(mktemp)"
+  rm -f "${JOURNALD_DROPIN_FILE}"
 
   run configure_journald
   assert_success
   assert_output --partial "DRY-RUN"
+  [ ! -f "${JOURNALD_DROPIN_FILE}" ]
 }
 
 @test "configure_docker_daemon: skips when Docker absent" {
@@ -292,10 +366,12 @@ setup() {
 
 @test "run_post_checks: dry-run bypasses live host assertions" {
   DRY_RUN="true"
+  die() { echo "unexpected-die"; return 99; }
 
   run run_post_checks
   assert_success
   assert_output --partial "post-apply checks skipped"
+  refute_output --partial "unexpected-die"
 }
 
 @test "on_err: reports failing command context" {
