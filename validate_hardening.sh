@@ -89,6 +89,9 @@ TAILSCALE_DIRECT_WAN="auto"
 UPDATE_PROFILE=""
 DOCKER_RULES_APPLIED="false"
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
+DOCKER_SSH_CIDR_SYNC_SCRIPT="/usr/local/sbin/docker-ssh-cidr-sync.sh"
+DOCKER_SSH_CIDR_SYNC_SERVICE="docker-ssh-cidr-sync.service"
+DOCKER_SSH_CIDR_SYNC_TIMER="docker-ssh-cidr-sync.timer"
 
 load_state_context() {
   [[ -f "${STATE_FILE}" ]] || return 0
@@ -514,6 +517,58 @@ docker_user_lifecycle_check() {
     else
       record "FAIL" "docker-user: service result" "result=${result} — rules may not have been applied"
     fi
+  fi
+}
+
+# ── docker-ssh-cidr-sync lifecycle (strict CIDR mode) ──
+
+docker_ssh_cidr_sync_check() {
+  if ! is_true "${STRICT_DOCKER_SSH_CIDRS}"; then
+    record "INFO" "docker-ssh-cidr-sync: strict mode" "disabled"
+    return
+  fi
+
+  if [[ ! -f "${DOCKER_SSH_CIDR_SYNC_SCRIPT}" ]]; then
+    record "FAIL" "docker-ssh-cidr-sync: script" "missing at ${DOCKER_SSH_CIDR_SYNC_SCRIPT}"
+    return
+  fi
+
+  # Guard against legacy script versions that inserted host/prefix values
+  # (for example 10.0.0.1/24) into sshd Match Address and broke sshd reloads.
+  if grep -q 'normalize_cidr()' "${DOCKER_SSH_CIDR_SYNC_SCRIPT}"; then
+    record "PASS" "docker-ssh-cidr-sync: CIDR normalization"
+  else
+    record "FAIL" "docker-ssh-cidr-sync: CIDR normalization" \
+      "normalize_cidr() missing; host/prefix CIDRs can break sshd Match Address"
+  fi
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    record "INFO" "docker-ssh-cidr-sync: systemd" "systemctl unavailable"
+    return
+  fi
+
+  if systemctl is-active --quiet "${DOCKER_SSH_CIDR_SYNC_TIMER}" 2>/dev/null; then
+    record "PASS" "docker-ssh-cidr-sync: timer active"
+  elif systemctl list-unit-files --no-legend "${DOCKER_SSH_CIDR_SYNC_TIMER}" 2>/dev/null | grep -q "${DOCKER_SSH_CIDR_SYNC_TIMER}"; then
+    record "FAIL" "docker-ssh-cidr-sync: timer active" "installed but inactive"
+  else
+    record "FAIL" "docker-ssh-cidr-sync: timer active" "timer not installed"
+  fi
+
+  local active_state result
+  active_state="$(systemctl show "${DOCKER_SSH_CIDR_SYNC_SERVICE}" --property=ActiveState --value 2>/dev/null || echo "unknown")"
+  if [[ "${active_state}" == "active" || "${active_state}" == "activating" ]]; then
+    record "PASS" "docker-ssh-cidr-sync: service has run (${active_state})"
+    return
+  fi
+
+  # Oneshot services are expected to go inactive after successful completion.
+  result="$(systemctl show "${DOCKER_SSH_CIDR_SYNC_SERVICE}" --property=Result --value 2>/dev/null || echo "unknown")"
+  if [[ "${result}" == "success" ]]; then
+    record "PASS" "docker-ssh-cidr-sync: service completed successfully"
+  else
+    record "FAIL" "docker-ssh-cidr-sync: service result" \
+      "result=${result} — inspect: journalctl -u ${DOCKER_SSH_CIDR_SYNC_SERVICE}"
   fi
 }
 
@@ -1616,6 +1671,7 @@ main() {
   ufw_check
   docker_user_check
   docker_user_lifecycle_check
+  docker_ssh_cidr_sync_check
   docker_daemon_check
   docker_trust_boundary_check
   sysctl_check

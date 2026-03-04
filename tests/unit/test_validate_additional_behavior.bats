@@ -887,6 +887,90 @@ EOF
   rm -f "${backup}"
 }
 
+@test "docker_ssh_cidr_sync_check: records PASS when strict mode timer/service are healthy" {
+  local sync_script
+  sync_script="$(mktemp)"
+  cat > "${sync_script}" <<'EOF'
+#!/usr/bin/env bash
+normalize_cidr() { :; }
+EOF
+  chmod 755 "${sync_script}"
+
+  STRICT_DOCKER_SSH_CIDRS="true"
+  DOCKER_SSH_CIDR_SYNC_SCRIPT="${sync_script}"
+  DOCKER_SSH_CIDR_SYNC_SERVICE="docker-ssh-cidr-sync.service"
+  DOCKER_SSH_CIDR_SYNC_TIMER="docker-ssh-cidr-sync.timer"
+
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "docker-ssh-cidr-sync.timer" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "show" && "${2:-}" == "docker-ssh-cidr-sync.service" && "${3:-}" == "--property=ActiveState" ]]; then
+      echo inactive
+      return 0
+    fi
+    if [[ "${1:-}" == "show" && "${2:-}" == "docker-ssh-cidr-sync.service" && "${3:-}" == "--property=Result" ]]; then
+      echo success
+      return 0
+    fi
+    return 1
+  }
+
+  docker_ssh_cidr_sync_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-ssh-cidr-sync: CIDR normalization" "PASS"
+  assert_json_check_status "${json}" "docker-ssh-cidr-sync: timer active" "PASS"
+  assert_json_check_status "${json}" "docker-ssh-cidr-sync: service completed successfully" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  rm -f "${sync_script}"
+}
+
+@test "docker_ssh_cidr_sync_check: fails when normalization is missing and service is failing" {
+  local sync_script
+  sync_script="$(mktemp)"
+  cat > "${sync_script}" <<'EOF'
+#!/usr/bin/env bash
+echo legacy
+EOF
+  chmod 755 "${sync_script}"
+
+  STRICT_DOCKER_SSH_CIDRS="true"
+  DOCKER_SSH_CIDR_SYNC_SCRIPT="${sync_script}"
+  DOCKER_SSH_CIDR_SYNC_SERVICE="docker-ssh-cidr-sync.service"
+  DOCKER_SSH_CIDR_SYNC_TIMER="docker-ssh-cidr-sync.timer"
+
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "docker-ssh-cidr-sync.timer" ]]; then
+      return 1
+    fi
+    if [[ "${1:-}" == "list-unit-files" ]]; then
+      echo "docker-ssh-cidr-sync.timer enabled"
+      return 0
+    fi
+    if [[ "${1:-}" == "show" && "${2:-}" == "docker-ssh-cidr-sync.service" && "${3:-}" == "--property=ActiveState" ]]; then
+      echo inactive
+      return 0
+    fi
+    if [[ "${1:-}" == "show" && "${2:-}" == "docker-ssh-cidr-sync.service" && "${3:-}" == "--property=Result" ]]; then
+      echo exit-code
+      return 0
+    fi
+    return 1
+  }
+
+  docker_ssh_cidr_sync_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-ssh-cidr-sync: CIDR normalization" "FAIL"
+  assert_json_check_status "${json}" "docker-ssh-cidr-sync: timer active" "FAIL"
+  assert_json_check_status "${json}" "docker-ssh-cidr-sync: service result" "FAIL"
+  assert_json_fail_count "${json}" "3"
+
+  rm -f "${sync_script}"
+}
+
 @test "fail2ban_check: records fail/info when fail2ban is absent" {
   systemctl() { return 1; }
   fail2ban_check
