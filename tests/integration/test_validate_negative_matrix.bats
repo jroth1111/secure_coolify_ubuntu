@@ -441,17 +441,27 @@ EOF
 }
 
 @test "validate negative: coolify container health triggers failure when /data/coolify exists without containers" {
-  mkdir -p /data/coolify 2>/dev/null || skip "cannot create /data/coolify in this environment"
+  mkdir -p /data/coolify/source 2>/dev/null || skip "cannot create /data/coolify in this environment"
+  cat > /data/coolify/source/.env <<'EOF'
+APP_ID=test
+EOF
 
   run bash "${VALIDATE_SCRIPT}" --json
 
   rm -rf /data/coolify
   assert_failure
-  [[ "$(json_status_for_check "coolify-containers: coolify")" == "FAIL" ]]
+  jq -e '
+    [.checks[]
+      | select((.check | startswith("coolify-containers: ")) and .status == "FAIL")
+    ] | length >= 1
+  ' <<< "${output}" >/dev/null
 }
 
 @test "validate negative: coolify ssh key absence triggers failure when ssh key dir exists" {
-  mkdir -p /data/coolify/ssh/keys 2>/dev/null || skip "cannot create /data/coolify/ssh/keys in this environment"
+  mkdir -p /data/coolify/source /data/coolify/ssh/keys 2>/dev/null || skip "cannot create /data/coolify directories in this environment"
+  cat > /data/coolify/source/.env <<'EOF'
+APP_ID=test
+EOF
 
   run bash "${VALIDATE_SCRIPT}" --json
 

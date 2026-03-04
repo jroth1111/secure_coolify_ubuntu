@@ -113,6 +113,7 @@ EOF
       fi
       return 0
     }
+    reconcile_docker_daemon_remote() { :; }
     sync_companion_scripts() { sync_called=1; }
     report_validation_result() { :; }
 
@@ -171,6 +172,7 @@ EOF
       fi
       return 0
     }
+    reconcile_docker_daemon_remote() { :; }
     sync_companion_scripts() { :; }
     report_validation_result() {
       [[ "$1" == "Gate C" ]]
