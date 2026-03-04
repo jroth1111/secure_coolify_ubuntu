@@ -896,6 +896,221 @@ coolify_phase4_binding_dns_shared() {
   fi
 }
 
+# coolify_phase5_verify_shared — Shared phase 5 verification orchestration used
+# by deploy.sh and setup.sh.
+# Arguments:
+#   1) fetch_validate_json_fn : callback that prints validate_hardening JSON
+#   2) public_probe_mode      : external|operator
+#   3) operator_confirm_fn    : callback used only when mode=operator
+coolify_phase5_verify_shared() {
+  local fetch_validate_json_fn="${1:-}"
+  local public_probe_mode="${2:-external}"
+  local operator_confirm_fn="${3:-}"
+
+  [[ -n "${fetch_validate_json_fn}" ]] || die "coolify_phase5_verify_shared requires fetch_validate_json_fn"
+  [[ "${public_probe_mode}" == "external" || "${public_probe_mode}" == "operator" ]] \
+    || die "Invalid public probe mode: ${public_probe_mode}"
+
+  step "5/5" "Final verification"
+
+  # Gate E: Dashboard reachable on Tailscale.
+  # In external mode, also enforce dashboard/ws blocked on public IP.
+  # In operator mode (setup.sh on-server), keep public-IP checks as operator-confirmed
+  # because localhost-origin probes to the host's public IP are not authoritative.
+  log "Gate E: Checking dashboard accessibility..."
+  sleep 5
+
+  local ts_code pub_code
+  local attempts=12
+  local attempt
+  local delay=10
+  local gate_e_passed=false
+  for (( attempt=1; attempt<=attempts; attempt++ )); do
+    ts_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 10 "http://${TS_IP}:8000" 2>/dev/null)" || ts_code=""
+    ts_code="${ts_code:-000}"
+    ts_code="${ts_code:0:3}"
+
+    if [[ "${public_probe_mode}" == "external" ]]; then
+      pub_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 "http://${SERVER_IP}:8000" 2>/dev/null)" || pub_code=""
+      pub_code="${pub_code:-000}"
+      pub_code="${pub_code:0:3}"
+      if [[ "${ts_code}" != "000" && "${pub_code}" == "000" ]]; then
+        gate_e_passed=true
+        break
+      fi
+      if (( attempt < attempts )); then
+        log "  Gate E not ready (tailscale=${ts_code}, public=${pub_code}); retrying in ${delay}s (${attempt}/${attempts})..."
+        sleep "${delay}"
+      fi
+    else
+      if [[ "${ts_code}" != "000" ]]; then
+        gate_e_passed=true
+        break
+      fi
+      if (( attempt < attempts )); then
+        log "  Gate E not ready (tailscale=${ts_code}); retrying in ${delay}s (${attempt}/${attempts})..."
+        sleep "${delay}"
+      fi
+    fi
+  done
+
+  if [[ "${gate_e_passed}" != "true" ]]; then
+    fail "Gate E: dashboard not reachable on ${TS_IP}:8000"
+    die "Gate E failed: dashboard not reachable via Tailscale."
+  fi
+
+  pass "Gate E: Dashboard reachable on Tailscale IP (HTTP ${ts_code})"
+  if [[ "${public_probe_mode}" == "external" ]]; then
+    if [[ "${pub_code}" != "000" ]]; then
+      fail "Gate E: dashboard reachable on public IP ${SERVER_IP}:8000 (HTTP ${pub_code})"
+      die "Gate E failed: dashboard reachable on public IP."
+    fi
+    pass "Gate E: Dashboard NOT reachable on public IP (good)"
+  fi
+
+  # Gate E (realtime): Soketi websocket endpoint reachable on Tailscale.
+  # External mode additionally enforces public-IP block.
+  log "Gate E: Checking websocket accessibility..."
+  local ws_ts_code ws_pub_code
+  local gate_e_ws_passed=false
+  for (( attempt=1; attempt<=attempts; attempt++ )); do
+    ws_ts_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 10 "http://${TS_IP}:6001" 2>/dev/null)" || ws_ts_code=""
+    ws_ts_code="${ws_ts_code:-000}"
+    ws_ts_code="${ws_ts_code:0:3}"
+
+    if [[ "${public_probe_mode}" == "external" ]]; then
+      ws_pub_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 "http://${SERVER_IP}:6001" 2>/dev/null)" || ws_pub_code=""
+      ws_pub_code="${ws_pub_code:-000}"
+      ws_pub_code="${ws_pub_code:0:3}"
+      if [[ "${ws_ts_code}" != "000" && "${ws_pub_code}" == "000" ]]; then
+        gate_e_ws_passed=true
+        break
+      fi
+      if (( attempt < attempts )); then
+        log "  Gate E websocket not ready (tailscale=${ws_ts_code}, public=${ws_pub_code}); retrying in ${delay}s (${attempt}/${attempts})..."
+        sleep "${delay}"
+      fi
+    else
+      if [[ "${ws_ts_code}" != "000" ]]; then
+        gate_e_ws_passed=true
+        break
+      fi
+      if (( attempt < attempts )); then
+        log "  Gate E websocket not ready (tailscale=${ws_ts_code}); retrying in ${delay}s (${attempt}/${attempts})..."
+        sleep "${delay}"
+      fi
+    fi
+  done
+
+  if [[ "${gate_e_ws_passed}" != "true" ]]; then
+    fail "Gate E: websocket not reachable on ${TS_IP}:6001"
+    die "Gate E failed: websocket not reachable via Tailscale."
+  fi
+
+  pass "Gate E: Websocket reachable on Tailscale IP (HTTP ${ws_ts_code})"
+  if [[ "${public_probe_mode}" == "external" ]]; then
+    if [[ "${ws_pub_code}" != "000" ]]; then
+      fail "Gate E: websocket reachable on public IP ${SERVER_IP}:6001 (HTTP ${ws_pub_code})"
+      die "Gate E failed: websocket reachable on public IP."
+    fi
+    pass "Gate E: Websocket NOT reachable on public IP (good)"
+  elif [[ -n "${operator_confirm_fn}" ]]; then
+    "${operator_confirm_fn}" "From your LAPTOP, verify: curl http://${SERVER_IP}:8000 fails and curl http://${SERVER_IP}:6001 fails"
+    pass "Gate E: Operator-confirmed dashboard/websocket blocked on public IP"
+  fi
+
+  if [[ "${DEPLOY_MODE}" == "standard" ]]; then
+    # Gate F (standard): external HTTPS endpoint must be reachable.
+    log "Gate F: Checking external HTTPS endpoint..."
+    local https_code
+    local gate_f_passed=false
+    for (( attempt=1; attempt<=attempts; attempt++ )); do
+      https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -L "https://${DOMAIN}" 2>/dev/null)" || https_code=""
+      https_code="${https_code:-000}"
+      https_code="${https_code:0:3}"
+      if [[ "${https_code}" =~ ^[23][0-9][0-9]$ ]]; then
+        gate_f_passed=true
+        break
+      fi
+      if (( attempt < attempts )); then
+        log "  Gate F not ready (https_code=${https_code}); retrying in ${delay}s (${attempt}/${attempts})..."
+        sleep "${delay}"
+      fi
+    done
+
+    if [[ "${gate_f_passed}" == "true" ]]; then
+      pass "Gate F: https://${DOMAIN} reachable (HTTP ${https_code})"
+    else
+      fail "Gate F: https://${DOMAIN} not reachable with success response (last HTTP ${https_code})"
+      die "Gate F failed: external HTTPS endpoint check did not pass."
+    fi
+  else
+    # Gate F (tunnel/private): private host routes must work on Tailscale-only DNS.
+    log "Gate F: Checking private host routes and public-origin blocking..."
+    local dashboard_private_code ws_private_code
+    local gate_f_private_routes_passed=false
+    for (( attempt=1; attempt<=attempts; attempt++ )); do
+      dashboard_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${DOMAIN}" 2>/dev/null)" || dashboard_private_code=""
+      ws_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://ws.${DOMAIN}" 2>/dev/null)" || ws_private_code=""
+      dashboard_private_code="${dashboard_private_code:-000}"
+      ws_private_code="${ws_private_code:-000}"
+      dashboard_private_code="${dashboard_private_code:0:3}"
+      ws_private_code="${ws_private_code:0:3}"
+
+      if [[ "${dashboard_private_code}" =~ ^[23][0-9][0-9]$ && "${ws_private_code}" != "000" ]]; then
+        gate_f_private_routes_passed=true
+        break
+      fi
+      if (( attempt < attempts )); then
+        log "  Gate F private routes not ready (dashboard=${dashboard_private_code}, ws=${ws_private_code}); retrying in ${delay}s (${attempt}/${attempts})..."
+        sleep "${delay}"
+      fi
+    done
+
+    if [[ "${gate_f_private_routes_passed}" != "true" ]]; then
+      fail "Gate F: private dashboard route failed (http://${DOMAIN} → HTTP ${dashboard_private_code})"
+      fail "Gate F: private websocket host failed (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
+      die "Gate F failed: private host routes are not functional on Tailscale."
+    fi
+    pass "Gate F: private dashboard route works (http://${DOMAIN} → HTTP ${dashboard_private_code})"
+    pass "Gate F: private websocket host responds (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
+
+    if [[ "${public_probe_mode}" == "external" ]]; then
+      local pub80_code pub443_code
+      pub80_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${SERVER_IP}" 2>/dev/null)" || pub80_code=""
+      pub443_code="$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 10 "https://${SERVER_IP}" 2>/dev/null)" || pub443_code=""
+      pub80_code="${pub80_code:-000}"
+      pub443_code="${pub443_code:-000}"
+      pub80_code="${pub80_code:0:3}"
+      pub443_code="${pub443_code:0:3}"
+
+      if [[ "${pub80_code}" != "000" || "${pub443_code}" != "000" ]]; then
+        fail "Gate F: public origin still reachable (${SERVER_IP}:80=${pub80_code}, :443=${pub443_code})"
+        die "Gate F failed: public origin web ports must remain blocked in tunnel mode."
+      fi
+      pass "Gate F: public origin blocked on ${SERVER_IP}:80 and :443"
+    elif [[ -n "${operator_confirm_fn}" ]]; then
+      "${operator_confirm_fn}" "From your LAPTOP, verify: curl http://${SERVER_IP} fails and curl -k https://${SERVER_IP} fails"
+      pass "Gate F: Operator-confirmed public origin blocked on ${SERVER_IP}:80 and :443"
+    fi
+
+    cf_assert_private_tailscale_a_record "${DOMAIN}" "${TS_IP}"
+    pass "Gate F: DNS A record verified (${DOMAIN} → ${TS_IP}, DNS-only)"
+    cf_assert_private_tailscale_a_record "ws.${DOMAIN}" "${TS_IP}"
+    pass "Gate F: DNS A record verified (ws.${DOMAIN} → ${TS_IP}, DNS-only)"
+  fi
+
+  # Final validation run
+  log "Running final validate_hardening.sh..."
+  local final_validate_json
+  final_validate_json="$("${fetch_validate_json_fn}" 2>/dev/null)" || true
+  report_validation_result "Final validation" "${final_validate_json}" \
+    "Final validation failed. Resolve validation failures before considering deployment complete."
+
+  # Print summary
+  print_deployment_summary
+}
+
 # coolify_install_docker_engine_script — Emit host-side script to install Docker
 # via the official apt repository (no convenience curl|sh installer).
 coolify_install_docker_engine_script() {

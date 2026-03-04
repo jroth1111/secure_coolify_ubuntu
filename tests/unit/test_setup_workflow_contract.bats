@@ -227,7 +227,7 @@ EOF
   assert_success
 }
 
-@test "setup: gate E requires operator laptop verification" {
+@test "setup: gate E/F require operator laptop confirmation for public-path checks" {
   run bash -c '
     source "'"${SETUP_SCRIPT}"'"
     tmpdir="$(mktemp -d)"
@@ -237,18 +237,39 @@ EOF
 echo "{\"fail\":0,\"checks\":[]}"
 EOF
     chmod +x "${tmpdir}/validate_hardening.sh"
+    DEPLOY_MODE="tunnel"
     TS_IP="100.64.0.25"
     SERVER_IP="203.0.113.10"
-    prompt_seen=0
+    DOMAIN="coolify.vps.example.com"
+    prompt_count=0
+    sleep() { :; }
+    curl() {
+      local url="${@: -1}"
+      if [[ "${url}" == "http://${TS_IP}:8000" ]]; then
+        echo "200"
+      elif [[ "${url}" == "http://${TS_IP}:6001" ]]; then
+        echo "200"
+      elif [[ "${url}" == "http://${DOMAIN}" ]]; then
+        echo "302"
+      elif [[ "${url}" == "http://ws.${DOMAIN}" ]]; then
+        echo "200"
+      else
+        echo "000"
+      fi
+      return 0
+    }
+    cf_assert_private_tailscale_a_record() { :; }
 
-    pause_for_operator() { prompt_seen=1; }
+    pause_for_operator() { prompt_count=$((prompt_count + 1)); echo "$1"; }
     report_validation_result() { :; }
     print_deployment_summary() { :; }
 
     phase5_verify
-    [[ "${prompt_seen}" -eq 1 ]]
+    [[ "${prompt_count}" -eq 2 ]]
   '
   assert_success
+  assert_output --partial "curl http://203.0.113.10:8000 fails"
+  assert_output --partial "curl http://203.0.113.10 fails"
 }
 
 @test "setup: final validation is executed" {
@@ -262,8 +283,27 @@ touch "${tmpdir}/validate_called"
 echo "{\"fail\":0,\"checks\":[]}"
 EOF
     chmod +x "${tmpdir}/validate_hardening.sh"
+    DEPLOY_MODE="tunnel"
     TS_IP="100.64.0.25"
     SERVER_IP="203.0.113.10"
+    DOMAIN="coolify.vps.example.com"
+    sleep() { :; }
+    curl() {
+      local url="${@: -1}"
+      if [[ "${url}" == "http://${TS_IP}:8000" ]]; then
+        echo "200"
+      elif [[ "${url}" == "http://${TS_IP}:6001" ]]; then
+        echo "200"
+      elif [[ "${url}" == "http://${DOMAIN}" ]]; then
+        echo "302"
+      elif [[ "${url}" == "http://ws.${DOMAIN}" ]]; then
+        echo "200"
+      else
+        echo "000"
+      fi
+      return 0
+    }
+    cf_assert_private_tailscale_a_record() { :; }
     pause_for_operator() { :; }
     report_seen=0
     report_validation_result() {

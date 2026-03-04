@@ -403,21 +403,12 @@ phase4_binding_dns() {
 
 # ── Phase 5: Verification ─────────────────────────────────────────────────
 
+phase5_fetch_validate_json() { "${SCRIPT_DIR}/validate_hardening.sh" --json; }
+
 phase5_verify() {
-  step "5/5" "Final verification"
-
-  # Gate E: Operator verifies from laptop
-  pause_for_operator "From your LAPTOP, verify: curl http://${TS_IP}:8000 works; curl http://${SERVER_IP}:8000 fails; curl http://${TS_IP}:6001 works; curl http://${SERVER_IP}:6001 fails; in tunnel mode, curl http://${DOMAIN} works on Tailscale, curl http://ws.${DOMAIN} responds, and curl http://${SERVER_IP} plus curl -k https://${SERVER_IP} fail"
-
-  # Final validation run
-  log "Running final validate_hardening.sh..."
-  local final_validate_json
-  final_validate_json="$("${SCRIPT_DIR}/validate_hardening.sh" --json 2>/dev/null)" || true
-  report_validation_result "Final validation" "${final_validate_json}" \
-    "Final validation failed. Resolve validation failures before considering deployment complete."
-
-  # Print summary
-  print_deployment_summary
+  # setup.sh runs on the server itself; public-IP reachability checks are confirmed
+  # from an operator laptop in coolify_phase5_verify_shared (public_probe_mode=operator).
+  coolify_phase5_verify_shared phase5_fetch_validate_json operator pause_for_operator
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────

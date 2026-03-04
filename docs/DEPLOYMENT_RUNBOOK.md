@@ -61,7 +61,7 @@ If any gate fails: stop, fix the issue, and re-run the same gate.
 Automated scripts (`deploy.sh`/`setup.sh`) use this gate mapping:
 
 - `deploy.sh` Gate A/B/C/D/E correspond to admin SSH over Tailscale, identity check, hardening validation, DOCKER-USER service+rules, and dashboard exposure boundary checks.
-- `setup.sh` Gate A and Gate E are operator-confirmed laptop checks (prompted), while Gate B/C/D are script-enforced checks.
+- `setup.sh` Gate A remains operator-confirmed (prompted). In phase 5, Tailscale/private-route checks are script-enforced, while public-path blocking checks are operator-confirmed from a laptop prompt.
 - Manual phase labels in this runbook remain authoritative for the manual procedure; automated scripts enforce equivalent control intent with script-specific checkpoints.
 
 ## Prerequisites
