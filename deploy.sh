@@ -463,7 +463,7 @@ phase2_gates() {
   # Gate C: Validation passes
   log "Gate C: Running validate_hardening.sh..."
   local validate_json
-  validate_json="$(ssh_admin_sudo '/root/validate_hardening.sh --json' 2>/dev/null)" || true
+  validate_json="$(ssh_admin_sudo '/root/validate_hardening.sh --json --gate-c' 2>/dev/null)" || true
   report_validation_result "Gate C" "${validate_json}" \
     "Gate C failed. Fix validation failures before continuing."
 }

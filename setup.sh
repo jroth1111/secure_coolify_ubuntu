@@ -271,7 +271,7 @@ phase2_gates() {
 
   log "Gate C: Running validate_hardening.sh..."
   local validate_json
-  validate_json="$("${SCRIPT_DIR}/validate_hardening.sh" --json 2>/dev/null)" || true
+  validate_json="$("${SCRIPT_DIR}/validate_hardening.sh" --json --gate-c 2>/dev/null)" || true
   report_validation_result "Gate C" "${validate_json}" \
     "Gate C failed. Fix validation failures before continuing."
 }

@@ -684,7 +684,11 @@ EOF
 coolify_add_coolify_root_key_script() {
   cat <<'EOF'
 set -Eeuo pipefail
-keyfile="$(ls /data/coolify/ssh/keys/ssh_key@* 2>/dev/null | head -1 || true)"
+key_dir="/data/coolify/ssh/keys"
+keyfile="$(ls "${key_dir}"/ssh_key@* "${key_dir}"/id.root@* 2>/dev/null | head -1 || true)"
+if [[ -z "${keyfile}" ]]; then
+  keyfile="$(find "${key_dir}" -maxdepth 1 -type f ! -name '*.pub' 2>/dev/null | head -1 || true)"
+fi
 [[ -n "${keyfile}" ]] || { echo "No Coolify SSH key found — skipping"; exit 0; }
 pubkey="$(ssh-keygen -y -f "${keyfile}")"
 auth="/root/.ssh/authorized_keys"

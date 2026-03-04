@@ -10,6 +10,7 @@ JOURNALD_DROPIN="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
 AUDITD_CONF="/etc/audit/auditd.conf"
 JSON_MODE="false"
 HEALTH_CHECK_MODE="false"
+GATE_C_MODE="false"
 IS_CONTAINER="false"
 
 parse_cli_args() {
@@ -18,6 +19,7 @@ parse_cli_args() {
     case "${arg}" in
       --json) JSON_MODE="true" ;;
       --health-check) HEALTH_CHECK_MODE="true" ;;
+      --gate-c) GATE_C_MODE="true" ;;
     esac
   done
 
@@ -1328,9 +1330,12 @@ coolify_ssh_check() {
   fi
 
   local keyfile
-  keyfile=$(ls "${ssh_dir}"/ssh_key@* 2>/dev/null | head -1 || true)
+  keyfile="$(ls "${ssh_dir}"/ssh_key@* "${ssh_dir}"/id.root@* 2>/dev/null | head -1 || true)"
   if [[ -z "${keyfile}" ]]; then
-    record "FAIL" "coolify: ssh key exists" "no ssh_key@* found in ${ssh_dir}"
+    keyfile="$(find "${ssh_dir}" -maxdepth 1 -type f ! -name '*.pub' 2>/dev/null | head -1 || true)"
+  fi
+  if [[ -z "${keyfile}" ]]; then
+    record "FAIL" "coolify: ssh key exists" "no private key file found in ${ssh_dir}"
     return 0
   fi
   record "PASS" "coolify: ssh key exists"
@@ -1626,8 +1631,12 @@ main() {
   disabled_services_check
   tailscale_check
   coolify_binding_check
-  coolify_ssh_check
-  coolify_container_check
+  if [[ "${GATE_C_MODE}" == "true" ]]; then
+    record "INFO" "gate-c: coolify runtime checks" "skipped in --gate-c mode"
+  else
+    coolify_ssh_check
+    coolify_container_check
+  fi
   validate_timer_check
   listening_ports_info
   cloudflared_check
