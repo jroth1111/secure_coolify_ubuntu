@@ -309,3 +309,54 @@ setup() {
   '
   assert_success
 }
+
+@test "coolify_phase4_binding_dns_shared: tunnel mode creates dashboard, websocket, and wildcard CNAMEs" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    DEPLOY_MODE="tunnel"
+    DOMAIN="coolify.vps.example.com"
+    APP_DOMAIN="vps.example.com"
+    CF_ZONE_NAME="example.com"
+    TUNNEL_ID="tunnel-1234"
+    wait_checks=0
+    bind_calls=0
+    wildcard_calls=0
+    pusher_calls=0
+    install_calls=0
+    configure_calls=0
+    stop_calls=0
+    create_tunnel_calls=0
+    cname_records=""
+    a_record_calls=0
+
+    coolify_env_exists() { wait_checks=$((wait_checks + 1)); return 0; }
+    configure_binding() { bind_calls=$((bind_calls + 1)); }
+    set_wildcard_domain() { wildcard_calls=$((wildcard_calls + 1)); }
+    reconcile_pusher() { pusher_calls=$((pusher_calls + 1)); }
+    install_cloudflared() { install_calls=$((install_calls + 1)); }
+    configure_cloudflared() { configure_calls=$((configure_calls + 1)); }
+    stop_cloudflared() { stop_calls=$((stop_calls + 1)); }
+    cf_create_tunnel() { create_tunnel_calls=$((create_tunnel_calls + 1)); }
+    cf_upsert_cname() { cname_records+="$1|$2"$'"'"'\n'"'"'; }
+    cf_upsert_a_record() { a_record_calls=$((a_record_calls + 1)); }
+
+    coolify_phase4_binding_dns_shared \
+      coolify_env_exists configure_binding set_wildcard_domain reconcile_pusher \
+      install_cloudflared configure_cloudflared stop_cloudflared
+
+    [[ "${wait_checks}" -eq 1 ]]
+    [[ "${bind_calls}" -eq 1 ]]
+    [[ "${wildcard_calls}" -eq 1 ]]
+    [[ "${pusher_calls}" -eq 1 ]]
+    [[ "${install_calls}" -eq 1 ]]
+    [[ "${configure_calls}" -eq 1 ]]
+    [[ "${create_tunnel_calls}" -eq 1 ]]
+    [[ "${stop_calls}" -eq 0 ]]
+    [[ "${a_record_calls}" -eq 0 ]]
+    grep -q "^coolify.vps.example.com|tunnel-1234.cfargotunnel.com$" <<< "${cname_records}"
+    grep -q "^ws.coolify.vps.example.com|tunnel-1234.cfargotunnel.com$" <<< "${cname_records}"
+    grep -q "^\\*.vps.example.com|tunnel-1234.cfargotunnel.com$" <<< "${cname_records}"
+    grep -q "^\\*.example.com|tunnel-1234.cfargotunnel.com$" <<< "${cname_records}"
+  '
+  assert_success
+}

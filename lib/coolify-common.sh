@@ -806,6 +806,11 @@ coolify_phase4_binding_dns_shared() {
   cf_upsert_cname "${DOMAIN}" "${tunnel_target}"
   pass "DNS CNAME configured: ${DOMAIN} → ${tunnel_target}"
 
+  # Coolify realtime uses ws.DOMAIN. This must be an explicit record because
+  # wildcard *.APP_DOMAIN does not match nested hostnames like ws.vps.example.com.
+  cf_upsert_cname "ws.${DOMAIN}" "${tunnel_target}"
+  pass "DNS CNAME configured: ws.${DOMAIN} → ${tunnel_target}"
+
   # Always create both wildcard CNAME levels for full routing coverage
   cf_upsert_cname "*.${APP_DOMAIN}" "${tunnel_target}"
   pass "DNS wildcard CNAME configured: *.${APP_DOMAIN} → ${tunnel_target}"
