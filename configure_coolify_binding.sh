@@ -116,9 +116,9 @@ ufw allow in on tailscale0 proto tcp to any port 6001 comment "coolify-hardening
 ufw allow in on tailscale0 proto tcp to any port 6002 comment "coolify-hardening-terminal-tailscale" >/dev/null 2>&1 \
   || die "Failed to apply UFW rule for port 6002 on tailscale0."
 
-ufw_status="$(ufw status 2>/dev/null || true)"
+ufw_status="$(ufw status verbose 2>/dev/null || true)"
 for port in 8000 6001 6002; do
-  if ! grep -qiE "${port}/tcp.*ALLOW IN.*tailscale0|tailscale0.*ALLOW IN.*${port}/tcp" <<< "${ufw_status}"; then
+  if ! grep -qiE "${port}/tcp.*ALLOW( IN)?.*tailscale0|tailscale0.*ALLOW( IN)?.*${port}/tcp" <<< "${ufw_status}"; then
     die "UFW rule missing for ${port}/tcp on tailscale0 after apply."
   fi
 done
