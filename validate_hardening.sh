@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+  printf 'FATAL: %s requires Bash 4+ (found %s). On macOS: brew install bash, then run with /opt/homebrew/bin/bash %s ...\n' \
+    "$(basename "$0")" "${BASH_VERSION:-unknown}" "$(basename "$0")" >&2
+  exit 1
+fi
 set -Eeuo pipefail
 
 # validate_hardening.sh — Standalone health-check companion for bootstrap_hardening.sh

@@ -5,6 +5,10 @@
 
 [[ "${BASH_SOURCE[0]}" != "${0}" ]] \
   || { printf 'Source this file, do not execute it.\n' >&2; exit 1; }
+if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+  printf 'Bash 4+ is required (found %s). On macOS use Homebrew bash and run via its absolute path.\n' "${BASH_VERSION:-unknown}" >&2
+  return 1
+fi
 [[ -z "${_COOLIFY_COMMON_LOADED:-}" ]] || return 0
 _COOLIFY_COMMON_LOADED=1
 

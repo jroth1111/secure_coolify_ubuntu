@@ -31,6 +31,12 @@ For fast permission validation before touching the server, run:
 bash deploy.sh --domain <fqdn> --cf-api-token-file /secure/path/cf_api.token --preflight-only
 ```
 
+On macOS, scripts require Bash 4+ (default `/bin/bash` 3.2 is unsupported). Install modern bash and run with:
+
+```bash
+/opt/homebrew/bin/bash deploy.sh ...
+```
+
 See `deploy.sh --help` for all options. The manual procedure below remains the reference for understanding each step.
 
 ---

@@ -108,7 +108,8 @@ Full reference for Step 1 checks:
    - macOS: `brew install sshpass` (may need `brew install hudochenkov/sshpass/sshpass` if not in default tap)
    - Ubuntu/Debian: `sudo apt-get install -y sshpass`
    - Fedora: `sudo dnf install -y sshpass`
-5. **Working directory** — run `deploy.sh` from the repo root directory (where `bootstrap_hardening.sh`, `validate_hardening.sh`, and `configure_coolify_binding.sh` are located). The script locates companion scripts relative to its own path. The `lib/coolify-common.sh` shared library must be present at `lib/coolify-common.sh` relative to each script — it is sourced automatically and must be kept alongside `deploy.sh` and `setup.sh`.
+5. **Bash version** — scripts require **Bash 4+**. macOS `/bin/bash` is 3.2 and unsupported. Install modern bash (`brew install bash`) and invoke scripts via `/opt/homebrew/bin/bash deploy.sh ...` (or ensure your PATH resolves `bash` to version 4+).
+6. **Working directory** — run `deploy.sh` from the repo root directory (where `bootstrap_hardening.sh`, `validate_hardening.sh`, and `configure_coolify_binding.sh` are located). The script locates companion scripts relative to its own path. The `lib/coolify-common.sh` shared library must be present at `lib/coolify-common.sh` relative to each script — it is sourced automatically and must be kept alongside `deploy.sh` and `setup.sh`.
 
 ## Tailscale Setup Guide
 

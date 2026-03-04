@@ -125,6 +125,7 @@ Just point your AI assistant to `AGENTS_DEPLOY.md` and it can guide you through 
 | **Tailscale auth key** | [Generate here](https://login.tailscale.com/admin/settings/keys) — use "Reusable" and "Ephemeral" |
 | **Cloudflare API token(s)** | [Create here](https://dash.cloudflare.com/profile/api-tokens): either one combined token (`Zone:Zone:Read` + `Zone:DNS:Edit` + `Account:Cloudflare Tunnel:Edit`) or two split tokens (DNS token + Tunnel token) |
 | **SSH key pair** | Run `ssh-keygen -t ed25519` if you don't have one |
+| **Bash 4+** | Required by scripts. macOS `/bin/bash` (3.2) is unsupported; install with `brew install bash` and invoke scripts via `/opt/homebrew/bin/bash` |
 
 <details>
 <summary>📦 Installing sshpass (macOS)</summary>
@@ -160,7 +161,8 @@ curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/secure_coolify_ubuntu
 ```bash
 git clone https://github.com/YOUR_USERNAME/secure_coolify_ubuntu.git
 cd secure_coolify_ubuntu
-bash deploy.sh
+/opt/homebrew/bin/bash deploy.sh   # macOS
+# or: ./deploy.sh (if your PATH resolves `bash` to version 4+)
 ```
 
 Already SSH'd into the server? Use `setup.sh` instead — same flags, runs locally (no root password flag needed).
