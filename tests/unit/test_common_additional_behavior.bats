@@ -296,6 +296,7 @@ setup() {
     restart_calls=0
     key_calls=0
     fix_calls=0
+    sync_calls=0
     reconcile_calls=0
 
     has_docker() { return 0; }
@@ -308,11 +309,12 @@ setup() {
     restart_docker_user() { restart_calls=$((restart_calls + 1)); }
     add_coolify_key() { key_calls=$((key_calls + 1)); }
     fix_host_internal() { fix_calls=$((fix_calls + 1)); }
+    sync_docker_ssh_cidrs() { sync_calls=$((sync_calls + 1)); }
 
     coolify_phase3_docker_coolify_shared \
       has_docker install_docker start_docker_user verify_docker_user \
       has_coolify_env install_coolify reconcile_docker_daemon restart_docker_user \
-      add_coolify_key fix_host_internal
+      add_coolify_key fix_host_internal sync_docker_ssh_cidrs
 
     [[ "${install_docker_calls}" -eq 0 ]]
     [[ "${install_coolify_calls}" -eq 0 ]]
@@ -322,6 +324,7 @@ setup() {
     [[ "${reconcile_calls}" -eq 1 ]]
     [[ "${key_calls}" -eq 1 ]]
     [[ "${fix_calls}" -eq 1 ]]
+    [[ "${sync_calls}" -eq 1 ]]
   '
   assert_success
 }

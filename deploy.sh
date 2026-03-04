@@ -535,6 +535,7 @@ phase3_docker_coolify() {
   phase3_restart_docker_user() { ssh_admin_sudo 'systemctl restart docker-user-hardening.service'; }
   phase3_add_coolify_root_key() { coolify_add_coolify_root_key_script | ssh_admin_sudo 'bash -s'; }
   phase3_fix_host_docker_internal() { coolify_fix_host_docker_internal_script | ssh_admin_sudo 'bash -s'; }
+  phase3_sync_docker_ssh_cidrs() { ssh_admin_sudo 'systemctl start docker-ssh-cidr-sync.service'; }
 
   # Gate D: Verify DOCKER-USER rules
   coolify_phase3_docker_coolify_shared \
@@ -547,7 +548,8 @@ phase3_docker_coolify() {
     phase3_reconcile_docker_daemon \
     phase3_restart_docker_user \
     phase3_add_coolify_root_key \
-    phase3_fix_host_docker_internal
+    phase3_fix_host_docker_internal \
+    phase3_sync_docker_ssh_cidrs
 }
 
 # ── Phase 4: Binding + DNS ─────────────────────────────────────────────────

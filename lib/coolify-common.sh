@@ -664,6 +664,7 @@ report_validation_result() {
 #   restart_docker_user_fn()
 #   add_coolify_root_key_fn()
 #   fix_host_docker_internal_fn()
+#   sync_docker_ssh_cidrs_fn()
 coolify_phase3_docker_coolify_shared() {
   local has_docker_fn="$1"
   local install_docker_fn="$2"
@@ -675,6 +676,7 @@ coolify_phase3_docker_coolify_shared() {
   local restart_docker_user_fn="$8"
   local add_coolify_root_key_fn="$9"
   local fix_host_docker_internal_fn="${10}"
+  local sync_docker_ssh_cidrs_fn="${11}"
 
   step "3/5" "Install Docker & Coolify"
 
@@ -727,6 +729,13 @@ coolify_phase3_docker_coolify_shared() {
   log "Fixing host.docker.internal for Linux Docker..."
   "${fix_host_docker_internal_fn}" || die "Failed to reconcile host.docker.internal in Coolify compose."
   pass "host.docker.internal patched in Coolify docker-compose"
+
+  # Coolify may create new Docker bridge CIDRs (for example 10.0.0.0/24 and 10.0.1.0/24)
+  # after bootstrap. Reconcile SSH/UFW bridge allowlists now so final validation does not
+  # depend on waiting for the timer.
+  log "Reconciling Docker bridge SSH CIDRs..."
+  "${sync_docker_ssh_cidrs_fn}" || die "Failed to reconcile Docker bridge SSH CIDRs."
+  pass "Docker bridge SSH CIDRs reconciled"
 }
 
 # coolify_phase4_binding_dns_shared — Shared phase 4 orchestration used by
