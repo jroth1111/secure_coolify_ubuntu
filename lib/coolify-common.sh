@@ -617,6 +617,21 @@ cf_upsert_cname() {
   fi
 }
 
+cf_delete_host_records() {
+  local name="$1"
+  local type existing record_id resp
+
+  for type in A AAAA CNAME; do
+    existing="$(cf_api GET "/zones/${CF_ZONE_ID}/dns_records?type=${type}&name=${name}")"
+    while IFS= read -r record_id; do
+      [[ -n "${record_id}" ]] || continue
+      resp="$(cf_api DELETE "/zones/${CF_ZONE_ID}/dns_records/${record_id}")"
+      cf_expect_success "Cloudflare ${type} record delete (${name})" "${resp}"
+      log "Deleted ${type} record: ${name} (${record_id})"
+    done < <(printf '%s' "${existing}" | jq -r '.result[]?.id // empty')
+  done
+}
+
 # ── Shared deployment helpers ────────────────────────────────────────────────
 
 # report_validation_result — Parse and report validate_hardening.sh JSON output.
@@ -761,11 +776,11 @@ coolify_phase4_binding_dns_shared() {
   pass "Coolify wildcard domain: http://${APP_DOMAIN}"
 
   # Configure PUSHER_* for the selected mode.
-  # Tunnel mode requires ws.DOMAIN over 443; standard mode must clear tunnel-specific values.
+  # Tunnel mode keeps realtime traffic on Tailscale; standard mode clears explicit overrides.
   log "Reconciling PUSHER env vars for ${DEPLOY_MODE} mode..."
   "${reconcile_pusher_fn}" || die "Failed to reconcile PUSHER env vars"
   if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
-    pass "PUSHER env vars configured: ws.${DOMAIN}:443 (wss)"
+    pass "PUSHER env vars configured: ${TS_IP}:6001 (http)"
   else
     pass "PUSHER env vars cleared for standard mode"
   fi
@@ -805,17 +820,15 @@ coolify_phase4_binding_dns_shared() {
   pass "Tunnel credentials and config written (wildcards: ${wc_summary})"
   pass "cloudflared service running"
 
-  # Create CNAME records: exact domain + wildcard for subdomains
+  # Private-only default: remove exact dashboard/realtime records on every run.
+  # This guarantees redeploys remove any previous public exposure from older profiles.
+  cf_delete_host_records "${DOMAIN}"
+  pass "DNS host records removed: ${DOMAIN}"
+  cf_delete_host_records "ws.${DOMAIN}"
+  pass "DNS host records removed: ws.${DOMAIN}"
+
+  # Create wildcard CNAME records for app routing through Traefik only.
   local tunnel_target="${TUNNEL_ID}.cfargotunnel.com"
-  cf_upsert_cname "${DOMAIN}" "${tunnel_target}"
-  pass "DNS CNAME configured: ${DOMAIN} → ${tunnel_target}"
-
-  # Coolify realtime uses ws.DOMAIN. This must be an explicit record because
-  # wildcard *.APP_DOMAIN does not match nested hostnames like ws.vps.example.com.
-  cf_upsert_cname "ws.${DOMAIN}" "${tunnel_target}"
-  pass "DNS CNAME configured: ws.${DOMAIN} → ${tunnel_target}"
-
-  # Always create both wildcard CNAME levels for full routing coverage
   cf_upsert_cname "*.${APP_DOMAIN}" "${tunnel_target}"
   pass "DNS wildcard CNAME configured: *.${APP_DOMAIN} → ${tunnel_target}"
   if [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
@@ -995,12 +1008,12 @@ EOF
 }
 
 # coolify_reconcile_pusher_env_script — Emit host-side script to reconcile
-# PUSHER_* environment variables by deployment mode. Requires DEPLOY_MODE, DOMAIN.
+# PUSHER_* environment variables by deployment mode. Requires DEPLOY_MODE, TS_IP.
 coolify_reconcile_pusher_env_script() {
   cat <<'EOF'
 set -Eeuo pipefail
 : "${DEPLOY_MODE:?DEPLOY_MODE is required}"
-: "${DOMAIN:?DOMAIN is required}"
+: "${TS_IP:?TS_IP is required}"
 coolify_env="/data/coolify/source/.env"
 mode="${DEPLOY_MODE}"
 tmp="$(mktemp)"
@@ -1008,9 +1021,9 @@ sed '/^PUSHER_HOST=/d; /^PUSHER_PORT=/d; /^PUSHER_SCHEME=/d' "${coolify_env}" > 
 
 if [[ "${mode}" == "tunnel" ]]; then
   cat >> "${tmp}" <<INNER
-PUSHER_HOST=ws.${DOMAIN}
-PUSHER_PORT=443
-PUSHER_SCHEME=https
+PUSHER_HOST=${TS_IP}
+PUSHER_PORT=6001
+PUSHER_SCHEME=http
 INNER
 fi
 
@@ -1137,12 +1150,9 @@ credentials-file: /etc/cloudflared/${TUNNEL_ID}.json
 
 ingress:
   - hostname: ${DOMAIN}
-    path: /terminal/ws
-    service: http://localhost:6002
-  - hostname: ${DOMAIN}
-    service: http://localhost:8000
+    service: http_status:404
   - hostname: ws.${DOMAIN}
-    service: http://localhost:6001
+    service: http_status:404
   - hostname: "*.${APP_DOMAIN}"
     service: http://localhost:80
 ${extra_apex_ingress}  - service: http_status:404
@@ -1219,13 +1229,13 @@ print_deployment_summary() {
     [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]] \
       && printf '│                   + A *.%-36s│\n' "${CF_ZONE_NAME}"
   else
-    printf '│  DNS              : CNAME %-34s│\n' "${DOMAIN}"
+    printf '│  DNS              : private-only host records removed %-13s│\n' "${DOMAIN}"
     printf '│  Wildcard DNS     : CNAME *.%-32s│\n' "${APP_DOMAIN}"
     [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]] \
       && printf '│                   + CNAME *.%-32s│\n' "${CF_ZONE_NAME}"
     printf '│  Tunnel ID        : %-40s│\n' "${TUNNEL_ID}"
-    printf '│  WebSocket (Soketi): ws.%-36s│\n' "${DOMAIN} → tunnel"
-    printf '│  Terminal         : %-40s│\n' "${DOMAIN}/terminal/ws → tunnel"
+    printf '│  Public Dashboard : %-40s│\n' "blocked (Tailscale-only)"
+    printf '│  Public WebSocket : %-40s│\n' "blocked (Tailscale-only)"
   fi
   printf '└─────────────────────────────────────────────────────────────┘\n'
   printf '\n'

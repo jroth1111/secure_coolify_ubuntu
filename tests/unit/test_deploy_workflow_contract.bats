@@ -248,6 +248,7 @@ EOF
 @test "deploy: gate E fails when exposure checks do not pass" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"
+    DEPLOY_MODE="tunnel"
     TS_IP="100.64.0.25"
     SERVER_IP="203.0.113.10"
     DOMAIN="coolify.vps.example.com"
@@ -277,8 +278,16 @@ EOF
         echo "200"
       elif [[ "${url}" == "http://${SERVER_IP}:8000" ]]; then
         echo "000"
+      elif [[ "${url}" == "http://${TS_IP}:6001" ]]; then
+        echo "200"
+      elif [[ "${url}" == "http://${SERVER_IP}:6001" ]]; then
+        echo "000"
+      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
+        echo "404"
+      elif [[ "${url}" == "https://ws.${DOMAIN}" ]]; then
+        echo "000"
       else
-        echo "302"
+        echo "404"
       fi
       return 0
     }

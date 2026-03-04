@@ -356,7 +356,7 @@ phase4_binding_dns() {
   phase4_configure_binding() { "${SCRIPT_DIR}/configure_coolify_binding.sh" --tailscale-ip "${TS_IP}"; }
   phase4_set_wildcard_domain() { APP_DOMAIN="${APP_DOMAIN}" coolify_set_wildcard_domain_script | bash -s; }
   phase4_reconcile_pusher_env() {
-    DEPLOY_MODE="${DEPLOY_MODE}" DOMAIN="${DOMAIN}" coolify_reconcile_pusher_env_script | bash -s
+    DEPLOY_MODE="${DEPLOY_MODE}" TS_IP="${TS_IP}" coolify_reconcile_pusher_env_script | bash -s
   }
   phase4_install_cloudflared() { coolify_install_cloudflared_script | bash -s; }
   phase4_configure_cloudflared() {
@@ -372,9 +372,9 @@ phase4_binding_dns() {
 
   # Contract anchors kept for tests/docs:
   # sed '/^PUSHER_HOST=/d; /^PUSHER_PORT=/d; /^PUSHER_SCHEME=/d'
-  # PUSHER_HOST=ws.${DOMAIN}
-  # path: /terminal/ws
-  # service: http://localhost:6002
+  # PUSHER_HOST=${TS_IP}
+  # service: http_status:404
+  # service: http://localhost:80
   coolify_phase4_binding_dns_shared \
     phase4_coolify_env_exists \
     phase4_configure_binding \
@@ -391,7 +391,7 @@ phase5_verify() {
   step "5/5" "Final verification"
 
   # Gate E: Operator verifies from laptop
-  pause_for_operator "From your LAPTOP, verify: curl http://${TS_IP}:8000 should work; curl http://${SERVER_IP}:8000 should NOT"
+  pause_for_operator "From your LAPTOP, verify: curl http://${TS_IP}:8000 works; curl http://${SERVER_IP}:8000 fails; curl http://${TS_IP}:6001 works; curl http://${SERVER_IP}:6001 fails; in tunnel mode, https://${DOMAIN} and https://ws.${DOMAIN} are blocked publicly"
 
   # Final validation run
   log "Running final validate_hardening.sh..."

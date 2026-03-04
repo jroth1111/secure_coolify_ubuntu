@@ -555,11 +555,11 @@ phase4_binding_dns() {
     coolify_set_wildcard_domain_script | ssh_admin_sudo "APP_DOMAIN=${app_domain_q} bash -s"
   }
   phase4_reconcile_pusher_env() {
-    local deploy_mode_q domain_q
+    local deploy_mode_q ts_ip_q
     deploy_mode_q="$(printf '%q' "${DEPLOY_MODE}")"
-    domain_q="$(printf '%q' "${DOMAIN}")"
+    ts_ip_q="$(printf '%q' "${TS_IP}")"
     coolify_reconcile_pusher_env_script \
-      | ssh_admin_sudo "DEPLOY_MODE=${deploy_mode_q} DOMAIN=${domain_q} bash -s"
+      | ssh_admin_sudo "DEPLOY_MODE=${deploy_mode_q} TS_IP=${ts_ip_q} bash -s"
   }
   phase4_install_cloudflared() { coolify_install_cloudflared_script | ssh_admin_sudo 'bash -s'; }
   phase4_configure_cloudflared() {
@@ -577,9 +577,9 @@ phase4_binding_dns() {
 
   # Contract anchors kept for tests/docs:
   # mode="${DEPLOY_MODE}"
-  # PUSHER_HOST=ws.${DOMAIN}
-  # path: /terminal/ws
-  # service: http://localhost:6002
+  # PUSHER_HOST=${TS_IP}
+  # service: http_status:404
+  # service: http://localhost:80
   coolify_phase4_binding_dns_shared \
     phase4_coolify_env_exists \
     phase4_configure_binding \
@@ -637,34 +637,95 @@ phase5_verify() {
   pass "Gate E: Dashboard reachable on Tailscale IP (HTTP ${ts_code})"
   pass "Gate E: Dashboard NOT reachable on public IP (good)"
 
-  # Gate F: External HTTPS endpoint reachable (validates tunnel/DNS/TLS end-to-end)
-  # This is the external vantage point test that the server-side validate_hardening.sh
-  # cannot perform — it proves the domain resolves, Cloudflare proxies it, and Coolify responds.
-  log "Gate F: Checking external HTTPS endpoint..."
-  local https_code attempts=12 attempt delay=10
-  local gate_f_passed=false
+  # Gate E (realtime): Soketi websocket endpoint reachable on Tailscale, blocked on public IP.
+  log "Gate E: Checking websocket accessibility..."
+  local ws_ts_code ws_pub_code
+  local gate_e_ws_passed=false
   for (( attempt=1; attempt<=attempts; attempt++ )); do
-    https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -L "https://${DOMAIN}" 2>/dev/null)" || https_code=""
-    # Ensure we have a 3-char code; default to "000" on empty output
-    https_code="${https_code:-000}"
-    https_code="${https_code:0:3}"
-    # Require a successful HTTP response class.
-    # 2xx: upstream served content; 3xx: routing/TLS works and redirect happened.
-    if [[ "${https_code}" =~ ^[23][0-9][0-9]$ ]]; then
-      gate_f_passed=true
+    ws_ts_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 10 "http://${TS_IP}:6001" 2>/dev/null)" || ws_ts_code=""
+    ws_pub_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 "http://${SERVER_IP}:6001" 2>/dev/null)" || ws_pub_code=""
+    ws_ts_code="${ws_ts_code:-000}"
+    ws_pub_code="${ws_pub_code:-000}"
+    ws_ts_code="${ws_ts_code:0:3}"
+    ws_pub_code="${ws_pub_code:0:3}"
+    if [[ "${ws_ts_code}" != "000" && "${ws_pub_code}" == "000" ]]; then
+      gate_e_ws_passed=true
       break
     fi
     if (( attempt < attempts )); then
-      log "  Gate F not ready (https_code=${https_code}); retrying in ${delay}s (${attempt}/${attempts})..."
+      log "  Gate E websocket not ready (tailscale=${ws_ts_code}, public=${ws_pub_code}); retrying in ${delay}s (${attempt}/${attempts})..."
       sleep "${delay}"
     fi
   done
 
-  if [[ "${gate_f_passed}" == "true" ]]; then
-    pass "Gate F: https://${DOMAIN} reachable (HTTP ${https_code})"
+  if [[ "${gate_e_ws_passed}" != "true" ]]; then
+    if [[ "${ws_ts_code}" == "000" ]]; then
+      fail "Gate E: websocket not reachable on ${TS_IP}:6001"
+      die "Gate E failed: websocket not reachable via Tailscale."
+    fi
+    fail "Gate E: websocket reachable on public IP ${SERVER_IP}:6001 (HTTP ${ws_pub_code})"
+    die "Gate E failed: websocket reachable on public IP."
+  fi
+
+  pass "Gate E: Websocket reachable on Tailscale IP (HTTP ${ws_ts_code})"
+  pass "Gate E: Websocket NOT reachable on public IP (good)"
+
+  local attempts=12 attempt delay=10
+  if [[ "${DEPLOY_MODE}" == "standard" ]]; then
+    # Gate F (standard): external HTTPS endpoint must be reachable.
+    log "Gate F: Checking external HTTPS endpoint..."
+    local https_code
+    local gate_f_passed=false
+    for (( attempt=1; attempt<=attempts; attempt++ )); do
+      https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -L "https://${DOMAIN}" 2>/dev/null)" || https_code=""
+      https_code="${https_code:-000}"
+      https_code="${https_code:0:3}"
+      if [[ "${https_code}" =~ ^[23][0-9][0-9]$ ]]; then
+        gate_f_passed=true
+        break
+      fi
+      if (( attempt < attempts )); then
+        log "  Gate F not ready (https_code=${https_code}); retrying in ${delay}s (${attempt}/${attempts})..."
+        sleep "${delay}"
+      fi
+    done
+
+    if [[ "${gate_f_passed}" == "true" ]]; then
+      pass "Gate F: https://${DOMAIN} reachable (HTTP ${https_code})"
+    else
+      fail "Gate F: https://${DOMAIN} not reachable with success response (last HTTP ${https_code})"
+      die "Gate F failed: external HTTPS endpoint check did not pass."
+    fi
   else
-    fail "Gate F: https://${DOMAIN} not reachable with success response (last HTTP ${https_code})"
-    die "Gate F failed: external HTTPS endpoint check did not pass."
+    # Gate F (tunnel/private): dashboard and websocket hostnames must NOT be publicly reachable.
+    log "Gate F: Checking public dashboard/realtime endpoints are blocked..."
+    local dashboard_code ws_code
+    local gate_f_private_passed=false
+    for (( attempt=1; attempt<=attempts; attempt++ )); do
+      dashboard_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -L "https://${DOMAIN}" 2>/dev/null)" || dashboard_code=""
+      ws_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -L "https://ws.${DOMAIN}" 2>/dev/null)" || ws_code=""
+      dashboard_code="${dashboard_code:-000}"
+      ws_code="${ws_code:-000}"
+      dashboard_code="${dashboard_code:0:3}"
+      ws_code="${ws_code:0:3}"
+
+      if [[ ! "${dashboard_code}" =~ ^[23][0-9][0-9]$ && ! "${ws_code}" =~ ^[23][0-9][0-9]$ ]]; then
+        gate_f_private_passed=true
+        break
+      fi
+      if (( attempt < attempts )); then
+        log "  Gate F not ready (dashboard=${dashboard_code}, ws=${ws_code}); retrying in ${delay}s (${attempt}/${attempts})..."
+        sleep "${delay}"
+      fi
+    done
+
+    if [[ "${gate_f_private_passed}" == "true" ]]; then
+      pass "Gate F: public dashboard blocked (https://${DOMAIN} → HTTP ${dashboard_code})"
+      pass "Gate F: public websocket host blocked (https://ws.${DOMAIN} → HTTP ${ws_code})"
+    else
+      fail "Gate F: public endpoint still reachable (dashboard=${dashboard_code}, ws=${ws_code})"
+      die "Gate F failed: dashboard/websocket hosts must not be publicly reachable in tunnel mode."
+    fi
   fi
 
   # Final validation run

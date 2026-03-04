@@ -1509,19 +1509,7 @@ cloudflared_check() {
     record "FAIL" "cloudflared: tunnel ID" "not found in ${config_file}"
   fi
 
-  # Dashboard hostname must route to Coolify on port 8000
-  if grep -qE 'localhost:8000|127\.0\.0\.1:8000' "${config_file}"; then
-    record "PASS" "cloudflared: ingress routes dashboard (port 8000)"
-  else
-    local ingress_svc
-    ingress_svc="$(grep -m1 '^\s*service:' "${config_file}" | awk '{print $2}' || true)"
-    record "FAIL" "cloudflared: ingress dashboard" \
-      "expected localhost:8000 for dashboard, got '${ingress_svc:-unknown}' — re-run deploy to fix"
-  fi
-
-  # Wildcard app domains must route to Traefik (coolify-proxy) on port 80, not port 8000.
-  # Port 8000 is the Coolify dashboard — routing wildcards there causes all app domains
-  # to show the dashboard instead of the actual app.
+  # Wildcard app domains must route to Traefik (coolify-proxy) on port 80.
   if grep -qE 'localhost:80$|localhost:80[^0-9]|127\.0\.0\.1:80$|127\.0\.0\.1:80[^0-9]' "${config_file}"; then
     record "PASS" "cloudflared: ingress routes apps via Traefik (port 80)"
   else
@@ -1529,42 +1517,42 @@ cloudflared_check() {
       "no localhost:80 route — app domains will show dashboard instead of apps"
   fi
 
-  # Soketi WebSocket route (ws.DOMAIN → localhost:6001)
+  # Private-only profile: dashboard/realtime/terminal must not be tunneled publicly.
+  if grep -qE 'localhost:8000|127\.0\.0\.1:8000' "${config_file}"; then
+    record "FAIL" "cloudflared: dashboard ingress disabled" \
+      "found route to localhost:8000 — dashboard must stay Tailscale-only"
+  else
+    record "PASS" "cloudflared: dashboard ingress disabled"
+  fi
+
   if grep -qE 'localhost:6001|127\.0\.0\.1:6001' "${config_file}"; then
-    record "PASS" "cloudflared: ingress routes Soketi (port 6001)"
+    record "FAIL" "cloudflared: realtime ingress disabled" \
+      "found route to localhost:6001 — realtime must stay on Tailscale"
   else
-    record "FAIL" "cloudflared: ingress Soketi" \
-      "no localhost:6001 route — WebSocket real-time service unreachable via tunnel"
+    record "PASS" "cloudflared: realtime ingress disabled"
   fi
 
-  # Terminal route (DOMAIN/terminal/ws → localhost:6002, path-based on dashboard hostname).
-  # Must use path-based routing on the dashboard hostname, NOT a separate terminal.DOMAIN hostname.
-  # Coolify's terminal WebSocket connects to /terminal/ws on the same origin as the dashboard.
   if grep -qE 'localhost:6002|127\.0\.0\.1:6002' "${config_file}"; then
-    if grep -q '/terminal/ws' "${config_file}"; then
-      record "PASS" "cloudflared: ingress routes terminal (port 6002 via /terminal/ws path)"
-    else
-      record "FAIL" "cloudflared: ingress terminal path" \
-        "localhost:6002 route exists but missing 'path: /terminal/ws' — terminal uses path-based routing on dashboard hostname, not a separate hostname"
-    fi
+    record "FAIL" "cloudflared: terminal ingress disabled" \
+      "found route to localhost:6002 — terminal must stay on Tailscale"
   else
-    record "FAIL" "cloudflared: ingress terminal" \
-      "no localhost:6002 route — terminal service unreachable via tunnel"
+    record "PASS" "cloudflared: terminal ingress disabled"
   fi
 
-  # Ingress order: terminal path rule must appear BEFORE the dashboard catch-all.
-  # cloudflared matches first-match — if DOMAIN→:8000 comes before DOMAIN+path→:6002,
-  # the path rule never fires and the terminal WebSocket breaks.
-  local terminal_line dashboard_line
-  terminal_line="$(grep -nE 'localhost:6002|127\.0\.0\.1:6002' "${config_file}" | head -1 | cut -d: -f1 || true)"
-  dashboard_line="$(grep -nE 'localhost:8000|127\.0\.0\.1:8000' "${config_file}" | head -1 | cut -d: -f1 || true)"
-  if [[ -n "${terminal_line}" && -n "${dashboard_line}" ]]; then
-    if (( terminal_line < dashboard_line )); then
-      record "PASS" "cloudflared: terminal rule before dashboard (correct ingress order)"
-    else
-      record "FAIL" "cloudflared: ingress order" \
-        "terminal (line ${terminal_line}) must appear before dashboard (line ${dashboard_line}) — cloudflared is first-match"
-    fi
+  if grep -q '/terminal/ws' "${config_file}"; then
+    record "FAIL" "cloudflared: terminal path disabled" \
+      "found '/terminal/ws' ingress rule — terminal must not be publicly tunneled"
+  else
+    record "PASS" "cloudflared: terminal path disabled"
+  fi
+
+  local deny_count
+  deny_count="$(grep -Ec 'service:\s*http_status:404' "${config_file}" || true)"
+  if [[ "${deny_count}" =~ ^[0-9]+$ ]] && (( deny_count >= 2 )); then
+    record "PASS" "cloudflared: deny rules present"
+  else
+    record "FAIL" "cloudflared: deny rules" \
+      "expected at least two http_status:404 ingress rules (explicit host blocks + fallback)"
   fi
 
   # Functional connectivity: probe cloudflared's /ready endpoint.

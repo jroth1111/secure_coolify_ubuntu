@@ -148,10 +148,14 @@ setup() {
   assert_output --partial "pkg.cloudflare.com"
 }
 
-@test "coolify_configure_cloudflared_script: emits path-based terminal ingress and service enable" {
+@test "coolify_configure_cloudflared_script: emits private-only dashboard/ws deny rules and service enable" {
   run coolify_configure_cloudflared_script
   assert_success
-  assert_output --partial "path: /terminal/ws"
+  assert_output --partial "hostname: ${DOMAIN}"
+  assert_output --partial "hostname: ws.${DOMAIN}"
+  assert_output --partial "service: http_status:404"
+  assert_output --partial "service: http://localhost:80"
+  [[ "${output}" != *"/terminal/ws"* ]]
   assert_output --partial "systemctl enable --now cloudflared"
 }
 
@@ -229,7 +233,9 @@ setup() {
 @test "coolify_reconcile_pusher_env_script: emits PUSHER mode reconciliation script" {
   run coolify_reconcile_pusher_env_script
   assert_success
-  assert_output --partial "PUSHER_HOST=ws.${DOMAIN}"
+  assert_output --partial 'PUSHER_HOST=${TS_IP}'
+  assert_output --partial "PUSHER_PORT=6001"
+  assert_output --partial "PUSHER_SCHEME=http"
   assert_output --partial "install -m 0600"
 }
 
@@ -358,7 +364,7 @@ setup() {
   assert_success
 }
 
-@test "coolify_phase4_binding_dns_shared: tunnel mode creates dashboard, websocket, and wildcard CNAMEs" {
+@test "coolify_phase4_binding_dns_shared: tunnel mode removes dashboard/ws host records and keeps wildcard CNAMEs" {
   run bash -c '
     source "'"${COMMON_LIB}"'"
     DEPLOY_MODE="tunnel"
@@ -374,6 +380,7 @@ setup() {
     configure_calls=0
     stop_calls=0
     create_tunnel_calls=0
+    deleted_hosts=""
     cname_records=""
     a_record_calls=0
 
@@ -385,6 +392,7 @@ setup() {
     configure_cloudflared() { configure_calls=$((configure_calls + 1)); }
     stop_cloudflared() { stop_calls=$((stop_calls + 1)); }
     cf_create_tunnel() { create_tunnel_calls=$((create_tunnel_calls + 1)); }
+    cf_delete_host_records() { deleted_hosts+="$1"$'"'"'\n'"'"'; }
     cf_upsert_cname() { cname_records+="$1|$2"$'"'"'\n'"'"'; }
     cf_upsert_a_record() { a_record_calls=$((a_record_calls + 1)); }
 
@@ -401,8 +409,8 @@ setup() {
     [[ "${create_tunnel_calls}" -eq 1 ]]
     [[ "${stop_calls}" -eq 0 ]]
     [[ "${a_record_calls}" -eq 0 ]]
-    grep -q "^coolify.vps.example.com|tunnel-1234.cfargotunnel.com$" <<< "${cname_records}"
-    grep -q "^ws.coolify.vps.example.com|tunnel-1234.cfargotunnel.com$" <<< "${cname_records}"
+    grep -q "^coolify.vps.example.com$" <<< "${deleted_hosts}"
+    grep -q "^ws.coolify.vps.example.com$" <<< "${deleted_hosts}"
     grep -q "^\\*.vps.example.com|tunnel-1234.cfargotunnel.com$" <<< "${cname_records}"
     grep -q "^\\*.example.com|tunnel-1234.cfargotunnel.com$" <<< "${cname_records}"
   '
