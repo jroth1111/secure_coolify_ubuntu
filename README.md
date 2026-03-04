@@ -433,6 +433,15 @@ ssh admin@100.x.x.x  # Use the Tailscale IP output by the script
 - Combined token: `Zone:Zone:Read` + `Zone:DNS:Edit` + `Account:Cloudflare Tunnel:Edit`
 - Split tokens: DNS token with `Zone:Zone:Read` + `Zone:DNS:Edit`, and tunnel token with `Account:Cloudflare Tunnel:Edit`
 
+### "Cannot connect to real-time service" in Coolify UI
+
+**Cause:** Realtime websocket host (`ws.<domain>`) is not routed end-to-end.
+
+**Solution (tunnel mode):**
+1. Check Coolify env: `PUSHER_HOST=ws.<domain>`, `PUSHER_PORT=443`, `PUSHER_SCHEME=https`
+2. Check `cloudflared` ingress includes `ws.<domain> -> http://localhost:6001`
+3. Check Cloudflare DNS has proxied `CNAME ws.<domain> -> <tunnel-id>.cfargotunnel.com`
+
 ### Validation Failures
 
 Run `sudo ./validate_hardening.sh` for details. Common fixes:

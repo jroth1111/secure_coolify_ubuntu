@@ -181,6 +181,20 @@ Required permission groups:
 - **Zone : DNS : Edit** — create/update A/CNAME records
 - **Account : Cloudflare Tunnel : Edit** — create/update tunnel (tunnel mode)
 
+Cloudflare API caveat:
+- `GET /user/tokens/verify` only confirms token validity, not effective permission scope.
+- There is no API endpoint that lists the exact permission grants for a specific token.
+- The script does capability probes against real resource endpoints in preflight and fails early on auth errors.
+
+Preflight capability probes used by scripts:
+- DNS token probe: `POST /zones/{zone_id}/dns_records` with an intentionally invalid payload.
+  - Expected authorized outcome: validation error (non-auth), no mutation.
+  - Auth failure (`10000`/`9109`) means missing DNS write permission.
+- Tunnel token probes (tunnel mode only):
+  - `GET /accounts/{account_id}/cfd_tunnel?per_page=1` (read access)
+  - `POST /accounts/{account_id}/cfd_tunnel` with intentionally invalid payload (write auth probe)
+  - Auth failure (`10000`/`9109`) means missing tunnel permission.
+
 Token delivery to scripts (secure):
 - `CF_API_TOKEN` / `CF_TUNNEL_API_TOKEN` env vars, or
 - `--cf-api-token-file` / `--cf-tunnel-api-token-file`
@@ -315,7 +329,7 @@ Steps are numbered `[0/5]`–`[5/5]` in the output; phase references in AGENTS.m
 - **[1/5] Harden** — uploads scripts via root password SSH, runs `bootstrap_hardening.sh` (installs Tailscale, hardens SSH/UFW). Bootstrap prints `HARDEN_RESULT_TAILSCALE_IP=<ip>` sentinel on stdout; deploy.sh captures it via `tee` — this is the only safe way to get the TS_IP since UFW blocks all public-IP SSH after hardening completes. Skipped when `--ts-ip` is provided.
 - **[2/5] Gates** — cleans up `deploy.env` from server (root SSH blocked post-hardening, so done here via admin key), verifies SSH transition to admin@tailscale-IP (Gate A–B), re-syncs companion scripts via admin SCP so the latest versions are always used (Gate B+), runs `validate_hardening.sh --json` (Gate C)
 - **[3/5] Docker + Coolify** — installs Docker (skips if already installed), starts DOCKER-USER rules (Gate D), installs Coolify (skips if already installed)
-- **[4/5] DNS + Verify** — configures dashboard UFW rules, sets PUSHER_HOST/PORT/SCHEME env vars for tunnel-mode WebSocket routing (ws.DOMAIN → Soketi via tunnel, DOMAIN + `/terminal/ws` → terminal via tunnel), creates/replaces Cloudflare Tunnel + CNAME + wildcard DNS (or A + wildcard A in standard mode)
+- **[4/5] DNS + Verify** — configures dashboard UFW rules, sets PUSHER_HOST/PORT/SCHEME env vars for tunnel-mode WebSocket routing (ws.DOMAIN → Soketi via tunnel, DOMAIN + `/terminal/ws` → terminal via tunnel), creates/replaces Cloudflare Tunnel + DNS records (`DOMAIN`, `ws.DOMAIN`, `*.APP_DOMAIN`, plus `*.ZONE` when different) (or A + wildcard A in standard mode)
 - **[5/5] Final verification** — Gate E (curl: dashboard reachable on Tailscale IP, blocked on public IP), Gate F (curl from operator machine: external `https://DOMAIN` responds — proves tunnel+DNS+TLS end-to-end; non-fatal if DNS hasn't propagated yet), final `validate_hardening.sh --json` run, prints summary box
 
 ## Post-Deploy Steps (Required — Inform the User)
@@ -417,7 +431,7 @@ Follow the Collection Sequence above. This tree handles branching decisions:
 | Tunnel creation fails (permissions) | API token lacks Account:Tunnels:Edit | Regenerate token with correct permissions |
 | Tunnel creation fails (name already exists) | Rare CF API race | The script auto-deletes stale tunnels before creating — if this still occurs, check for tunnels with non-zero connections in CF dashboard (Zero Trust > Networks > Tunnels) |
 | `cloudflared` won't start | Credentials file mismatch | Check `/etc/cloudflared/config.yml` and credentials JSON |
-| "Cannot connect to real-time service" warning in dashboard | PUSHER_HOST not set in Coolify `.env` or Soketi port 6001 not routed through tunnel | Tunnel mode: verify `PUSHER_HOST=ws.DOMAIN`, `PUSHER_PORT=443`, `PUSHER_SCHEME=https` in `/data/coolify/source/.env` and that `/etc/cloudflared/config.yml` has a `ws.DOMAIN → localhost:6001` ingress rule. Then: `docker compose -f /data/coolify/source/docker-compose.yml -f /data/coolify/source/docker-compose.prod.yml up -d --force-recreate coolify soketi` |
+| "Cannot connect to real-time service" warning in dashboard | Missing/incorrect realtime routing (`ws.DOMAIN`) | Tunnel mode: verify `PUSHER_HOST=ws.DOMAIN`, `PUSHER_PORT=443`, `PUSHER_SCHEME=https` in `/data/coolify/source/.env`; verify `/etc/cloudflared/config.yml` has `ws.DOMAIN → localhost:6001`; verify Cloudflare DNS has proxied `CNAME ws.DOMAIN -> <tunnel-id>.cfargotunnel.com`. Then: `docker compose -f /data/coolify/source/docker-compose.yml -f /data/coolify/source/docker-compose.prod.yml up -d --force-recreate coolify soketi` |
 | `TOO_MANY_REDIRECTS` on app | Resource domain using `https://` in Coolify | Change to `http://` — Cloudflare handles TLS at edge |
 | App domains show Coolify dashboard instead of the app | Wildcard ingress routes to `localhost:8000` (dashboard) instead of `localhost:80` (Traefik) | Fix `/etc/cloudflared/config.yml`: wildcard `*.APP_DOMAIN` service must be `http://localhost:80`. The dashboard hostname stays on `localhost:8000`. Then `sudo systemctl restart cloudflared`. Ensure coolify-proxy is started (Coolify UI > Servers > localhost > Proxy > Start). |
 | Apps unreachable after deploy | SSL/TLS mode set to Flexible | Change to Full in Cloudflare dashboard |

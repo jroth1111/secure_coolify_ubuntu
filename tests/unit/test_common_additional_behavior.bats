@@ -178,6 +178,54 @@ setup() {
   [ "${CF_ACCOUNT_ID}" = "acct-123" ]
 }
 
+@test "finalize_cloudflare_tokens: reuses DNS token when tunnel token is omitted" {
+  CF_API_TOKEN="dns-token"
+  CF_TUNNEL_API_TOKEN=""
+  finalize_cloudflare_tokens
+  [ "${CF_TUNNEL_API_TOKEN}" = "dns-token" ]
+}
+
+@test "finalize_cloudflare_tokens: keeps explicit split tunnel token" {
+  CF_API_TOKEN="dns-token"
+  CF_TUNNEL_API_TOKEN="tunnel-token"
+  finalize_cloudflare_tokens
+  [ "${CF_API_TOKEN}" = "dns-token" ]
+  [ "${CF_TUNNEL_API_TOKEN}" = "tunnel-token" ]
+}
+
+@test "cf_tunnel_api: prefers dedicated tunnel token over DNS token" {
+  CF_API_TOKEN="dns-token"
+  CF_TUNNEL_API_TOKEN="tunnel-token"
+  cf_api_with_token() { printf '%s' "$4"; }
+  run cf_tunnel_api GET /accounts/test/cfd_tunnel
+  assert_success
+  assert_output "tunnel-token"
+}
+
+@test "cf_verify_tunnel_token: skips tunnel permission checks in standard mode" {
+  DEPLOY_MODE="standard"
+  cf_tunnel_api() { echo "should-not-run"; return 1; }
+  run cf_verify_tunnel_token
+  assert_success
+}
+
+@test "cf_verify_tunnel_token: fails fast on auth error code 10000" {
+  DEPLOY_MODE="tunnel"
+  CF_ACCOUNT_ID="acct-123"
+  call_count=0
+  cf_tunnel_api() {
+    call_count=$((call_count + 1))
+    if [[ "${call_count}" -eq 1 ]]; then
+      echo '{"success":false,"errors":[{"code":10000,"message":"not authorized"}]}'
+      return 0
+    fi
+    echo '{"success":true}'
+  }
+  run cf_verify_tunnel_token
+  assert_failure
+  assert_output --partial "required permissions"
+}
+
 @test "coolify_reconcile_pusher_env_script: emits PUSHER mode reconciliation script" {
   run coolify_reconcile_pusher_env_script
   assert_success

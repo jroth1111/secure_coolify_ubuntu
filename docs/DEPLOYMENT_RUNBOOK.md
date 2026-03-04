@@ -293,7 +293,12 @@ Gate E passes when the dashboard is reachable over Tailscale and not reachable o
 
 ### 4.3 DNS Configuration
 
-- **Tunnel mode (default)**: `deploy.sh`/`setup.sh` automatically creates a CNAME for your domain **and** a wildcard CNAME (`*.example.com`) pointing to `<tunnel-id>.cfargotunnel.com`. The tunnel ingress config also includes a wildcard hostname rule. This means apps deployed on subdomains (`app1.example.com`, `app2.example.com`) work immediately — no manual DNS or tunnel configuration needed.
+- **Tunnel mode (default)**: `deploy.sh`/`setup.sh` automatically creates proxied CNAME records for:
+  - `<domain>` (dashboard)
+  - `ws.<domain>` (Coolify realtime websocket/Soketi)
+  - `*.app-domain` (app routing wildcard)
+  - `*.zone` when `app-domain` differs from zone root
+  All point to `<tunnel-id>.cfargotunnel.com`.
 - **Standard mode**: `deploy.sh`/`setup.sh` automatically creates an A record for your domain **and** a wildcard A record (`*.example.com`) pointing to the server's public IP (Cloudflare-proxied).
 
 ### 4.4 Post-Deploy: Enable Automatic SSL + Subdomains
@@ -342,12 +347,13 @@ sudo apt-get install -y cloudflared
 cloudflared tunnel login
 cloudflared tunnel create coolify-tunnel
 
-# Route DNS: exact domain + wildcard for subdomains
+# Route DNS: dashboard + realtime websocket + wildcard for apps
 cloudflared tunnel route dns coolify-tunnel your-domain.com
+cloudflared tunnel route dns coolify-tunnel ws.your-domain.com
 cloudflared tunnel route dns coolify-tunnel "*.your-domain.com"
 ```
 
-Then write `/etc/cloudflared/config.yml` with wildcard ingress:
+Then write `/etc/cloudflared/config.yml` with dashboard/realtime/terminal ingress:
 
 ```yaml
 tunnel: <tunnel-id>
@@ -355,9 +361,15 @@ credentials-file: /etc/cloudflared/<tunnel-id>.json
 
 ingress:
   - hostname: your-domain.com
-    service: http://localhost:80
+    path: /terminal/ws
+    service: http://localhost:6002
+  - hostname: your-domain.com
+    service: http://localhost:8000
+  - hostname: ws.your-domain.com
+    service: http://localhost:6001
   - hostname: "*.your-domain.com"
     service: http://localhost:80
+  - service: http_status:404
   - service: http_status:404
 ```
 
