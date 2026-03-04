@@ -93,6 +93,7 @@ Show the full configuration summary (with secrets masked) and confirm before exe
 | Admin username | `coolifyadmin` | Linux user created on server |
 | SSH pubkey file | `~/.ssh/id_ed25519.pub` | Path on the machine running the script |
 | Swap size | `2G` | Format: `<N>G` or `<N>M` |
+| Server timezone | `UTC` | Pass explicitly with `--server-timezone <IANA>` in non-interactive runs |
 | Cloudflare zone | derived from domain | Override if domain's zone differs |
 | Cloudflare zone ID | none | Optional explicit `--cf-zone-id` override |
 | Cloudflare account ID | none | Optional explicit `--cf-account-id` override |
@@ -224,6 +225,7 @@ bash deploy.sh \
   --admin-user <user> \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
+  --server-timezone <IANA> \
   --domain <fqdn> \
   --cf-api-token-file /secure/path/cf_api.token \
   --yes
@@ -235,6 +237,7 @@ bash deploy.sh \
   --admin-user <user> \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
+  --server-timezone <IANA> \
   --domain <fqdn> \
   --cf-api-token-file /secure/path/cf_api.token \
   --app-domain-mode vps \
@@ -247,6 +250,7 @@ bash deploy.sh \
   --admin-user <user> \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
+  --server-timezone <IANA> \
   --mode standard \
   --domain <fqdn> \
   --cf-api-token-file /secure/path/cf_api.token \
@@ -259,6 +263,7 @@ bash deploy.sh \
   --admin-user <user> \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
+  --server-timezone <IANA> \
   --domain <fqdn> \
   --cf-api-token-file /secure/path/cf_api.token \
   --cf-tunnel-api-token-file /secure/path/cf_tunnel.token \
@@ -274,6 +279,7 @@ sudo bash setup.sh \
   --admin-user <user> \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
+  --server-timezone <IANA> \
   --domain <fqdn> \
   --cf-api-token-file /secure/path/cf_api.token \
   --yes
@@ -284,6 +290,7 @@ sudo bash setup.sh \
   --admin-user <user> \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
+  --server-timezone <IANA> \
   --domain <fqdn> \
   --cf-api-token-file /secure/path/cf_api.token \
   --app-domain-mode vps \
@@ -295,6 +302,7 @@ sudo bash setup.sh \
   --admin-user <user> \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
+  --server-timezone <IANA> \
   --mode standard \
   --domain <fqdn> \
   --cf-api-token-file /secure/path/cf_api.token \
@@ -306,6 +314,7 @@ sudo bash setup.sh \
   --admin-user <user> \
   --pubkey-file <path> \
   --tailscale-auth-key <key> \
+  --server-timezone <IANA> \
   --domain <fqdn> \
   --cf-api-token-file /secure/path/cf_api.token \
   --cf-tunnel-api-token-file /secure/path/cf_tunnel.token \
@@ -313,6 +322,7 @@ sudo bash setup.sh \
 ```
 
 The `--yes` flag is required for non-interactive (agent) execution — it skips confirmation prompts.
+`--server-timezone` is also required in non-interactive mode so deployments are explicit and reproducible.
 
 Omitting `--mode` defaults to `tunnel`. Only pass `--mode standard` if the user explicitly asks for open public ports.
 

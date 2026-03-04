@@ -125,6 +125,7 @@ Just point your AI assistant to `AGENTS_DEPLOY.md` and it can guide you through 
 | **Tailscale auth key** | [Generate here](https://login.tailscale.com/admin/settings/keys) — use "Reusable" and "Ephemeral" |
 | **Cloudflare API token(s)** | [Create here](https://dash.cloudflare.com/profile/api-tokens): either one combined token (`Zone:Zone:Read` + `Zone:DNS:Edit` + `Account:Cloudflare Tunnel:Edit`) or two split tokens (DNS token + Tunnel token) |
 | **SSH key pair** | Run `ssh-keygen -t ed25519` if you don't have one |
+| **Server timezone (IANA)** | Decide before deploy (examples: `Australia/Melbourne`, `UTC`) and pass via `--server-timezone` |
 | **Bash 4+** | Required by scripts. macOS `/bin/bash` (3.2) is unsupported; install with `brew install bash` and invoke scripts via `/opt/homebrew/bin/bash` |
 
 <details>
@@ -151,6 +152,7 @@ curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/secure_coolify_ubuntu
   --server-ip <vps-ip> \
   --root-pass-file /secure/path/root.pass \
   --tailscale-auth-key tskey-auth-... \
+  --server-timezone Australia/Melbourne \
   --domain app.example.com \
   --cf-api-token-file /secure/path/cf_api.token \
   --yes
@@ -164,6 +166,8 @@ cd secure_coolify_ubuntu
 /opt/homebrew/bin/bash deploy.sh   # macOS
 # or: ./deploy.sh (if your PATH resolves `bash` to version 4+)
 ```
+
+Interactive mode prompts for `Server timezone` (default `UTC`) if you do not pass `--server-timezone`.
 
 Already SSH'd into the server? Use `setup.sh` instead — same flags, runs locally (no root password flag needed).
 
@@ -224,7 +228,7 @@ Wildcard DNS (`*.example.com`) and tunnel ingress rules are created automaticall
 | # | Control | Key details |
 |---|---------|-------------|
 | 1 | **Preflight** | OS validation, SSH session safety, interface detection |
-| 2 | **NTP** | Time synchronization |
+| 2 | **NTP + timezone** | Time synchronization plus explicit timezone configuration |
 | 3 | **Swap** | Configurable (default 2G), OOM protection |
 | 4 | **Service cleanup** | Disables rpcbind, avahi-daemon, cups |
 | 5 | **Login banner** | Authorized access warning |
@@ -253,6 +257,7 @@ ADMIN_USER=coolifyadmin
 ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host"
 TUNNEL_MODE=true
 SWAP_SIZE=4G
+TIMEZONE=Australia/Melbourne
 ENABLE_AUTO_REBOOT=true
 AUTO_REBOOT_TIME=04:00
 JOURNAL_RETENTION=3month
@@ -340,6 +345,7 @@ make test-all            # Full suite with Docker
 | `--cf-zone-id <id>` | none | Cloudflare zone ID override (32-char hex) |
 | `--cf-account-id <id>` | none | Cloudflare account ID override (32-char hex) |
 | `--swap-size <size>` | `2G` | Swap file size |
+| `--server-timezone <IANA>` | prompted (default `UTC`) | Server timezone (required in non-interactive mode) |
 | `--tailscale-direct-wan` | `false` | Open WAN UDP 41641 for direct Tailscale paths (optional optimization) |
 | `--no-tailscale-direct-wan` | `true` | Keep WAN UDP 41641 closed (default behavior) |
 | `--preflight-only` | `false` | Run local + Cloudflare checks only (no server changes) |
@@ -358,6 +364,7 @@ Legacy flags removed (breaking change): `--cf-api-token`, `--cf-tunnel-api-token
 | `--admin-pubkey "<key>"` | *(required)* | SSH public key for admin |
 | `--tunnel-mode` | `false` | Skip WAN 80/443 (Cloudflare Tunnel) |
 | `--swap-size <size>` | `2G` | Swap size (`0` to skip) |
+| `--timezone <IANA>` | `UTC` | System timezone (IANA name, e.g. `Australia/Melbourne`) |
 | `--ssh-port <port>` | `22` | SSH port |
 | `--tailscale-cidr <cidr>` | `100.64.0.0/10` | Tailscale network CIDR |
 | `--wan-iface <iface>` | auto-detected | WAN interface |

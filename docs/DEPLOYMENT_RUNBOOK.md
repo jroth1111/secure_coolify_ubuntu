@@ -9,21 +9,24 @@ For a fully automated deployment, use `deploy.sh` (from your laptop) or `setup.s
 ```bash
 # Tunnel mode (default — recommended), combined token model
 bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
-  --domain <fqdn> --cf-api-token-file /secure/path/cf_api.token --yes
+  --server-timezone <IANA> --domain <fqdn> --cf-api-token-file /secure/path/cf_api.token --yes
 
 # Tunnel mode (split-token model: DNS token + tunnel token)
 bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
-  --domain <fqdn> --cf-api-token-file /secure/path/cf_dns.token \
+  --server-timezone <IANA> --domain <fqdn> --cf-api-token-file /secure/path/cf_dns.token \
   --cf-tunnel-api-token-file /secure/path/cf_tunnel.token --yes
 
 # Standard mode (open public 80/443), DNS token only
 bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
-  --domain <fqdn> --cf-api-token-file /secure/path/cf_api.token --mode standard --yes
+  --server-timezone <IANA> --domain <fqdn> --cf-api-token-file /secure/path/cf_api.token --mode standard --yes
 ```
 
 Token input options:
 - `CF_API_TOKEN` and optional `CF_TUNNEL_API_TOKEN` environment variables
 - `--cf-api-token-file` and optional `--cf-tunnel-api-token-file`
+
+Timezone input:
+- In non-interactive runs, pass `--server-timezone <IANA>` explicitly (for example `Australia/Melbourne` or `UTC`).
 
 For fast permission validation before touching the server, run:
 
@@ -161,6 +164,7 @@ sudo ./bootstrap_hardening.sh \
   --admin-user coolifyadmin \
   --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key" \
   --tunnel-mode \
+  --timezone Australia/Melbourne \
   --swap-size 2G
 ```
 
@@ -170,6 +174,7 @@ sudo ./bootstrap_hardening.sh \
 sudo ./bootstrap_hardening.sh \
   --admin-user coolifyadmin \
   --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key" \
+  --timezone Australia/Melbourne \
   --swap-size 2G
 ```
 
@@ -181,6 +186,7 @@ ADMIN_USER=coolifyadmin
 ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key"
 TUNNEL_MODE=true
 SWAP_SIZE=2G
+TIMEZONE=Australia/Melbourne
 EOF
 chmod 600 /etc/bootstrap-hardening.env
 
@@ -468,6 +474,7 @@ The script is idempotent. To change settings:
 sudo ./bootstrap_hardening.sh \
   --admin-user coolifyadmin \
   --admin-pubkey "ssh-ed25519 ..." \
+  --timezone Australia/Melbourne \
   --swap-size 4G \
   --journal-retention 6month
 ```
