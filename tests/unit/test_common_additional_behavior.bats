@@ -143,6 +143,7 @@ setup() {
 @test "coolify_install_cloudflared_script: emits apt-first then repository fallback" {
   run coolify_install_cloudflared_script
   assert_success
+  assert_output --partial "DEBIAN_FRONTEND=noninteractive"
   assert_output --partial "apt-get install -y -qq cloudflared"
   assert_output --partial "pkg.cloudflare.com"
 }

@@ -1086,6 +1086,7 @@ EOF
 coolify_install_cloudflared_script() {
   cat <<'EOF'
 set -Eeuo pipefail
+export DEBIAN_FRONTEND=noninteractive
 if bash -c "apt-get update -qq && apt-get install -y -qq cloudflared" 2>/dev/null; then
   exit 0
 fi
