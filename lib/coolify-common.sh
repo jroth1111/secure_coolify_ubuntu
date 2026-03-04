@@ -106,11 +106,16 @@ cf_api_with_token() {
   # where the token could be read by other processes
   local curl_config
   curl_config="$(mktemp)" || die "Failed to create temp file for curl config"
-  # Clean up the temp file when we're done
-  trap 'rm -f "${curl_config}"' RETURN
   printf -- '-H "Authorization: Bearer %s"\n' "${token}" > "${curl_config}"
   chmod 600 "${curl_config}"
-  curl --config "${curl_config}" "${args[@]}" "${url}"
+  local resp ec
+  if ! resp="$(curl --config "${curl_config}" "${args[@]}" "${url}")"; then
+    ec=$?
+    rm -f "${curl_config}"
+    return "${ec}"
+  fi
+  rm -f "${curl_config}"
+  printf '%s' "${resp}"
 }
 
 cf_api() {
