@@ -96,20 +96,30 @@ prompt_choice() {
 
 # ── Cloudflare API ─────────────────────────────────────────────────────────
 
-cf_api() {
-  local method="$1" endpoint="$2" body="${3:-}"
+cf_api_with_token() {
+  local method="$1" endpoint="$2" body="${3:-}" token="${4:-}"
   local url="https://api.cloudflare.com/client/v4${endpoint}"
   local args=(-s -X "${method}" -H "Content-Type: application/json")
   [[ -n "${body}" ]] && args+=(-d "${body}")
+  [[ -n "${token}" ]] || die "Cloudflare API token is empty for ${method} ${endpoint}"
   # Use a secure temp file instead of pipe to avoid race condition
   # where the token could be read by other processes
   local curl_config
   curl_config="$(mktemp)" || die "Failed to create temp file for curl config"
   # Clean up the temp file when we're done
   trap 'rm -f "${curl_config}"' RETURN
-  printf -- '-H "Authorization: Bearer %s"\n' "${CF_API_TOKEN}" > "${curl_config}"
+  printf -- '-H "Authorization: Bearer %s"\n' "${token}" > "${curl_config}"
   chmod 600 "${curl_config}"
   curl --config "${curl_config}" "${args[@]}" "${url}"
+}
+
+cf_api() {
+  cf_api_with_token "$1" "$2" "${3-}" "${CF_API_TOKEN:-}"
+}
+
+cf_tunnel_api() {
+  local token="${CF_TUNNEL_API_TOKEN:-${CF_API_TOKEN:-}}"
+  cf_api_with_token "$1" "$2" "${3-}" "${token}"
 }
 
 cf_verify_token() {
@@ -177,6 +187,16 @@ cf_get_account_id() {
   die "No Cloudflare account found (both /accounts and zone account lookup were empty)."
 }
 
+cf_verify_tunnel_token() {
+  [[ "${DEPLOY_MODE}" == "tunnel" ]] || return 0
+  local resp
+  resp="$(cf_tunnel_api GET "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel?per_page=1")"
+  local status
+  status="$(printf '%s' "${resp}" | jq -r '.success // false')"
+  [[ "${status}" == "true" ]] || die "Cloudflare tunnel API token verification failed: $(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"')"
+  log "Cloudflare tunnel API token verified."
+}
+
 cf_expect_success() {
   local action="$1" resp="$2"
   local success
@@ -219,7 +239,7 @@ cf_create_tunnel() {
   # Stop cloudflared first so it releases active connections — the CF API rejects DELETE for
   # tunnels with active connections, and the name stays reserved even after a failed delete.
   local existing_id
-  existing_id="$(cf_api GET "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel?name=${tunnel_name}&is_deleted=false" \
+  existing_id="$(cf_tunnel_api GET "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel?name=${tunnel_name}&is_deleted=false" \
     | jq -r '.result[0].id // empty')"
   if [[ -n "${existing_id}" ]]; then
     log "Stopping cloudflared on server to release tunnel connections before delete..."
@@ -227,7 +247,7 @@ cf_create_tunnel() {
     sleep 3  # Allow connections to close
     log "Deleting stale tunnel ${tunnel_name} (${existing_id}) before recreating..."
     local delete_resp delete_ok delete_err
-    delete_resp="$(cf_api DELETE "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel/${existing_id}" 2>/dev/null || true)"
+    delete_resp="$(cf_tunnel_api DELETE "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel/${existing_id}" 2>/dev/null || true)"
     delete_ok="$(printf '%s' "${delete_resp}" | jq -r '.success // false' 2>/dev/null || echo "false")"
     if [[ "${delete_ok}" == "true" ]]; then
       log "Deleted stale tunnel ${existing_id}"
@@ -244,7 +264,7 @@ cf_create_tunnel() {
   body="$(jq -n --arg name "${tunnel_name}" --arg secret "${TUNNEL_SECRET}" \
     '{name:$name,tunnel_secret:$secret,config_src:"local"}')"
   local resp
-  resp="$(cf_api POST "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel" "${body}")"
+  resp="$(cf_tunnel_api POST "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel" "${body}")"
   TUNNEL_ID="$(printf '%s' "${resp}" | jq -r '.result.id // empty')"
   [[ -n "${TUNNEL_ID}" ]] || die "Failed to create Cloudflare Tunnel: $(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"')"
   log "Created tunnel: ${tunnel_name} (${TUNNEL_ID})"
@@ -812,6 +832,8 @@ collect_common_inputs() {
   [[ -n "${DEPLOY_MODE}" ]] || prompt_choice DEPLOY_MODE "Deployment mode" "tunnel" "tunnel" "standard"
   [[ -n "${DOMAIN}" ]]      || prompt_value  DOMAIN "Domain name (FQDN)" "" "${FQDN_RE}"
   [[ -n "${CF_API_TOKEN}" ]] || prompt_secret CF_API_TOKEN "Cloudflare API token"
+  # Optional second token for tunnel API calls; defaults to CF_API_TOKEN.
+  [[ -n "${CF_TUNNEL_API_TOKEN:-}" ]] || CF_TUNNEL_API_TOKEN="${CF_API_TOKEN}"
   # CF_ZONE intentionally left as-is (derived from domain when empty; --cf-zone overrides)
   [[ -n "${SWAP_SIZE}" ]]   || SWAP_SIZE="2G"
   # App subdomain scope: where Coolify auto-assigns app URLs.

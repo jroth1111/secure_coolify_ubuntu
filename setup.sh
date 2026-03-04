@@ -23,6 +23,7 @@ TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
 DEPLOY_MODE="${DEPLOY_MODE:-}"
 DOMAIN="${DOMAIN:-}"
 CF_API_TOKEN="${CF_API_TOKEN:-}"
+CF_TUNNEL_API_TOKEN="${CF_TUNNEL_API_TOKEN:-}"
 CF_ZONE="${CF_ZONE:-}"
 APP_DOMAIN_MODE="${APP_DOMAIN_MODE:-}"
 SWAP_SIZE="${SWAP_SIZE:-}"
@@ -69,6 +70,7 @@ Required:
   --cf-api-token <token>        Cloudflare API token
 
 Optional:
+  --cf-tunnel-api-token <token> Cloudflare tunnel API token (optional; defaults to --cf-api-token)
   --mode <tunnel|standard>       Deployment mode (default: tunnel)
   --app-domain-mode <vps|apex>  App subdomain scope: vps=appname.DOMAIN, apex=appname.ZONE (default: apex)
   --cf-zone <zone>              Cloudflare zone (default: derived from domain)
@@ -92,6 +94,7 @@ parse_args() {
       --mode)            DEPLOY_MODE="${2:?--mode requires a value}"; shift 2 ;;
       --domain)          DOMAIN="${2:?--domain requires a value}"; shift 2 ;;
       --cf-api-token)    CF_API_TOKEN="${2:?--cf-api-token requires a value}"; shift 2 ;;
+      --cf-tunnel-api-token) CF_TUNNEL_API_TOKEN="${2:?--cf-tunnel-api-token requires a value}"; shift 2 ;;
       --cf-zone)         CF_ZONE="${2:?--cf-zone requires a value}"; shift 2 ;;
       --app-domain-mode) APP_DOMAIN_MODE="${2:?--app-domain-mode requires a value}"; shift 2 ;;
       --swap-size)       SWAP_SIZE="${2:?--swap-size requires a value}"; shift 2 ;;
@@ -134,6 +137,7 @@ validate_inputs() {
 
   [[ "${DOMAIN}" =~ ${FQDN_RE} ]]         || die "Invalid domain: ${DOMAIN}"
   [[ -n "${CF_API_TOKEN}" ]]               || die "Cloudflare API token is required."
+  [[ -n "${CF_TUNNEL_API_TOKEN}" ]]        || die "Cloudflare tunnel API token is required (or omit --cf-tunnel-api-token to reuse --cf-api-token)."
   [[ "${SWAP_SIZE}" =~ ${SWAP_RE} ]]       || die "Invalid swap size: ${SWAP_SIZE} (expected e.g. 2G, 512M)"
   case "${TAILSCALE_DIRECT_WAN,,}" in
     true|false|1|0|yes|no|y|n|on|off) ;;
@@ -197,6 +201,7 @@ preflight() {
   cf_verify_token
   cf_get_zone_id
   cf_get_account_id  # always fetch — needed for tunnel (default mode)
+  cf_verify_tunnel_token
   resolve_app_domain
   pass "Cloudflare API verified (zone: ${CF_ZONE_ID})"
 }
@@ -376,6 +381,7 @@ main() {
   log "  Domain:    ${DOMAIN}"
   log "  App scope: ${APP_DOMAIN_MODE}"
   log "  Swap:      ${SWAP_SIZE}"
+  [[ "${CF_TUNNEL_API_TOKEN}" != "${CF_API_TOKEN}" ]] && log "  CF tunnel token: custom"
   confirm "Proceed with deployment?"
 
   preflight
