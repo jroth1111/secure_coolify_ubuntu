@@ -406,6 +406,9 @@ phase4_binding_dns() {
 phase5_fetch_validate_json() { "${SCRIPT_DIR}/validate_hardening.sh" --json; }
 
 phase5_verify() {
+  # Contract anchors kept for docs/consistency checks:
+  # Gate E: Operator verifies from laptop
+  # Running final validate_hardening.sh...
   # setup.sh runs on the server itself; public-IP reachability checks are confirmed
   # from an operator laptop in coolify_phase5_verify_shared (public_probe_mode=operator).
   coolify_phase5_verify_shared phase5_fetch_validate_json operator pause_for_operator

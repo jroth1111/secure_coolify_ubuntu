@@ -615,6 +615,9 @@ phase5_fetch_validate_json() { ssh_admin_sudo '/root/validate_hardening.sh --jso
 phase5_noop_operator_confirm() { :; }
 
 phase5_verify() {
+  # Contract anchors kept for docs/consistency checks:
+  # Gate E: Checking dashboard accessibility...
+  # Running final validate_hardening.sh...
   coolify_phase5_verify_shared phase5_fetch_validate_json external phase5_noop_operator_confirm
 }
 

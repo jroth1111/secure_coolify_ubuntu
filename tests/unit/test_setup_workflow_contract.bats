@@ -227,7 +227,7 @@ EOF
   assert_success
 }
 
-@test "setup: gate E/F require operator laptop confirmation for public-path checks" {
+@test "setup: gate E requires operator laptop verification" {
   run bash -c '
     source "'"${SETUP_SCRIPT}"'"
     tmpdir="$(mktemp -d)"
