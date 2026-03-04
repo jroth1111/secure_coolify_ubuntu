@@ -582,12 +582,21 @@ phase4_binding_dns() {
       | ssh_admin_sudo "TUNNEL_ID=${tunnel_id_q} TUNNEL_SECRET=${tunnel_secret_q} CF_ACCOUNT_ID=${cf_account_id_q} DOMAIN=${domain_q} APP_DOMAIN=${app_domain_q} CF_ZONE_NAME=${cf_zone_name_q} bash -s"
   }
   phase4_stop_cloudflared() { ssh_admin_sudo 'systemctl stop cloudflared 2>/dev/null || true'; }
+  phase4_configure_private_routes() {
+    local domain_q
+    domain_q="$(printf '%q' "${DOMAIN}")"
+    coolify_configure_private_dashboard_routes_script \
+      | ssh_admin_sudo "DOMAIN=${domain_q} bash -s"
+  }
+  phase4_remove_private_routes() {
+    coolify_remove_private_dashboard_routes_script | ssh_admin_sudo 'bash -s'
+  }
 
   # Contract anchors kept for tests/docs:
   # mode="${DEPLOY_MODE}"
   # PUSHER_HOST=${TS_IP}
-  # service: http_status:404
-  # service: http://localhost:80
+  # coolify-private-dashboard.yaml
+  # ws.${DOMAIN}
   coolify_phase4_binding_dns_shared \
     phase4_coolify_env_exists \
     phase4_configure_binding \
@@ -595,7 +604,9 @@ phase4_binding_dns() {
     phase4_reconcile_pusher_env \
     phase4_install_cloudflared \
     phase4_configure_cloudflared \
-    phase4_stop_cloudflared
+    phase4_stop_cloudflared \
+    phase4_configure_private_routes \
+    phase4_remove_private_routes
 }
 
 # ── Phase 5: Verification ─────────────────────────────────────────────────
@@ -705,35 +716,55 @@ phase5_verify() {
       die "Gate F failed: external HTTPS endpoint check did not pass."
     fi
   else
-    # Gate F (tunnel/private): dashboard and websocket hostnames must NOT be publicly reachable.
-    log "Gate F: Checking public dashboard/realtime endpoints are blocked..."
-    local dashboard_code ws_code
-    local gate_f_private_passed=false
+    # Gate F (tunnel/private): private host routes must work on Tailscale-only DNS,
+    # and public origin ingress must remain blocked.
+    log "Gate F: Checking private host routes and public-origin blocking..."
+    local dashboard_private_code ws_private_code
+    local gate_f_private_routes_passed=false
     for (( attempt=1; attempt<=attempts; attempt++ )); do
-      dashboard_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -L "https://${DOMAIN}" 2>/dev/null)" || dashboard_code=""
-      ws_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -L "https://ws.${DOMAIN}" 2>/dev/null)" || ws_code=""
-      dashboard_code="${dashboard_code:-000}"
-      ws_code="${ws_code:-000}"
-      dashboard_code="${dashboard_code:0:3}"
-      ws_code="${ws_code:0:3}"
+      dashboard_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${DOMAIN}" 2>/dev/null)" || dashboard_private_code=""
+      ws_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://ws.${DOMAIN}" 2>/dev/null)" || ws_private_code=""
+      dashboard_private_code="${dashboard_private_code:-000}"
+      ws_private_code="${ws_private_code:-000}"
+      dashboard_private_code="${dashboard_private_code:0:3}"
+      ws_private_code="${ws_private_code:0:3}"
 
-      if [[ ! "${dashboard_code}" =~ ^[23][0-9][0-9]$ && ! "${ws_code}" =~ ^[23][0-9][0-9]$ ]]; then
-        gate_f_private_passed=true
+      if [[ "${dashboard_private_code}" =~ ^[23][0-9][0-9]$ && "${ws_private_code}" != "000" ]]; then
+        gate_f_private_routes_passed=true
         break
       fi
       if (( attempt < attempts )); then
-        log "  Gate F not ready (dashboard=${dashboard_code}, ws=${ws_code}); retrying in ${delay}s (${attempt}/${attempts})..."
+        log "  Gate F private routes not ready (dashboard=${dashboard_private_code}, ws=${ws_private_code}); retrying in ${delay}s (${attempt}/${attempts})..."
         sleep "${delay}"
       fi
     done
 
-    if [[ "${gate_f_private_passed}" == "true" ]]; then
-      pass "Gate F: public dashboard blocked (https://${DOMAIN} → HTTP ${dashboard_code})"
-      pass "Gate F: public websocket host blocked (https://ws.${DOMAIN} → HTTP ${ws_code})"
-    else
-      fail "Gate F: public endpoint still reachable (dashboard=${dashboard_code}, ws=${ws_code})"
-      die "Gate F failed: dashboard/websocket hosts must not be publicly reachable in tunnel mode."
+    if [[ "${gate_f_private_routes_passed}" != "true" ]]; then
+      fail "Gate F: private dashboard route failed (http://${DOMAIN} → HTTP ${dashboard_private_code})"
+      fail "Gate F: private websocket host failed (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
+      die "Gate F failed: private host routes are not functional on Tailscale."
     fi
+    pass "Gate F: private dashboard route works (http://${DOMAIN} → HTTP ${dashboard_private_code})"
+    pass "Gate F: private websocket host responds (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
+
+    local pub80_code pub443_code
+    pub80_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${SERVER_IP}" 2>/dev/null)" || pub80_code=""
+    pub443_code="$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 10 "https://${SERVER_IP}" 2>/dev/null)" || pub443_code=""
+    pub80_code="${pub80_code:-000}"
+    pub443_code="${pub443_code:-000}"
+    pub80_code="${pub80_code:0:3}"
+    pub443_code="${pub443_code:0:3}"
+
+    if [[ "${pub80_code}" != "000" || "${pub443_code}" != "000" ]]; then
+      fail "Gate F: public origin still reachable (${SERVER_IP}:80=${pub80_code}, :443=${pub443_code})"
+      die "Gate F failed: public origin web ports must remain blocked in tunnel mode."
+    fi
+    pass "Gate F: public origin blocked on ${SERVER_IP}:80 and :443"
+
+    cf_assert_private_tailscale_a_record "${DOMAIN}" "${TS_IP}"
+    pass "Gate F: DNS A record verified (${DOMAIN} → ${TS_IP}, DNS-only)"
+    cf_assert_private_tailscale_a_record "ws.${DOMAIN}" "${TS_IP}"
+    pass "Gate F: DNS A record verified (ws.${DOMAIN} → ${TS_IP}, DNS-only)"
   fi
 
   # Final validation run

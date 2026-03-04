@@ -377,12 +377,18 @@ phase4_binding_dns() {
       coolify_configure_cloudflared_script | bash -s
   }
   phase4_stop_cloudflared() { systemctl stop cloudflared 2>/dev/null || true; }
+  phase4_configure_private_routes() {
+    DOMAIN="${DOMAIN}" coolify_configure_private_dashboard_routes_script | bash -s
+  }
+  phase4_remove_private_routes() {
+    coolify_remove_private_dashboard_routes_script | bash -s
+  }
 
   # Contract anchors kept for tests/docs:
   # sed '/^PUSHER_HOST=/d; /^PUSHER_PORT=/d; /^PUSHER_SCHEME=/d'
   # PUSHER_HOST=${TS_IP}
-  # service: http_status:404
-  # service: http://localhost:80
+  # coolify-private-dashboard.yaml
+  # ws.${DOMAIN}
   coolify_phase4_binding_dns_shared \
     phase4_coolify_env_exists \
     phase4_configure_binding \
@@ -390,7 +396,9 @@ phase4_binding_dns() {
     phase4_reconcile_pusher_env \
     phase4_install_cloudflared \
     phase4_configure_cloudflared \
-    phase4_stop_cloudflared
+    phase4_stop_cloudflared \
+    phase4_configure_private_routes \
+    phase4_remove_private_routes
 }
 
 # ── Phase 5: Verification ─────────────────────────────────────────────────
@@ -399,7 +407,7 @@ phase5_verify() {
   step "5/5" "Final verification"
 
   # Gate E: Operator verifies from laptop
-  pause_for_operator "From your LAPTOP, verify: curl http://${TS_IP}:8000 works; curl http://${SERVER_IP}:8000 fails; curl http://${TS_IP}:6001 works; curl http://${SERVER_IP}:6001 fails; in tunnel mode, https://${DOMAIN} and https://ws.${DOMAIN} are blocked publicly"
+  pause_for_operator "From your LAPTOP, verify: curl http://${TS_IP}:8000 works; curl http://${SERVER_IP}:8000 fails; curl http://${TS_IP}:6001 works; curl http://${SERVER_IP}:6001 fails; in tunnel mode, curl http://${DOMAIN} works on Tailscale, curl http://ws.${DOMAIN} responds, and curl http://${SERVER_IP} plus curl -k https://${SERVER_IP} fail"
 
   # Final validation run
   log "Running final validate_hardening.sh..."

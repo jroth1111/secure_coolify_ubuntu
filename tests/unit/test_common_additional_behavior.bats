@@ -148,6 +148,23 @@ setup() {
   assert_output --partial "pkg.cloudflare.com"
 }
 
+@test "coolify_configure_private_dashboard_routes_script: emits managed Traefik routes for dashboard and ws hosts" {
+  run coolify_configure_private_dashboard_routes_script
+  assert_success
+  assert_output --partial "coolify-private-dashboard.yaml"
+  assert_output --partial 'rule: "Host(`ws.${DOMAIN}`)"'
+  assert_output --partial "http://coolify:8080"
+  assert_output --partial "http://coolify-realtime:6001"
+  assert_output --partial "http://coolify-realtime:6002"
+}
+
+@test "coolify_remove_private_dashboard_routes_script: emits managed route cleanup logic" {
+  run coolify_remove_private_dashboard_routes_script
+  assert_success
+  assert_output --partial "coolify-private-dashboard.yaml"
+  assert_output --partial "rm -f"
+}
+
 @test "coolify_configure_cloudflared_script: emits private-only dashboard/ws deny rules and service enable" {
   run coolify_configure_cloudflared_script
   assert_success
@@ -374,6 +391,8 @@ setup() {
     bind_calls=0
     wildcard_calls=0
     pusher_calls=0
+    configure_private_routes_calls=0
+    remove_private_routes_calls=0
     a_records=""
 
     coolify_env_exists() { wait_checks=$((wait_checks + 1)); return 0; }
@@ -383,18 +402,23 @@ setup() {
     install_cloudflared() { return 0; }
     configure_cloudflared() { return 0; }
     stop_cloudflared() { return 0; }
+    configure_private_routes() { configure_private_routes_calls=$((configure_private_routes_calls + 1)); }
+    remove_private_routes() { remove_private_routes_calls=$((remove_private_routes_calls + 1)); }
     cf_upsert_a_record() { a_records+="$1|$2|$3"$'"'"'\n'"'"'; }
     cf_create_tunnel() { echo "unexpected tunnel" >&2; return 1; }
     cf_upsert_cname() { echo "unexpected cname" >&2; return 1; }
 
     coolify_phase4_binding_dns_shared \
       coolify_env_exists configure_binding set_wildcard_domain reconcile_pusher \
-      install_cloudflared configure_cloudflared stop_cloudflared
+      install_cloudflared configure_cloudflared stop_cloudflared \
+      configure_private_routes remove_private_routes
 
     [[ "${wait_checks}" -eq 1 ]]
     [[ "${bind_calls}" -eq 1 ]]
     [[ "${wildcard_calls}" -eq 1 ]]
     [[ "${pusher_calls}" -eq 1 ]]
+    [[ "${configure_private_routes_calls}" -eq 0 ]]
+    [[ "${remove_private_routes_calls}" -eq 1 ]]
     grep -q "^coolify.vps.example.com|203.0.113.10|true$" <<< "${a_records}"
     grep -q "^\\*.vps.example.com|203.0.113.10|true$" <<< "${a_records}"
     grep -q "^\\*.example.com|203.0.113.10|true$" <<< "${a_records}"
@@ -402,13 +426,14 @@ setup() {
   assert_success
 }
 
-@test "coolify_phase4_binding_dns_shared: tunnel mode removes dashboard/ws host records and keeps wildcard CNAMEs" {
+@test "coolify_phase4_binding_dns_shared: tunnel mode configures private host A records and wildcard CNAMEs" {
   run bash -c '
     source "'"${COMMON_LIB}"'"
     DEPLOY_MODE="tunnel"
     DOMAIN="coolify.vps.example.com"
     APP_DOMAIN="vps.example.com"
     CF_ZONE_NAME="example.com"
+    TS_IP="100.64.0.25"
     TUNNEL_ID="tunnel-1234"
     wait_checks=0
     bind_calls=0
@@ -418,9 +443,11 @@ setup() {
     configure_calls=0
     stop_calls=0
     create_tunnel_calls=0
+    configure_private_routes_calls=0
+    remove_private_routes_calls=0
     deleted_hosts=""
+    a_records=""
     cname_records=""
-    a_record_calls=0
 
     coolify_env_exists() { wait_checks=$((wait_checks + 1)); return 0; }
     configure_binding() { bind_calls=$((bind_calls + 1)); }
@@ -429,14 +456,17 @@ setup() {
     install_cloudflared() { install_calls=$((install_calls + 1)); }
     configure_cloudflared() { configure_calls=$((configure_calls + 1)); }
     stop_cloudflared() { stop_calls=$((stop_calls + 1)); }
+    configure_private_routes() { configure_private_routes_calls=$((configure_private_routes_calls + 1)); }
+    remove_private_routes() { remove_private_routes_calls=$((remove_private_routes_calls + 1)); }
     cf_create_tunnel() { create_tunnel_calls=$((create_tunnel_calls + 1)); }
     cf_delete_host_records() { deleted_hosts+="$1"$'"'"'\n'"'"'; }
+    cf_upsert_a_record() { a_records+="$1|$2|$3"$'"'"'\n'"'"'; }
     cf_upsert_cname() { cname_records+="$1|$2"$'"'"'\n'"'"'; }
-    cf_upsert_a_record() { a_record_calls=$((a_record_calls + 1)); }
 
     coolify_phase4_binding_dns_shared \
       coolify_env_exists configure_binding set_wildcard_domain reconcile_pusher \
-      install_cloudflared configure_cloudflared stop_cloudflared
+      install_cloudflared configure_cloudflared stop_cloudflared \
+      configure_private_routes remove_private_routes
 
     [[ "${wait_checks}" -eq 1 ]]
     [[ "${bind_calls}" -eq 1 ]]
@@ -446,9 +476,12 @@ setup() {
     [[ "${configure_calls}" -eq 1 ]]
     [[ "${create_tunnel_calls}" -eq 1 ]]
     [[ "${stop_calls}" -eq 0 ]]
-    [[ "${a_record_calls}" -eq 0 ]]
+    [[ "${configure_private_routes_calls}" -eq 1 ]]
+    [[ "${remove_private_routes_calls}" -eq 0 ]]
     grep -q "^coolify.vps.example.com$" <<< "${deleted_hosts}"
     grep -q "^ws.coolify.vps.example.com$" <<< "${deleted_hosts}"
+    grep -q "^coolify.vps.example.com|100.64.0.25|false$" <<< "${a_records}"
+    grep -q "^ws.coolify.vps.example.com|100.64.0.25|false$" <<< "${a_records}"
     grep -q "^\\*.vps.example.com|tunnel-1234.cfargotunnel.com$" <<< "${cname_records}"
     grep -q "^\\*.example.com|tunnel-1234.cfargotunnel.com$" <<< "${cname_records}"
   '

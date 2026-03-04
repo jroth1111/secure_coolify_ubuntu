@@ -633,6 +633,26 @@ cf_delete_host_records() {
   done
 }
 
+cf_assert_private_tailscale_a_record() {
+  local name="$1" expected_ip="$2"
+  local resp success matching_count conflicting_count
+  resp="$(cf_api GET "/zones/${CF_ZONE_ID}/dns_records?type=A&name=${name}")"
+  success="$(printf '%s' "${resp}" | jq -r '.success // false')"
+  [[ "${success}" == "true" ]] || die "Cloudflare DNS lookup failed for ${name}: $(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"')"
+
+  matching_count="$(printf '%s' "${resp}" \
+    | jq -r --arg ip "${expected_ip}" '[.result[]? | select((.content // "") == $ip and (.proxied == false))] | length')"
+  conflicting_count="$(printf '%s' "${resp}" \
+    | jq -r --arg ip "${expected_ip}" '[.result[]? | select((.content // "") != $ip or (.proxied != false))] | length')"
+
+  [[ "${matching_count}" =~ ^[0-9]+$ ]] || matching_count=0
+  [[ "${conflicting_count}" =~ ^[0-9]+$ ]] || conflicting_count=0
+
+  (( matching_count >= 1 )) || die "Expected DNS-only A record ${name} → ${expected_ip}, but none found."
+  (( conflicting_count == 0 )) || die "Conflicting A record(s) found for ${name}; expected only DNS-only ${expected_ip}."
+  log "Verified DNS-only A record: ${name} → ${expected_ip}"
+}
+
 # ── Shared deployment helpers ────────────────────────────────────────────────
 
 # report_validation_result — Parse and report validate_hardening.sh JSON output.
@@ -764,6 +784,8 @@ coolify_phase3_docker_coolify_shared() {
 #   install_cloudflared_fn()
 #   configure_cloudflared_fn()
 #   stop_cloudflared_fn()
+#   configure_private_routes_fn()
+#   remove_private_routes_fn()
 coolify_phase4_binding_dns_shared() {
   local coolify_env_exists_fn="$1"
   local configure_binding_fn="$2"
@@ -772,6 +794,8 @@ coolify_phase4_binding_dns_shared() {
   local install_cloudflared_fn="$5"
   local configure_cloudflared_fn="$6"
   local stop_cloudflared_fn="$7"
+  local configure_private_routes_fn="$8"
+  local remove_private_routes_fn="$9"
 
   step "4/5" "Configure dashboard binding & DNS"
 
@@ -827,6 +851,10 @@ coolify_phase4_binding_dns_shared() {
       cf_upsert_a_record "${apex_wildcard}" "${SERVER_IP}" "true"
       pass "DNS wildcard A record configured: ${apex_wildcard} → ${SERVER_IP}"
     fi
+
+    # Standard mode must not keep tunnel-private dashboard routes.
+    "${remove_private_routes_fn}" || die "Failed to remove private-only dashboard routes."
+    pass "Private dashboard routes removed for standard mode"
     return 0
   fi
 
@@ -846,14 +874,19 @@ coolify_phase4_binding_dns_shared() {
   pass "Tunnel credentials and config written (wildcards: ${wc_summary})"
   pass "cloudflared service running"
 
-  # Private-only default: remove exact dashboard/realtime records on every run.
-  # This guarantees redeploys remove any previous public exposure from older profiles.
-  cf_delete_host_records "${DOMAIN}"
-  pass "DNS host records removed: ${DOMAIN}"
-  cf_delete_host_records "ws.${DOMAIN}"
-  pass "DNS host records removed: ws.${DOMAIN}"
+  # Private-only dashboard/realtime routes via Tailscale-only host records.
+  "${configure_private_routes_fn}" || die "Failed to configure private-only dashboard routes."
+  pass "Private dashboard/realtime routes configured for ${DOMAIN} and ws.${DOMAIN}"
 
-  # Create wildcard CNAME records for app routing through Traefik only.
+  # Ensure exact host records are rebuilt as DNS-only Tailscale records on every run.
+  cf_delete_host_records "${DOMAIN}"
+  cf_delete_host_records "ws.${DOMAIN}"
+  cf_upsert_a_record "${DOMAIN}" "${TS_IP}" "false"
+  pass "DNS host A record configured: ${DOMAIN} → ${TS_IP} (DNS-only)"
+  cf_upsert_a_record "ws.${DOMAIN}" "${TS_IP}" "false"
+  pass "DNS host A record configured: ws.${DOMAIN} → ${TS_IP} (DNS-only)"
+
+  # Create wildcard CNAME records for app routing through cloudflared/Traefik.
   local tunnel_target="${TUNNEL_ID}.cfargotunnel.com"
   cf_upsert_cname "*.${APP_DOMAIN}" "${tunnel_target}"
   pass "DNS wildcard CNAME configured: *.${APP_DOMAIN} → ${tunnel_target}"
@@ -1068,6 +1101,76 @@ docker compose -f /data/coolify/source/docker-compose.yml \
 EOF
 }
 
+# coolify_configure_private_dashboard_routes_script — Emit host-side script to
+# write managed Traefik routes for private dashboard/realtime hostnames.
+coolify_configure_private_dashboard_routes_script() {
+  cat <<'EOF'
+set -Eeuo pipefail
+: "${DOMAIN:?DOMAIN is required}"
+
+dynamic_dir="/data/coolify/proxy/dynamic"
+route_file="${dynamic_dir}/coolify-private-dashboard.yaml"
+mkdir -p "${dynamic_dir}"
+
+cat > "${route_file}" <<CFG
+# This file is managed by secure_coolify_ubuntu.
+http:
+  middlewares:
+    coolify-private-gzip:
+      compress: true
+  routers:
+    coolify-private-dashboard:
+      entryPoints:
+        - http
+      rule: "Host(\`${DOMAIN}\`)"
+      service: coolify-private-dashboard
+      middlewares:
+        - coolify-private-gzip
+    coolify-private-realtime:
+      entryPoints:
+        - http
+      rule: "Host(\`ws.${DOMAIN}\`)"
+      service: coolify-private-realtime
+    coolify-private-terminal:
+      entryPoints:
+        - http
+      rule: "Host(\`ws.${DOMAIN}\`) && PathPrefix(\`/terminal/ws\`)"
+      service: coolify-private-terminal
+      priority: 100
+  services:
+    coolify-private-dashboard:
+      loadBalancer:
+        servers:
+          - url: http://coolify:8080
+    coolify-private-realtime:
+      loadBalancer:
+        servers:
+          - url: http://coolify-realtime:6001
+    coolify-private-terminal:
+      loadBalancer:
+        servers:
+          - url: http://coolify-realtime:6002
+CFG
+
+echo "Private dashboard routes written: ${route_file}"
+EOF
+}
+
+# coolify_remove_private_dashboard_routes_script — Emit host-side script to
+# remove managed private dashboard route file when not in tunnel mode.
+coolify_remove_private_dashboard_routes_script() {
+  cat <<'EOF'
+set -Eeuo pipefail
+route_file="/data/coolify/proxy/dynamic/coolify-private-dashboard.yaml"
+if [[ -f "${route_file}" ]]; then
+  rm -f "${route_file}"
+  echo "Removed private dashboard routes: ${route_file}"
+else
+  echo "Private dashboard routes already absent: ${route_file}"
+fi
+EOF
+}
+
 # coolify_add_coolify_root_key_script — Emit host-side script that inserts Coolify's
 # generated SSH public key into /root/.ssh/authorized_keys idempotently.
 coolify_add_coolify_root_key_script() {
@@ -1262,7 +1365,8 @@ print_deployment_summary() {
     [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]] \
       && printf '│                   + A *.%-36s│\n' "${CF_ZONE_NAME}"
   else
-    printf '│  DNS              : private-only host records removed %-13s│\n' "${DOMAIN}"
+    printf '│  DNS              : A %-38s│\n' "${DOMAIN} → ${TS_IP} (DNS-only)"
+    printf '│                   + A %-36s│\n' "ws.${DOMAIN} → ${TS_IP} (DNS-only)"
     printf '│  Wildcard DNS     : CNAME *.%-32s│\n' "${APP_DOMAIN}"
     [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]] \
       && printf '│                   + CNAME *.%-32s│\n' "${CF_ZONE_NAME}"
@@ -1273,7 +1377,11 @@ print_deployment_summary() {
   printf '└─────────────────────────────────────────────────────────────┘\n'
   printf '\n'
   log "Next steps:"
-  log "  1. Open http://${TS_IP}:8000 and create your Coolify admin account."
+  if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
+    log "  1. Open http://${DOMAIN} (or http://${TS_IP}:8000) and create your Coolify admin account."
+  else
+    log "  1. Open http://${TS_IP}:8000 and create your Coolify admin account."
+  fi
   log ""
   log "  2. Cloudflare SSL mode (one-time):"
   log "       Cloudflare dashboard > your zone > SSL/TLS > Overview > set to 'Full'"

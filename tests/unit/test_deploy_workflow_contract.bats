@@ -267,11 +267,13 @@ EOF
 @test "deploy: final validation is executed" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"
+    DEPLOY_MODE="tunnel"
     TS_IP="100.64.0.25"
     SERVER_IP="203.0.113.10"
     DOMAIN="coolify.vps.example.com"
     validate_seen_file="$(mktemp)"
     report_seen=0
+    dns_assert_calls=0
 
     sleep() { :; }
     curl() {
@@ -284,13 +286,22 @@ EOF
         echo "200"
       elif [[ "${url}" == "http://${SERVER_IP}:6001" ]]; then
         echo "000"
-      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
-        echo "404"
-      elif [[ "${url}" == "https://ws.${DOMAIN}" ]]; then
+      elif [[ "${url}" == "http://${DOMAIN}" ]]; then
+        echo "302"
+      elif [[ "${url}" == "http://ws.${DOMAIN}" ]]; then
+        echo "200"
+      elif [[ "${url}" == "http://${SERVER_IP}" ]]; then
+        echo "000"
+      elif [[ "${url}" == "https://${SERVER_IP}" ]]; then
         echo "000"
       else
         echo "404"
       fi
+      return 0
+    }
+    cf_assert_private_tailscale_a_record() {
+      [[ "$2" == "${TS_IP}" ]]
+      dns_assert_calls=$((dns_assert_calls + 1))
       return 0
     }
     ssh_admin_sudo() {
@@ -310,6 +321,7 @@ EOF
     phase5_verify
     [[ -f "${validate_seen_file}" ]]
     [[ "${report_seen}" -eq 1 ]]
+    [[ "${dns_assert_calls}" -eq 2 ]]
   '
   assert_success
 }
