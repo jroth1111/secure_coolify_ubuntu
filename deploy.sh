@@ -333,6 +333,7 @@ preflight() {
   # Verify Cloudflare token
   cf_verify_token
   cf_get_zone_id
+  cf_verify_dns_write_token
   cf_get_account_id  # always fetch — needed for tunnel (default mode)
   cf_verify_tunnel_token
   resolve_app_domain

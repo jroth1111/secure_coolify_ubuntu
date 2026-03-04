@@ -192,14 +192,46 @@ cf_get_account_id() {
   die "No Cloudflare account found (both /accounts and zone account lookup were empty)."
 }
 
+cf_expect_not_auth_error() {
+  local action="$1" resp="$2"
+  local success code msg
+  success="$(printf '%s' "${resp}" | jq -r '.success // false' 2>/dev/null || echo "false")"
+  [[ "${success}" == "true" ]] && return 0
+  code="$(printf '%s' "${resp}" | jq -r '.errors[0].code // empty' 2>/dev/null || true)"
+  msg="$(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"' 2>/dev/null || echo "unknown")"
+  case "${code}" in
+    10000|9109)
+      die "${action} failed: ${msg} (code ${code}). Ask the user for a token with the required permissions."
+      ;;
+  esac
+}
+
+cf_verify_dns_write_token() {
+  # Probe DNS write authorization with an intentionally invalid payload.
+  # Expected outcome when authorized: validation error (non-auth) and no mutation.
+  local resp
+  resp="$(cf_api POST "/zones/${CF_ZONE_ID}/dns_records" '{}')"
+  cf_expect_not_auth_error "Cloudflare DNS write permission check" "${resp}"
+  log "Cloudflare DNS write permission verified."
+}
+
 cf_verify_tunnel_token() {
   [[ "${DEPLOY_MODE}" == "tunnel" ]] || return 0
   local resp
   resp="$(cf_tunnel_api GET "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel?per_page=1")"
-  local status
+  cf_expect_not_auth_error "Cloudflare Tunnel read permission check" "${resp}"
+  local status err
   status="$(printf '%s' "${resp}" | jq -r '.success // false')"
-  [[ "${status}" == "true" ]] || die "Cloudflare tunnel API token verification failed: $(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"')"
-  log "Cloudflare tunnel API token verified."
+  if [[ "${status}" != "true" ]]; then
+    err="$(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"')"
+    die "Cloudflare tunnel API token verification failed: ${err}"
+  fi
+
+  # Probe tunnel create authorization with an intentionally invalid payload.
+  # Expected outcome when authorized: validation error (non-auth) and no mutation.
+  resp="$(cf_tunnel_api POST "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel" '{}')"
+  cf_expect_not_auth_error "Cloudflare Tunnel write permission check" "${resp}"
+  log "Cloudflare tunnel API token verified (read/write)."
 }
 
 cf_expect_success() {
