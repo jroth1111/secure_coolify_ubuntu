@@ -45,11 +45,29 @@ REQUIRED_KEYS = {
 
 VALID_CRITICALITY = {"security", "orchestration", "utility"}
 ROBUST_VALIDATE_CHECK_FUNCTIONS = {
+    "admin_sudo_check",
+    "apparmor_check",
+    "banner_check",
+    "cloudflared_check",
+    "coolify_binding_check",
+    "coolify_container_check",
+    "coolify_ssh_check",
+    "disabled_services_check",
+    "docker_daemon_check",
+    "docker_trust_boundary_check",
     "ssh_check",
     "ufw_check",
     "docker_user_check",
+    "docker_user_lifecycle_check",
+    "fail2ban_check",
+    "journald_check",
+    "swap_check",
     "sysctl_check",
     "auditd_check",
+    "tailscale_check",
+    "timesync_check",
+    "unattended_upgrades_check",
+    "validate_timer_check",
 }
 
 SOURCE_PATTERNS = {
