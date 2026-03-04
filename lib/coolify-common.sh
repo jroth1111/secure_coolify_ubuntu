@@ -511,7 +511,17 @@ curl -fsSL "${installer_url}" -o "${tmp}"
 [[ -s "${tmp}" ]] || { echo "Downloaded Coolify installer is empty" >&2; exit 1; }
 head -1 "${tmp}" | grep -Eq '^#!.*/(ba)?sh$' || { echo "Unexpected Coolify installer header" >&2; exit 1; }
 chmod 700 "${tmp}"
-bash "${tmp}"
+if command -v timeout >/dev/null 2>&1; then
+  if ! timeout --signal=TERM --kill-after=60 1800 bash "${tmp}"; then
+    rc=$?
+    if [[ "${rc}" -eq 124 || "${rc}" -eq 137 ]]; then
+      echo "Coolify installer timed out after 1800s (likely blocked image pull)." >&2
+    fi
+    exit "${rc}"
+  fi
+else
+  bash "${tmp}"
+fi
 EOF
 }
 
