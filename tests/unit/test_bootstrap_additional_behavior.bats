@@ -369,6 +369,57 @@ setup() {
   [ ! -f "${JOURNALD_DROPIN_FILE}" ]
 }
 
+@test "ensure_logrotate_create_directive: inserts create line once and remains idempotent" {
+  DRY_RUN="false"
+  local conf
+  conf="$(mktemp)"
+  cat > "${conf}" <<'EOF'
+/var/log/example.log
+{
+	rotate 4
+	weekly
+	delaycompress
+	sharedscripts
+}
+EOF
+
+  run ensure_logrotate_create_directive "${conf}" "adm"
+  assert_success
+  run grep -c "create 640 syslog adm" "${conf}"
+  assert_success
+  assert_output "1"
+
+  ensure_logrotate_create_directive "${conf}" "adm"
+  run grep -c "create 640 syslog adm" "${conf}"
+  assert_success
+  assert_output "1"
+
+  rm -f "${conf}"
+}
+
+@test "configure_rsyslog_targets: dry-run reports planned remediation and skips systemctl execution" {
+  DRY_RUN="true"
+  rsyslog_collect_log_targets() {
+    printf '%s\n' "/var/log/ufw.log" "/var/log/mail.log"
+  }
+  ensure_logrotate_create_directive() {
+    echo "patched $1"
+  }
+  getent() { return 0; }
+
+  local marker
+  marker="$(mktemp)"
+  rm -f "${marker}"
+  systemctl() { echo called > "${marker}"; return 0; }
+
+  run configure_rsyslog_targets
+  assert_success
+  assert_output --partial "DRY-RUN: ensure /var/log is root:syslog mode 0770"
+  assert_output --partial "DRY-RUN: ensure /var/log/ufw.log exists (0640 syslog:adm)"
+  assert_output --partial "patched /etc/logrotate.d/ufw"
+  [ ! -f "${marker}" ]
+}
+
 @test "configure_docker_daemon: skips when Docker absent" {
   DRY_RUN="true"
   DOCKER_PRESENT="false"
@@ -422,6 +473,7 @@ setup() {
     configure_auditd() { :; }
     configure_sysctl() { :; }
     configure_ufw() { :; }
+    configure_rsyslog_targets() { :; }
     configure_docker_daemon() { :; }
     configure_docker_user() { :; }
     configure_fail2ban() { :; }

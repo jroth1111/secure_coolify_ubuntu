@@ -6,7 +6,7 @@ if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
 fi
 set -Eeuo pipefail
 
-SCRIPT_VERSION="1.2.3"
+SCRIPT_VERSION="1.2.4"
 SCRIPT_NAME="$(basename "$0")"
 
 LOG_FILE="/var/log/bootstrap-hardening.log"
@@ -365,7 +365,14 @@ setup_logging() {
     return 0
   fi
 
-  install -d -m 0750 /var/log
+  # Keep /var/log non-world-accessible while allowing rsyslog (group: syslog)
+  # to create missing active targets.
+  if getent group syslog >/dev/null 2>&1; then
+    install -d -m 0770 -o root -g syslog /var/log
+  else
+    install -d -m 0750 /var/log
+    warn "Group 'syslog' not found; using fallback /var/log mode 0750."
+  fi
   touch "${LOG_FILE}"
   chmod 0600 "${LOG_FILE}"
   exec > >(tee -a "${LOG_FILE}") 2>&1
@@ -1381,6 +1388,110 @@ configure_ufw() {
   run ufw --force enable
 }
 
+rsyslog_collect_log_targets() {
+  local cfg
+  local -a cfgs=()
+
+  [[ -f /etc/rsyslog.conf ]] && cfgs+=("/etc/rsyslog.conf")
+  for cfg in /etc/rsyslog.d/*.conf; do
+    [[ -f "${cfg}" ]] || continue
+    cfgs+=("${cfg}")
+  done
+
+  ((${#cfgs[@]} > 0)) || return 0
+
+  awk '
+    /^[[:space:]]*#/ { next }
+    {
+      for (i = 1; i <= NF; i++) {
+        tok = $i
+        if (tok ~ /^-?\/var\/log\//) {
+          sub(/^-/, "", tok)
+          sub(/[;,]+$/, "", tok)
+          print tok
+        }
+      }
+    }
+  ' "${cfgs[@]}" | sort -u
+}
+
+ensure_logrotate_create_directive() {
+  local file="$1"
+  local log_group="$2"
+  local create_line="create 640 syslog ${log_group}"
+
+  if [[ ! -f "${file}" ]]; then
+    warn "Logrotate file ${file} not found; skipping create directive check."
+    return 0
+  fi
+
+  if grep -Eq "^[[:space:]]*create[[:space:]]+640[[:space:]]+syslog[[:space:]]+${log_group}([[:space:]]|$)" "${file}"; then
+    return 0
+  fi
+
+  if is_true "${DRY_RUN}"; then
+    log "DRY-RUN: add '${create_line}' to ${file}"
+    return 0
+  fi
+
+  if grep -qE '^[[:space:]]*delaycompress[[:space:]]*$' "${file}"; then
+    sed -i "/^[[:space:]]*delaycompress[[:space:]]*$/a\\\t${create_line}" "${file}"
+    return 0
+  fi
+
+  if grep -qE '^[[:space:]]*compress[[:space:]]*$' "${file}"; then
+    sed -i "/^[[:space:]]*compress[[:space:]]*$/a\\\t${create_line}" "${file}"
+    return 0
+  fi
+
+  if grep -qE '^[[:space:]]*sharedscripts[[:space:]]*$' "${file}"; then
+    sed -i "/^[[:space:]]*sharedscripts[[:space:]]*$/i\\\t${create_line}" "${file}"
+    return 0
+  fi
+
+  sed -i "/^[[:space:]]*}[[:space:]]*$/i\\\t${create_line}" "${file}"
+}
+
+configure_rsyslog_targets() {
+  local target
+  local log_group="adm"
+
+  if ! getent group "${log_group}" >/dev/null 2>&1; then
+    log_group="syslog"
+  fi
+
+  if getent group syslog >/dev/null 2>&1; then
+    if is_true "${DRY_RUN}"; then
+      log "DRY-RUN: ensure /var/log is root:syslog mode 0770"
+    else
+      install -d -m 0770 -o root -g syslog /var/log
+    fi
+  else
+    warn "Group 'syslog' not found; skipping /var/log ownership enforcement."
+  fi
+
+  while IFS= read -r target; do
+    [[ -n "${target}" ]] || continue
+    if is_true "${DRY_RUN}"; then
+      log "DRY-RUN: ensure ${target} exists (0640 syslog:${log_group})"
+      continue
+    fi
+    install -d -m 0755 "$(dirname "${target}")"
+    touch "${target}"
+    chown "syslog:${log_group}" "${target}"
+    chmod 0640 "${target}"
+  done < <(rsyslog_collect_log_targets)
+
+  ensure_logrotate_create_directive "/etc/logrotate.d/ufw" "${log_group}"
+  ensure_logrotate_create_directive "/etc/logrotate.d/rsyslog" "${log_group}"
+
+  if systemctl list-unit-files --type=service 2>/dev/null | awk '{print $1}' | grep -qx 'rsyslog.service'; then
+    run systemctl restart rsyslog
+  else
+    warn "rsyslog.service not found; skipping restart."
+  fi
+}
+
 install_docker_user_assets() {
   write_file "${DOCKER_USER_SCRIPT}" "0750" "root" "root" <<'EOF'
 #!/usr/bin/env bash
@@ -1859,6 +1970,35 @@ is_container_runtime() {
   return 1
 }
 
+assert_rsyslog_posture() {
+  local log_dir_owner log_dir_group log_dir_mode log_dir_group_digit
+  local target q_target
+
+  log_dir_owner="$(stat -c '%U' /var/log 2>/dev/null || true)"
+  log_dir_group="$(stat -c '%G' /var/log 2>/dev/null || true)"
+  log_dir_mode="$(stat -c '%a' /var/log 2>/dev/null || true)"
+  [[ "${log_dir_owner}" == "root" ]] || die "Post-check failed: /var/log owner is ${log_dir_owner:-unknown}, expected root."
+  [[ "${log_dir_group}" == "syslog" ]] || die "Post-check failed: /var/log group is ${log_dir_group:-unknown}, expected syslog."
+  [[ "${log_dir_mode}" =~ ^[0-7]{3,4}$ ]] || die "Post-check failed: /var/log mode unreadable (${log_dir_mode:-unknown})."
+  log_dir_group_digit="${log_dir_mode: -2:1}"
+  if (( (10#${log_dir_group_digit} & 2) == 0 )); then
+    die "Post-check failed: /var/log mode ${log_dir_mode} lacks group write; rsyslog cannot create missing log targets."
+  fi
+
+  while IFS= read -r target; do
+    [[ -n "${target}" ]] || continue
+    [[ -f "${target}" ]] || die "Post-check failed: rsyslog target ${target} is missing."
+    printf -v q_target '%q' "${target}"
+    su -s /bin/sh -c "test -w ${q_target}" syslog \
+      || die "Post-check failed: rsyslog user cannot write ${target}."
+  done < <(rsyslog_collect_log_targets)
+
+  grep -Eq '^[[:space:]]*create[[:space:]]+640[[:space:]]+syslog[[:space:]]+(adm|syslog)([[:space:]]|$)' /etc/logrotate.d/ufw \
+    || die "Post-check failed: /etc/logrotate.d/ufw missing create 640 syslog <group> directive."
+  grep -Eq '^[[:space:]]*create[[:space:]]+640[[:space:]]+syslog[[:space:]]+(adm|syslog)([[:space:]]|$)' /etc/logrotate.d/rsyslog \
+    || die "Post-check failed: /etc/logrotate.d/rsyslog missing create 640 syslog <group> directive."
+}
+
 run_post_checks() {
   if is_true "${DRY_RUN}"; then
     log "Dry-run complete; post-apply checks skipped."
@@ -2009,6 +2149,8 @@ run_post_checks() {
     || die "Post-check failed: timezone is ${current_timezone:-unknown}, expected ${TIMEZONE}."
 
   systemctl is-active --quiet fail2ban || die "Post-check failed: fail2ban is not active."
+  systemctl is-active --quiet rsyslog || die "Post-check failed: rsyslog is not active."
+  assert_rsyslog_posture
 
   [[ -f /etc/issue.net ]] || die "Post-check failed: /etc/issue.net missing."
 
@@ -2576,6 +2718,9 @@ main() {
 
   log "Applying UFW baseline."
   configure_ufw
+
+  log "Applying rsyslog target/logrotate safety."
+  configure_rsyslog_targets
 
   log "Applying Docker daemon log rotation."
   configure_docker_daemon

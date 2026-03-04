@@ -1055,6 +1055,68 @@ EOF
   rm -f "${JOURNALD_DROPIN}"
 }
 
+@test "rsyslog_check: records PASS when log targets are writable and runtime is healthy" {
+  stat() {
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%U" ]]; then echo root; return 0; fi
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%G" ]]; then echo syslog; return 0; fi
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%a" ]]; then echo 770; return 0; fi
+    command stat "$@"
+  }
+  rsyslog_collect_log_targets() {
+    printf '%s\n' "/var/log/ufw.log"
+  }
+  su() { return 0; }
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "rsyslog" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "show" && "${2:-}" == "-p" && "${3:-}" == "ActiveEnterTimestamp" ]]; then
+      echo "2026-03-05 02:24:40"
+      return 0
+    fi
+    return 0
+  }
+  journalctl() { return 0; }
+  grep() {
+    if [[ "$*" == *"/etc/logrotate.d/rsyslog"* || "$*" == *"/etc/logrotate.d/ufw"* ]]; then
+      return 0
+    fi
+    command grep "$@"
+  }
+
+  rsyslog_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "rsyslog: /var/log owner/group" "PASS"
+  assert_json_check_status "${json}" "rsyslog: /var/log group-write enabled" "PASS"
+  assert_json_check_status "${json}" "rsyslog: logrotate create directive" "PASS"
+  assert_json_check_status "${json}" "rsyslog: ufw logrotate create directive" "PASS"
+  assert_json_check_status "${json}" "rsyslog: runtime log-write health" "PASS"
+}
+
+@test "rsyslog_check: records FAIL when /var/log is not group-writable and targets are missing" {
+  stat() {
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%U" ]]; then echo root; return 0; fi
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%G" ]]; then echo syslog; return 0; fi
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%a" ]]; then echo 750; return 0; fi
+    command stat "$@"
+  }
+  rsyslog_collect_log_targets() {
+    printf '%s\n' "/var/log/missing.log"
+  }
+  systemctl() { return 1; }
+  grep() { return 1; }
+
+  rsyslog_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "rsyslog: /var/log group-write" "FAIL"
+  assert_json_check_status "${json}" "rsyslog: target exists (/var/log/missing.log)" "FAIL"
+  assert_json_check_status "${json}" "rsyslog: logrotate create directive" "FAIL"
+  assert_json_check_status "${json}" "rsyslog: ufw logrotate create directive" "FAIL"
+  assert_json_check_status "${json}" "rsyslog: service active" "FAIL"
+}
+
 @test "ssh_check: records PASS for expected hardened sshd output" {
   sshd() {
     if [[ "$1" == "-T" ]]; then
