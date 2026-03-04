@@ -171,3 +171,66 @@ source_common_lib() {
   # Restore BATS run
   eval "$(declare -f bats_run | sed '1s/^bats_run /run /')"
 }
+
+# Reset validate_hardening.sh runtime counters/arrays in tests.
+reset_validate_runtime() {
+  PASS_COUNT=0
+  FAIL_COUNT=0
+  INFO_COUNT=0
+  RESULTS=()
+  JSON_MODE="true"
+  HEALTH_CHECK_MODE="false"
+}
+
+# Render the in-memory validate results arrays into the same JSON shape as --json.
+emit_validate_results_json() {
+  local checks_json='[]'
+  if ((${#RESULTS[@]} > 0)); then
+    checks_json="$(printf '%s\n' "${RESULTS[@]}" | jq -s '.')"
+  fi
+
+  jq -nc \
+    --argjson pass "${PASS_COUNT}" \
+    --argjson fail "${FAIL_COUNT}" \
+    --argjson info "${INFO_COUNT}" \
+    --argjson checks "${checks_json}" \
+    '{pass:$pass,fail:$fail,info:$info,checks:$checks}'
+}
+
+json_check_status() {
+  local json="$1"
+  local check="$2"
+  jq -r --arg check "${check}" '[.checks[] | select(.check == $check) | .status][0] // ""' <<< "${json}"
+}
+
+json_check_detail() {
+  local json="$1"
+  local check="$2"
+  jq -r --arg check "${check}" '[.checks[] | select(.check == $check) | .detail][0] // ""' <<< "${json}"
+}
+
+assert_json_fail_count() {
+  local json="$1"
+  local expected="$2"
+  local actual
+  actual="$(jq -r '.fail' <<< "${json}")"
+  [[ "${actual}" == "${expected}" ]]
+}
+
+assert_json_check_status() {
+  local json="$1"
+  local check="$2"
+  local expected="$3"
+  local actual
+  actual="$(json_check_status "${json}" "${check}")"
+  [[ "${actual}" == "${expected}" ]]
+}
+
+assert_json_check_detail_contains() {
+  local json="$1"
+  local check="$2"
+  local needle="$3"
+  local detail
+  detail="$(json_check_detail "${json}" "${check}")"
+  [[ "${detail}" == *"${needle}"* ]]
+}
