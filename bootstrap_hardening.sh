@@ -176,10 +176,14 @@ write_file() {
 parse_args() {
   # Pre-scan for --env-file to source it before parsing other args
   local env_file=""
+  local insecure_env_cli="false"
   local arg
   for arg in "$@"; do
     if [[ "${arg}" == --env-file=* ]]; then
       env_file="${arg#--env-file=}"
+    fi
+    if [[ "${arg}" == "--insecure-env" ]]; then
+      insecure_env_cli="true"
     fi
   done
   if [[ -z "${env_file}" ]]; then
@@ -187,6 +191,9 @@ parse_args() {
     for arg in "$@"; do
       if [[ "${prev}" == "--env-file" ]]; then
         env_file="${arg}"
+      fi
+      if [[ "${arg}" == "--insecure-env" ]]; then
+        insecure_env_cli="true"
       fi
       prev="${arg}"
     done
@@ -196,13 +203,13 @@ parse_args() {
     local file_perms
     file_perms="$(stat -c '%a' "${env_file}" 2>/dev/null || stat -f '%Lp' "${env_file}" 2>/dev/null || echo "unknown")"
     if [[ "${file_perms}" != "unknown" && "${file_perms}" != "600" && "${file_perms}" != "400" ]]; then
-      die "Env file ${env_file} has permissions ${file_perms}; refusing to proceed (requires 0600 or 400). Fix with: chmod 600 \" or \"chmod 400 \" and re-run with --insecure-env to bypass"
-    fi
-    # Allow --insecure-env to flag to bypass this check for automation/CI scenarios
-    if is_true "${INSECURE_ENV}"; then
-      warn "--insecure-env used: proceeding with env file ${env_file} with insecure permissions ${file_perms}"
-    else
-      die "Env file ${env_file} has permissions ${file_perms}; refusing to proceed (requires 0600 or 400). Fix with: chmod 600\" or \"chmod 400\" and re-run with --insecure-env to bypass"
+      # --insecure-env can be supplied as an env var or CLI flag; CLI pre-scan is needed
+      # because env-file is sourced before full argument parsing.
+      if is_true "${INSECURE_ENV}" || is_true "${insecure_env_cli}"; then
+        warn "--insecure-env used: proceeding with env file ${env_file} permissions ${file_perms}"
+      else
+        die "Env file ${env_file} has permissions ${file_perms}; refusing to proceed (requires 0600 or 0400). Fix with: chmod 600 \"${env_file}\" or chmod 400 \"${env_file}\". Use --insecure-env only when unavoidable."
+      fi
     fi
     # shellcheck disable=SC1090
     source "${env_file}"
