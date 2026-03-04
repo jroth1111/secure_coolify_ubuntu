@@ -528,7 +528,7 @@ phase3_docker_coolify() {
   phase3_start_docker_user() { ssh_admin_sudo 'systemctl start docker-user-hardening.service'; }
   phase3_verify_docker_user() { verify_docker_user_gate_remote "$1"; }
   phase3_has_coolify_env() {
-    ssh_admin_sudo 'test -f /data/coolify/source/.env && docker inspect coolify >/dev/null 2>&1' >/dev/null 2>&1
+    ssh_admin_sudo "bash -c 'test -f /data/coolify/source/.env && docker inspect coolify >/dev/null 2>&1'" >/dev/null 2>&1
   }
   phase3_install_coolify() { coolify_install_coolify_script | ssh_admin_sudo 'bash -s'; }
   phase3_reconcile_docker_daemon() { reconcile_docker_daemon_remote; }

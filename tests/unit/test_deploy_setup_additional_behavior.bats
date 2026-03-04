@@ -181,7 +181,7 @@ load '../helpers'
       fi
       case "$1" in
         "docker version >/dev/null 2>&1") return 0 ;;
-        "test -f /data/coolify/source/.env") return 0 ;;
+        *"/data/coolify/source/.env"*) return 0 ;;
         *) return 0 ;;
       esac
     }

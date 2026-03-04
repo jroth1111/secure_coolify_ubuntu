@@ -696,8 +696,24 @@ coolify_phase3_docker_coolify_shared() {
   # Gate D: Verify DOCKER-USER rules
   "${verify_docker_user_fn}" "Gate D"
 
-  # Install Coolify (skip if already running)
-  if "${has_coolify_env_fn}"; then
+  # Install Coolify (skip if already installed). Probe with retries because
+  # Docker may still be converging right after daemon reconciliation.
+  local coolify_present="false"
+  local coolify_probe_attempts=4
+  local coolify_probe_delay=3
+  local coolify_probe
+  for (( coolify_probe=1; coolify_probe<=coolify_probe_attempts; coolify_probe++ )); do
+    if "${has_coolify_env_fn}"; then
+      coolify_present="true"
+      break
+    fi
+    if (( coolify_probe < coolify_probe_attempts )); then
+      log "Coolify presence check not ready; retrying in ${coolify_probe_delay}s (${coolify_probe}/${coolify_probe_attempts})..."
+      sleep "${coolify_probe_delay}"
+    fi
+  done
+
+  if [[ "${coolify_present}" == "true" ]]; then
     log "Coolify .env found — skipping install (already installed)."
     pass "Coolify already installed"
   else

@@ -329,6 +329,39 @@ setup() {
   assert_success
 }
 
+@test "coolify_phase3_docker_coolify_shared: retries Coolify presence probe before install" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    install_coolify_calls=0
+    coolify_probe_calls=0
+
+    has_docker() { return 0; }
+    install_docker() { return 0; }
+    start_docker_user() { return 0; }
+    verify_docker_user() { return 0; }
+    has_coolify_env() {
+      coolify_probe_calls=$((coolify_probe_calls + 1))
+      [[ "${coolify_probe_calls}" -ge 2 ]]
+    }
+    install_coolify() { install_coolify_calls=$((install_coolify_calls + 1)); }
+    reconcile_docker_daemon() { return 0; }
+    restart_docker_user() { return 0; }
+    add_coolify_key() { return 0; }
+    fix_host_internal() { return 0; }
+    sync_docker_ssh_cidrs() { return 0; }
+    sleep() { :; }
+
+    coolify_phase3_docker_coolify_shared \
+      has_docker install_docker start_docker_user verify_docker_user \
+      has_coolify_env install_coolify reconcile_docker_daemon restart_docker_user \
+      add_coolify_key fix_host_internal sync_docker_ssh_cidrs
+
+    [[ "${coolify_probe_calls}" -ge 2 ]]
+    [[ "${install_coolify_calls}" -eq 0 ]]
+  '
+  assert_success
+}
+
 @test "coolify_phase4_binding_dns_shared: standard mode applies wildcard A-records without tunnel path" {
   run bash -c '
     source "'"${COMMON_LIB}"'"
