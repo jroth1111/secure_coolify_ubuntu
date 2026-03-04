@@ -85,6 +85,7 @@ STRICT_DOCKER_SSH_CIDRS="false"
 DOCKER_SSH_CIDRS="10.0.0.0/8,172.16.0.0/12"
 TAILSCALE_DIRECT_WAN="auto"
 UPDATE_PROFILE=""
+DOCKER_RULES_APPLIED="false"
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
 
 load_state_context() {
@@ -103,6 +104,7 @@ load_state_context() {
   DOCKER_SSH_CIDRS="${docker_ssh_cidrs:-10.0.0.0/8,172.16.0.0/12}"
   TAILSCALE_DIRECT_WAN="${tailscale_direct_wan:-auto}"
   UPDATE_PROFILE="${update_profile:-}"
+  DOCKER_RULES_APPLIED="${docker_rules_applied:-false}"
 }
 
 is_true() {
@@ -423,6 +425,17 @@ docker_user_check() {
     return
   else
     record "PASS" "docker-user: iptables backend"
+  fi
+
+  local docker_service_present="false"
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl list-unit-files --type=service 2>/dev/null | awk '{print $1}' | grep -qx 'docker.service'; then
+      docker_service_present="true"
+    fi
+  fi
+  if [[ "${DOCKER_RULES_APPLIED}" != "true" && "${docker_service_present}" != "true" ]]; then
+    record "INFO" "docker-user: IPv4" "docker.service unavailable and DOCKER-USER apply deferred"
+    return
   fi
 
   local rules

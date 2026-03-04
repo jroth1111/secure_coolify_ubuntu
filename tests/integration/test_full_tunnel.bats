@@ -50,6 +50,16 @@ teardown_file() {
   ip link del tailscale0 2>/dev/null || true
 }
 
+iptables_usable() {
+  command -v iptables >/dev/null 2>&1 || return 1
+  iptables -t filter -S DOCKER-USER >/dev/null 2>&1
+}
+
+ip6tables_usable() {
+  command -v ip6tables >/dev/null 2>&1 || return 1
+  ip6tables -t filter -S DOCKER-USER >/dev/null 2>&1
+}
+
 @test "tunnel: no WAN port 80 UFW rule" {
   local output
   output="$(ufw status verbose)"
@@ -88,8 +98,9 @@ teardown_file() {
 }
 
 @test "tunnel: DOCKER-USER chain has no wan-web ACCEPT rule" {
+  iptables_usable || skip "iptables backend unavailable in this kernel"
   local output
-  output="$(iptables -t filter -S DOCKER-USER 2>/dev/null || true)"
+  output="$(iptables -t filter -S DOCKER-USER)"
   if echo "${output}" | grep -q "coolify-hardening-wan-web"; then
     return 1
   fi
@@ -97,12 +108,10 @@ teardown_file() {
 }
 
 @test "tunnel: DOCKER-USER IPv6 chain has no wan-web6 ACCEPT rule" {
-  if ! command -v ip6tables >/dev/null 2>&1; then
-    skip "ip6tables unavailable"
-  fi
+  ip6tables_usable || skip "ip6tables backend unavailable in this kernel"
 
   local output
-  output="$(ip6tables -t filter -S DOCKER-USER 2>/dev/null || true)"
+  output="$(ip6tables -t filter -S DOCKER-USER)"
   if echo "${output}" | grep -q "coolify-hardening-wan-web6"; then
     return 1
   fi

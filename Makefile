@@ -5,19 +5,33 @@ SHELL := /bin/bash
 	docker-build-tier1 \
 	docker-build-tier2 \
 	setup-bats \
+	test-lint-docker \
 	test \
 	test-all \
 	test-unit \
+	test-unit-docker \
 	test-unit-local \
+	test-orchestrator-smoke \
 	test-dry-run \
 	test-full-standard \
 	test-full-tunnel \
 	test-validate \
 	test-idempotency \
+	test-bootstrap-matrix \
+	test-validate-negative-matrix \
 	test-workflow-consistency \
+	test-function-coverage \
+	test-bats-target-coverage \
+	test-logic-step-coverage \
+	test-contracts \
+	test-integration-core \
+	test-integration-matrix \
+	test-negative-matrix \
 	test-integration \
+	test-ci-max \
 	test-ci-pr \
 	test-ci-main \
+	aggregate-artifacts \
 	clean-artifacts
 
 IMAGE_TIER1 ?= hardening-test-tier1:latest
@@ -92,13 +106,32 @@ setup-bats:
 # Test Targets
 # ==============================================================================
 
+# Tier 1: Lint and syntax checks inside Docker (container-first execution)
+test-lint-docker: docker-build-tier1
+	mkdir -p $(ARTIFACTS_DIR); \
+	docker run --rm -v "$$(pwd)":$(WORKSPACE) $(IMAGE_TIER1) \
+	  bash -lc 'cd $(WORKSPACE) && \
+	    bash -n bootstrap_hardening.sh setup.sh deploy.sh validate_hardening.sh configure_coolify_binding.sh lib/coolify-common.sh && \
+	    shellcheck -S error bootstrap_hardening.sh setup.sh deploy.sh validate_hardening.sh configure_coolify_binding.sh lib/coolify-common.sh scripts/*.sh' \
+	  > $(ARTIFACTS_DIR)/lint-docker.log 2>&1; \
+	rc=$$?; \
+	cat $(ARTIFACTS_DIR)/lint-docker.log; \
+	exit $$rc
+
 # Tier 0: Unit tests - local (fastest, no Docker)
 test-unit-local: setup-bats
 	bats tests/unit/
 
 # Tier 1: Unit tests in Docker (for CI consistency)
-test-unit: docker-build-tier1
+test-unit-docker: docker-build-tier1
 	$(call run_bats_tier1,,/workspace/tests/unit/,unit)
+
+# Backwards-compatible alias
+test-unit: test-unit-docker
+
+# Tier 1: Deploy/setup orchestrator smoke tests (mocked behavior)
+test-orchestrator-smoke: docker-build-tier1
+	$(call run_bats_tier1,,/workspace/tests/integration/test_deploy.bats,orchestrator-smoke)
 
 # Tier 1: Dry-run integration tests (lightweight container)
 test-dry-run: docker-build-tier1
@@ -117,24 +150,55 @@ test-validate: docker-build-tier2
 test-idempotency: docker-build-tier2
 	$(call run_bats_tier2,idempotency,/workspace/tests/integration/test_idempotency.bats)
 
+# Tier 2: Scenario-matrix integration tests
+test-bootstrap-matrix: docker-build-tier2
+	$(call run_bats_tier2,bootstrap-matrix,/workspace/tests/integration/test_bootstrap_matrix.bats)
+
+test-validate-negative-matrix: docker-build-tier2
+	$(call run_bats_tier2,validate-negative-matrix,/workspace/tests/integration/test_validate_negative_matrix.bats)
+
 # Workflow contract and documentation consistency checks
 test-workflow-consistency:
 	bash scripts/check_workflow_consistency.sh
+
+# Function-level behavior coverage check
+test-function-coverage:
+	bash scripts/check_function_behavior_coverage.sh
+
+test-bats-target-coverage:
+	bash scripts/check_bats_target_coverage.sh
+
+test-logic-step-coverage:
+	bash scripts/check_logic_step_coverage.sh
+
+test-contracts: test-workflow-consistency test-function-coverage test-bats-target-coverage test-logic-step-coverage
 
 # ==============================================================================
 # Combined Targets
 # ==============================================================================
 
-test-integration: test-dry-run test-full-standard test-full-tunnel test-validate test-idempotency
+test-integration-core: test-dry-run test-full-standard test-full-tunnel test-validate test-idempotency test-orchestrator-smoke
 
-test-all: test-unit test-integration
+test-integration-matrix: test-bootstrap-matrix
 
-# CI targets: use Docker for consistency
-test-ci-pr: test-unit test-dry-run test-validate test-workflow-consistency
+test-negative-matrix: test-validate-negative-matrix
 
-test-ci-main: test-all test-workflow-consistency
+test-integration: test-integration-core test-integration-matrix test-negative-matrix
 
-test: test-all
+test-all: test-lint-docker test-unit-docker test-contracts test-integration
+
+aggregate-artifacts:
+	bash scripts/aggregate_test_artifacts.sh
+
+# CI targets: max coverage always in Docker
+test-ci-max: test-all aggregate-artifacts
+
+# Backwards-compatible aliases
+test-ci-pr: test-ci-max
+
+test-ci-main: test-ci-max
+
+test: test-ci-max
 
 # ==============================================================================
 # Cleanup

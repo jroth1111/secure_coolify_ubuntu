@@ -37,6 +37,11 @@ teardown_file() {
   ip link del tailscale0 2>/dev/null || true
 }
 
+iptables_usable() {
+  command -v iptables >/dev/null 2>&1 || return 1
+  iptables -t filter -S DOCKER-USER >/dev/null 2>&1
+}
+
 @test "idempotency: repeated run keeps single managed entries and healthy state" {
   run bash "${SCRIPT}" \
     --admin-user "${TEST_USER}" \
@@ -74,15 +79,17 @@ teardown_file() {
   key_count="$(grep -Fxc "${TEST_PUBKEY}" "${home_dir}/.ssh/authorized_keys")"
   [ "${key_count}" -eq 1 ]
 
-  local wan_drop_count
-  local wan_web_count
-  local bridge_count
-  wan_drop_count="$(iptables -t filter -S DOCKER-USER | grep -c 'coolify-hardening-wan-drop')"
-  wan_web_count="$(iptables -t filter -S DOCKER-USER | grep -c 'coolify-hardening-wan-web')"
-  bridge_count="$(iptables -t filter -S DOCKER-USER | grep -c 'coolify-hardening-bridge-docker0')"
-  [ "${wan_drop_count}" -eq 1 ]
-  [ "${wan_web_count}" -eq 1 ]
-  [ "${bridge_count}" -eq 1 ]
+  if iptables_usable; then
+    local wan_drop_count
+    local wan_web_count
+    local bridge_count
+    wan_drop_count="$(iptables -t filter -S DOCKER-USER | grep -c 'coolify-hardening-wan-drop')"
+    wan_web_count="$(iptables -t filter -S DOCKER-USER | grep -c 'coolify-hardening-wan-web')"
+    bridge_count="$(iptables -t filter -S DOCKER-USER | grep -c 'coolify-hardening-bridge-docker0')"
+    [ "${wan_drop_count}" -eq 1 ]
+    [ "${wan_web_count}" -eq 1 ]
+    [ "${bridge_count}" -eq 1 ]
+  fi
 
   # Swap fstab idempotency: only one entry after two runs
   local fstab_swap_count

@@ -166,6 +166,9 @@ load '../helpers'
     source "'"${DEPLOY_SCRIPT}"'"
     gate_calls=0
     ssh_admin_sudo() {
+      if [[ "$1" == *"bash -s"* ]]; then
+        cat >/dev/null || true
+      fi
       case "$1" in
         "docker version >/dev/null 2>&1") return 0 ;;
         "test -f /data/coolify/source/.env") return 0 ;;

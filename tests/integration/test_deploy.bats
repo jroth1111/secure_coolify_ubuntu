@@ -31,15 +31,15 @@ INVALID_TS_KEY="invalid-key-format"
 
 # ── Setup/Teardown ────────────────────────────────────────────────────────────
 
-setup_file() {
-  # Source deploy.sh to get access to functions and regex patterns
-  source_deploy_script
-}
-
 setup() {
+  # Source deploy.sh for each test process (setup_file state does not persist to tests).
+  source_deploy_script
+
   # Reset environment variables before each test
   SERVER_IP=""
   ROOT_PASS=""
+  ROOT_PASS_FILE=""
+  ROOT_PASS_RUNTIME_FILE=""
   ADMIN_USER=""
   PUBKEY_FILE=""
   TAILSCALE_AUTH_KEY=""
@@ -47,7 +47,14 @@ setup() {
   DOMAIN=""
   CF_API_TOKEN=""
   CF_ZONE=""
+  CF_ZONE_ID=""
+  CF_ZONE_NAME=""
+  CF_ACCOUNT_ID=""
+  APP_DOMAIN_MODE=""
+  TS_IP=""
   SWAP_SIZE=""
+  TAILSCALE_DIRECT_WAN="false"
+  SKIP_HARDEN="false"
   AUTO_YES="false"
 }
 

@@ -58,6 +58,16 @@ teardown_file() {
   ip link del tailscale0 2>/dev/null || true
 }
 
+iptables_usable() {
+  command -v iptables >/dev/null 2>&1 || return 1
+  iptables -t filter -S DOCKER-USER >/dev/null 2>&1
+}
+
+ip6tables_usable() {
+  command -v ip6tables >/dev/null 2>&1 || return 1
+  ip6tables -t filter -S DOCKER-USER >/dev/null 2>&1
+}
+
 # ── SSH ──────────────────────────────────────────────────────────────────────
 
 @test "ssh: drop-in config file exists" {
@@ -265,11 +275,13 @@ teardown_file() {
 # ── iptables / DOCKER-USER ──────────────────────────────────────────────────
 
 @test "iptables: DOCKER-USER chain exists" {
+  iptables_usable || skip "iptables backend unavailable in this kernel"
   run iptables -t filter -L DOCKER-USER -n
   assert_success
 }
 
 @test "iptables: DOCKER-USER includes managed comments" {
+  iptables_usable || skip "iptables backend unavailable in this kernel"
   run iptables -t filter -S DOCKER-USER
   assert_success
   assert_output --partial "coolify-hardening-bridge-docker0"
@@ -278,6 +290,7 @@ teardown_file() {
 }
 
 @test "iptables: DOCKER-USER managed rule order is correct" {
+  iptables_usable || skip "iptables backend unavailable in this kernel"
   local rules
   local tailscale_n
   local bridge_n
@@ -599,7 +612,7 @@ teardown_file() {
 # ── DOCKER-USER IPv6 ─────────────────────────────────────────────────────────
 
 @test "iptables: DOCKER-USER IPv6 chain has wan-drop6 rule" {
-  command -v ip6tables >/dev/null 2>&1 || skip "ip6tables unavailable"
+  ip6tables_usable || skip "ip6tables backend unavailable in this kernel"
   run ip6tables -t filter -S DOCKER-USER
   assert_success
   assert_output --partial "coolify-hardening-wan-drop6"

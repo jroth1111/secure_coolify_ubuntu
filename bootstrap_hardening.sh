@@ -1646,10 +1646,8 @@ set_auditd_conf_kv() {
 
   [[ -f "${AUDITD_CONF_FILE}" ]] || return 0
 
-  local key_re
-  key_re="$(printf '%s' "${key}" | sed 's/[][.\\*^$+?{}()|]/\\&/g')"
-  if grep -qE "^[[:space:]]*${key_re}[[:space:]]*=" "${AUDITD_CONF_FILE}"; then
-    run sed -i -E "s|^[[:space:]]*${key_re}[[:space:]]*=.*|${key} = ${value}|" "${AUDITD_CONF_FILE}"
+  if grep -qE "^[[:space:]]*${key}[[:space:]]*=" "${AUDITD_CONF_FILE}"; then
+    run sed -i -E "s|^[[:space:]]*${key}[[:space:]]*=.*|${key} = ${value}|" "${AUDITD_CONF_FILE}"
   else
     if is_true "${DRY_RUN}"; then
       log "DRY-RUN: append '${key} = ${value}' to ${AUDITD_CONF_FILE}"
@@ -1773,6 +1771,16 @@ bool_cmd() {
   fi
 }
 
+is_container_runtime() {
+  if [[ -f /.dockerenv || "${container:-}" == "docker" ]]; then
+    return 0
+  fi
+  if command -v systemd-detect-virt >/dev/null 2>&1 && systemd-detect-virt -cq; then
+    return 0
+  fi
+  return 1
+}
+
 run_post_checks() {
   if is_true "${DRY_RUN}"; then
     log "Dry-run complete; post-apply checks skipped."
@@ -1819,15 +1827,26 @@ run_post_checks() {
   fi
 
   if [[ "${DOCKER_PRESENT}" == "true" ]]; then
-    iptables -t filter -S DOCKER-USER | grep -q "coolify-hardening-wan-drop" || die "Post-check failed: DOCKER-USER IPv4 drop rule missing."
-    iptables -t filter -S DOCKER-USER | grep -q "coolify-hardening-bridge-docker0" || die "Post-check failed: DOCKER-USER bridge-docker0 rule missing."
-    if is_true "${TUNNEL_MODE}"; then
-      if iptables -t filter -S DOCKER-USER | grep -q "coolify-hardening-wan-web"; then
-        die "Post-check failed: tunnel-mode is active but DOCKER-USER wan-web ACCEPT rule exists."
-      fi
+    local docker_service_present="false"
+    if systemctl list-unit-files --type=service 2>/dev/null | awk '{print $1}' | grep -qx 'docker.service'; then
+      docker_service_present="true"
     fi
-    if command -v ip6tables >/dev/null 2>&1; then
-      ip6tables -t filter -S DOCKER-USER 2>/dev/null | grep -q "coolify-hardening-wan-drop6" || die "Post-check failed: DOCKER-USER IPv6 drop rule missing."
+
+    if [[ "${DOCKER_RULES_APPLIED}" == "true" ]]; then
+      iptables -t filter -S DOCKER-USER | grep -q "coolify-hardening-wan-drop" || die "Post-check failed: DOCKER-USER IPv4 drop rule missing."
+      iptables -t filter -S DOCKER-USER | grep -q "coolify-hardening-bridge-docker0" || die "Post-check failed: DOCKER-USER bridge-docker0 rule missing."
+      if is_true "${TUNNEL_MODE}"; then
+        if iptables -t filter -S DOCKER-USER | grep -q "coolify-hardening-wan-web"; then
+          die "Post-check failed: tunnel-mode is active but DOCKER-USER wan-web ACCEPT rule exists."
+        fi
+      fi
+      if command -v ip6tables >/dev/null 2>&1; then
+        ip6tables -t filter -S DOCKER-USER 2>/dev/null | grep -q "coolify-hardening-wan-drop6" || die "Post-check failed: DOCKER-USER IPv6 drop rule missing."
+      fi
+    elif [[ "${docker_service_present}" == "true" ]]; then
+      die "Post-check failed: docker.service exists but DOCKER-USER rules were not applied."
+    else
+      warn "Post-check: Docker CLI is present but docker.service is unavailable; skipping DOCKER-USER chain assertions."
     fi
 
     if [[ -S /var/run/docker.sock ]]; then
@@ -1871,12 +1890,33 @@ run_post_checks() {
   fi
 
   grep -q "^Storage=persistent$" "${JOURNALD_DROPIN_FILE}" || die "Post-check failed: journald persistence drop-in missing."
-  { auditctl -l 2>/dev/null || cat "${AUDIT_RULES_FILE}"; } | grep -q "identity" \
-    || die "Post-check failed: audit rules not loaded."
-  { auditctl -l 2>/dev/null || cat "${AUDIT_RULES_FILE}"; } | grep -q "sudoers-change" \
-    || die "Post-check failed: sudoers audit rules not loaded."
-  { auditctl -l 2>/dev/null || cat "${AUDIT_RULES_FILE}"; } | grep -q "user_commands" \
-    || die "Post-check failed: execve user_commands audit rules not loaded."
+
+  local audit_rules_blob=""
+  local audit_rules_source="live"
+  if command -v auditctl >/dev/null 2>&1; then
+    audit_rules_blob="$(auditctl -l 2>/dev/null || true)"
+  fi
+  if [[ -z "${audit_rules_blob}" ]]; then
+    audit_rules_blob="$(cat "${AUDIT_RULES_FILE}" 2>/dev/null || true)"
+    audit_rules_source="file"
+  fi
+
+  if ! systemctl is-active --quiet auditd 2>/dev/null; then
+    if is_container_runtime; then
+      warn "Post-check: auditd inactive in container; validating persisted audit rules file."
+    else
+      die "Post-check failed: auditd is not active."
+    fi
+  elif [[ "${audit_rules_source}" != "live" ]]; then
+    die "Post-check failed: could not read live audit rules from auditctl."
+  fi
+
+  grep -q "identity" <<< "${audit_rules_blob}" \
+    || die "Post-check failed: audit identity rules missing."
+  grep -q "sudoers-change" <<< "${audit_rules_blob}" \
+    || die "Post-check failed: sudoers audit rules missing."
+  grep -q "user_commands" <<< "${audit_rules_blob}" \
+    || die "Post-check failed: execve user_commands audit rules missing."
   grep -q 'APT::Periodic::Unattended-Upgrade "1";' "${APT_AUTO_FILE}" || die "Post-check failed: unattended-upgrades periodic config missing."
 
   local syncookies ip_forward
@@ -2484,9 +2524,11 @@ main() {
   # Print Tailscale IP on stdout for orchestrators (deploy.sh) to capture.
   # Post-hardening, UFW blocks all SSH on the public IP (tailscale0 only), so
   # the orchestrator cannot run 'tailscale ip -4' via a new root SSH session.
-  local _ts_ip_final
-  _ts_ip_final="$(tailscale ip -4 2>/dev/null)" || true
-  [[ -n "${_ts_ip_final}" ]] && printf 'HARDEN_RESULT_TAILSCALE_IP=%s\n' "${_ts_ip_final}"
+  local _ts_ip_final=""
+  _ts_ip_final="$(tailscale ip -4 2>/dev/null || true)"
+  if [[ -n "${_ts_ip_final}" ]]; then
+    printf 'HARDEN_RESULT_TAILSCALE_IP=%s\n' "${_ts_ip_final}"
+  fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

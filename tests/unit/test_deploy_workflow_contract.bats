@@ -212,6 +212,9 @@ EOF
     calls=""
 
     ssh_admin_sudo() {
+      if [[ "$1" == *"bash -s"* ]]; then
+        cat >/dev/null || true
+      fi
       [[ "$1" == "test -f /data/coolify/source/.env" ]] && return 0
       return 0
     }

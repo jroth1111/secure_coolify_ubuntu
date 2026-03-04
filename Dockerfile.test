@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ufw openssh-server iptables fail2ban \
       unattended-upgrades apt-listchanges \
       auditd audispd-plugins \
-      iproute2 sudo git ca-certificates \
+      iproute2 sudo git ca-certificates jq \
     && rm -rf /var/lib/apt/lists/* \
     && (cd /lib/systemd/system/sysinit.target.wants/ && \
         ls | grep -v systemd-tmpfiles-setup | xargs rm -f) \
@@ -37,6 +37,16 @@ RUN cat > /usr/local/bin/auditctl << 'SCRIPT'
 if [[ "$1" == "--load" ]]; then
   exit 0
 fi
+if [[ "$1" == "-s" ]]; then
+  echo "enabled 1"
+  echo "failure 1"
+  echo "pid 123"
+  echo "rate_limit 0"
+  echo "backlog_limit 8192"
+  echo "lost 0"
+  echo "backlog 0"
+  exit 0
+fi
 echo "-w /etc/passwd -p wa -k identity"
 echo "-w /etc/shadow -p wa -k identity"
 echo "-w /etc/group -p wa -k identity"
@@ -46,9 +56,15 @@ echo "-w /etc/ssh/sshd_config.d/ -p wa -k sshd-config"
 echo "-w /etc/localtime -p wa -k time-change"
 echo "-w /etc/sudoers -p wa -k sudoers-change"
 echo "-w /etc/sudoers.d/ -p wa -k sudoers-change"
+echo "-a always,exit -F path=/etc/modules -F perm=wa -k kernel-module"
+echo "-a always,exit -F dir=/etc/modprobe.d -F perm=wa -k kernel-module"
+echo "-a always,exit -F arch=b64 -S init_module,finit_module,delete_module -F auid>=1000 -F auid!=unset -k kernel-module"
+echo "-a always,exit -F arch=b32 -S init_module,finit_module,delete_module -F auid>=1000 -F auid!=unset -k kernel-module"
 echo "-w /usr/bin/docker -p x -k container-runtime"
 echo "-w /usr/bin/dockerd -p x -k container-runtime"
 echo "-w /usr/bin/containerd -p x -k container-runtime"
+echo "-a always,exit -F arch=b64 -S execve -F auid>=1000 -F auid!=unset -k user_commands"
+echo "-a always,exit -F arch=b32 -S execve -F auid>=1000 -F auid!=unset -k user_commands"
 exit 0
 SCRIPT
 RUN chmod +x /usr/local/bin/auditctl
