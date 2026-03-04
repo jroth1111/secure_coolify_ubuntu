@@ -130,6 +130,17 @@ regex_escape() {
   printf '%s' "$1" | sed -e 's/[][\\/.*^$(){}+?|]/\\&/g'
 }
 
+is_tailscale_ipv4() {
+  local ip="$1"
+  local o1 o2 o3 o4
+  IFS='.' read -r o1 o2 o3 o4 <<< "${ip}"
+  [[ "${o1:-}" =~ ^[0-9]+$ && "${o2:-}" =~ ^[0-9]+$ && "${o3:-}" =~ ^[0-9]+$ && "${o4:-}" =~ ^[0-9]+$ ]] || return 1
+  (( o1 == 100 )) || return 1
+  (( o2 >= 64 && o2 <= 127 )) || return 1
+  (( o3 >= 0 && o3 <= 255 )) || return 1
+  (( o4 >= 0 && o4 <= 255 )) || return 1
+}
+
 load_docker_ssh_cidrs() {
   local raw="${DOCKER_SSH_CIDRS:-10.0.0.0/8,172.16.0.0/12}"
   local item
@@ -1689,6 +1700,114 @@ cloudflared_check() {
   else
     record "FAIL" "cloudflared: deny rules" \
       "expected at least two http_status:404 ingress rules (explicit host blocks + fallback)"
+  fi
+
+  if is_true "${TUNNEL_MODE}"; then
+    local dashboard_host ws_host
+    dashboard_host="$(awk '
+      /^[[:space:]]*-[[:space:]]*hostname:[[:space:]]*/ {
+        host=$3
+        gsub(/"/, "", host)
+        if (host !~ /^\*\./ && host !~ /^ws\./) {
+          print host
+          exit
+        }
+      }
+    ' "${config_file}" 2>/dev/null || true)"
+    ws_host="$(awk '
+      /^[[:space:]]*-[[:space:]]*hostname:[[:space:]]*ws\./ {
+        host=$3
+        gsub(/"/, "", host)
+        print host
+        exit
+      }
+    ' "${config_file}" 2>/dev/null || true)"
+
+    if [[ -n "${dashboard_host}" && -z "${ws_host}" ]]; then
+      ws_host="ws.${dashboard_host}"
+    fi
+
+    local private_route_file
+    private_route_file="/data/coolify/proxy/dynamic/coolify-private-dashboard.yaml"
+    if [[ -f "${private_route_file}" ]]; then
+      record "PASS" "cloudflared: private dashboard route file present"
+    else
+      record "FAIL" "cloudflared: private dashboard route file" \
+        "missing ${private_route_file}; private DOMAIN/ws routing may be broken"
+    fi
+
+    if [[ -f "${private_route_file}" && -n "${dashboard_host}" ]]; then
+      if grep -Fq "Host(\`${dashboard_host}\`)" "${private_route_file}"; then
+        record "PASS" "cloudflared: private dashboard host route (${dashboard_host})"
+      else
+        record "FAIL" "cloudflared: private dashboard host route" \
+          "missing Host(\`${dashboard_host}\`) in ${private_route_file}"
+      fi
+    fi
+
+    if [[ -f "${private_route_file}" && -n "${ws_host}" ]]; then
+      if grep -Fq "Host(\`${ws_host}\`)" "${private_route_file}"; then
+        record "PASS" "cloudflared: private websocket host route (${ws_host})"
+      else
+        record "FAIL" "cloudflared: private websocket host route" \
+          "missing Host(\`${ws_host}\`) in ${private_route_file}"
+      fi
+    fi
+
+    if command -v getent >/dev/null 2>&1; then
+      check_private_dns_host() {
+        local host="$1"
+        local label="$2"
+        local resolved_list ip
+        local all_tailscale="true"
+        local matched_expected="false"
+
+        resolved_list="$(getent ahostsv4 "${host}" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+        if [[ -z "${resolved_list}" ]]; then
+          record "FAIL" "cloudflared: ${label} DNS resolution" "no IPv4 answer for ${host}"
+          return 0
+        fi
+
+        for ip in ${resolved_list}; do
+          if ! is_tailscale_ipv4 "${ip}"; then
+            all_tailscale="false"
+          fi
+          if [[ -n "${TAILSCALE_IP}" && "${ip}" == "${TAILSCALE_IP}" ]]; then
+            matched_expected="true"
+          fi
+        done
+
+        if [[ "${all_tailscale}" != "true" ]]; then
+          record "FAIL" "cloudflared: ${label} DNS resolution" \
+            "${host} resolved to non-Tailscale IPv4(s): ${resolved_list}"
+          return 0
+        fi
+
+        if [[ -n "${TAILSCALE_IP}" && "${matched_expected}" != "true" ]]; then
+          record "FAIL" "cloudflared: ${label} DNS resolution" \
+            "${host} resolved to ${resolved_list}; expected to include ${TAILSCALE_IP}"
+          return 0
+        fi
+
+        record "PASS" "cloudflared: ${label} DNS resolves to Tailscale (${resolved_list})"
+      }
+
+      if [[ -n "${dashboard_host}" ]]; then
+        check_private_dns_host "${dashboard_host}" "dashboard host"
+      else
+        record "FAIL" "cloudflared: dashboard host in config" \
+          "unable to parse dashboard hostname from ${config_file}"
+      fi
+
+      if [[ -n "${ws_host}" ]]; then
+        check_private_dns_host "${ws_host}" "websocket host"
+      else
+        record "FAIL" "cloudflared: websocket host in config" \
+          "unable to parse websocket hostname from ${config_file}"
+      fi
+    else
+      record "INFO" "cloudflared: DNS resolution checks" "getent not found; skipped private DNS checks"
+    fi
   fi
 
   # Functional connectivity: probe cloudflared's /ready endpoint.
