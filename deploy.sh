@@ -501,25 +501,37 @@ phase1_skipped() {
 
 # ── Phase 2: Gate checks ───────────────────────────────────────────────────
 
+wait_for_admin_ssh_or_die() {
+  local context="$1"
+  local max_attempts="${2:-6}"
+  local delay="${3:-10}"
+  local attempt
+
+  for (( attempt=1; attempt<=max_attempts; attempt++ )); do
+    if ssh_admin 'echo ok' >/dev/null 2>&1; then
+      return 0
+    fi
+    if (( attempt == max_attempts )); then
+      break
+    fi
+    log "  ${context}: attempt ${attempt}/${max_attempts} failed, retrying in ${delay}s..."
+    sleep "${delay}"
+  done
+  return 1
+}
+
 phase2_gates() {
   step "2/5" "Gate checks (SSH transition to admin@tailscale)"
 
   # Gate A: SSH as admin via Tailscale IP using key auth
   log "Gate A: Testing SSH admin@${TS_IP} via key auth..."
   # (Gate A runs first so we know SSH works before syncing scripts)
-  local attempt max_attempts=6 delay=10
-  for (( attempt=1; attempt<=max_attempts; attempt++ )); do
-    if ssh_admin 'echo ok' >/dev/null 2>&1; then
-      pass "Gate A: SSH ${ADMIN_USER}@${TS_IP} works"
-      break
-    fi
-    if (( attempt == max_attempts )); then
-      fail "Gate A: Cannot SSH to ${ADMIN_USER}@${TS_IP} after ${max_attempts} attempts"
-      die "Gate A failed. Tailscale peering may not be established. Check 'tailscale status' on both machines."
-    fi
-    log "  Attempt ${attempt}/${max_attempts} failed, retrying in ${delay}s (Tailscale peering may need time)..."
-    sleep "${delay}"
-  done
+  if wait_for_admin_ssh_or_die "Gate A (Tailscale peering may need time)" 6 10; then
+    pass "Gate A: SSH ${ADMIN_USER}@${TS_IP} works"
+  else
+    fail "Gate A: Cannot SSH to ${ADMIN_USER}@${TS_IP} after retries"
+    die "Gate A failed. Tailscale peering may not be established. Check 'tailscale status' on both machines."
+  fi
 
   # Gate B: Verify admin identity
   local whoami_result
@@ -529,6 +541,33 @@ phase2_gates() {
   else
     fail "Gate B: Expected ${ADMIN_USER}, got '${whoami_result}'"
     die "Gate B failed."
+  fi
+
+  # If package upgrades during hardening require a reboot, perform it here before Gate C.
+  if ssh_admin_sudo 'test -f /run/reboot-required' >/dev/null 2>&1; then
+    local reboot_pkgs reboot_drop_attempt
+    reboot_pkgs="$(ssh_admin_sudo "tr '\n' ',' < /run/reboot-required.pkgs 2>/dev/null | sed 's/,$//'" 2>/dev/null || true)"
+    warn "Gate B.5: Reboot required before validation (${reboot_pkgs:-unknown packages}). Rebooting now."
+
+    ssh_admin_sudo 'nohup bash -c "sleep 1; systemctl reboot" >/dev/null 2>&1 &' || true
+
+    # Wait for SSH to drop at least once to confirm reboot started.
+    for (( reboot_drop_attempt=1; reboot_drop_attempt<=12; reboot_drop_attempt++ )); do
+      if ! ssh_admin 'echo ok' >/dev/null 2>&1; then
+        break
+      fi
+      sleep 5
+    done
+
+    if wait_for_admin_ssh_or_die "Gate B.5 reboot wait" 36 10; then
+      if ssh_admin_sudo 'test ! -f /run/reboot-required' >/dev/null 2>&1; then
+        pass "Gate B.5: Reboot completed and reboot-required cleared"
+      else
+        die "Gate B.5 failed: server came back but /run/reboot-required still present."
+      fi
+    else
+      die "Gate B.5 failed: server did not come back after reboot."
+    fi
   fi
 
   # Clean up sensitive deploy.env left on server by phase 1.

@@ -322,6 +322,13 @@ phase2_gates() {
     die "Gate B failed."
   fi
 
+  if [[ -f /run/reboot-required ]]; then
+    local reboot_pkgs
+    reboot_pkgs="$(tr '\n' ',' < /run/reboot-required.pkgs 2>/dev/null | sed 's/,$//' || true)"
+    fail "Gate B.5: Reboot required before validation (${reboot_pkgs:-unknown packages})"
+    die "Reboot the server, then rerun setup.sh to continue from a clean post-upgrade state."
+  fi
+
   # Gate C: Validation passes
   # Resume safety: if Docker is already present from a prior partial run, re-apply
   # hardening-owned Docker settings before Gate C validation.
