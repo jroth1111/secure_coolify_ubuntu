@@ -6,7 +6,7 @@ if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
 fi
 set -Eeuo pipefail
 
-SCRIPT_VERSION="1.2.6"
+SCRIPT_VERSION="1.2.7"
 SCRIPT_NAME="$(basename "$0")"
 
 LOG_FILE="/var/log/bootstrap-hardening.log"
@@ -34,6 +34,7 @@ DOCKER_SSH_CIDR_SYNC_SCRIPT="/usr/local/sbin/docker-ssh-cidr-sync.sh"
 DOCKER_SSH_CIDR_SYNC_SERVICE="/etc/systemd/system/docker-ssh-cidr-sync.service"
 DOCKER_SSH_CIDR_SYNC_TIMER="/etc/systemd/system/docker-ssh-cidr-sync.timer"
 CRON_EXTRA_OPTS_DROPIN="/etc/systemd/system/cron.service.d/10-extra-opts.conf"
+TAILSCALED_NOTIFY_DROPIN="/etc/systemd/system/tailscaled.service.d/10-notify-access.conf"
 
 TAILSCALE_IFACE="tailscale0"
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
@@ -843,6 +844,53 @@ install_tailscale() {
   fi
 
   log "Tailscale installed and configured."
+}
+
+ensure_tailscaled_notify_access() {
+  if ! unit_available "tailscaled.service"; then
+    log "tailscaled.service not installed; skipping NotifyAccess hardening."
+    return 0
+  fi
+
+  local notify_access
+  notify_access="$(systemctl show tailscaled.service -p NotifyAccess --value 2>/dev/null || true)"
+
+  write_file "${TAILSCALED_NOTIFY_DROPIN}" "0644" "root" "root" <<'EOF'
+[Service]
+NotifyAccess=all
+EOF
+
+  run systemctl daemon-reload
+
+  if [[ "${notify_access}" == "all" ]]; then
+    log "tailscaled NotifyAccess already set to all."
+    return 0
+  fi
+
+  if is_true "${DRY_RUN}"; then
+    log "DRY-RUN: would restart tailscaled.service to apply NotifyAccess=all."
+    return 0
+  fi
+
+  if systemctl is-active --quiet tailscaled.service 2>/dev/null; then
+    run systemctl restart tailscaled.service
+  else
+    run systemctl start tailscaled.service
+  fi
+
+  local retries=20
+  local ready="false"
+  while (( retries > 0 )); do
+    if tailscale status --json >/dev/null 2>&1; then
+      ready="true"
+      break
+    fi
+    sleep 1
+    retries=$((retries - 1))
+  done
+
+  [[ "${ready}" == "true" ]] || die "tailscaled did not become ready after NotifyAccess restart."
+  log "tailscaled NotifyAccess hardened to all."
 }
 
 ensure_tailscale_ssh_disabled() {
@@ -3012,6 +3060,7 @@ main() {
   fi
 
   require_commands
+  ensure_tailscaled_notify_access
   verify_tailscale_iface
   ensure_tailscale_ssh_disabled
   detect_docker
