@@ -644,6 +644,7 @@ sysctl_check() {
     [kernel.perf_event_paranoid]="3"
     [kernel.yama.ptrace_scope]="1"
     [kernel.kptr_restrict]="2"
+    [vm.overcommit_memory]="1"
     [vm.swappiness]="10"
   )
 

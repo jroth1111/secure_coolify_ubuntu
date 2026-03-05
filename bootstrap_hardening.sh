@@ -1219,6 +1219,8 @@ configure_sysctl() {
 # Managed by bootstrap hardening — Coolify/Docker safe
 net.ipv4.ip_forward = 1
 net.ipv4.tcp_syncookies = 1
+# Redis/Coolify reliability under memory pressure
+vm.overcommit_memory = 1
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.default.accept_redirects = 0
 net.ipv6.conf.all.accept_redirects = 0
@@ -1276,11 +1278,13 @@ SYSCTL_SWAP
   run sysctl --system
 
   if ! is_true "${DRY_RUN}"; then
-    local syncookies ip_forward
+    local syncookies ip_forward overcommit
     syncookies="$(sysctl -n net.ipv4.tcp_syncookies 2>/dev/null || echo "?")"
     ip_forward="$(sysctl -n net.ipv4.ip_forward 2>/dev/null || echo "?")"
+    overcommit="$(sysctl -n vm.overcommit_memory 2>/dev/null || echo "?")"
     [[ "${syncookies}" == "1" ]] || die "Post-sysctl check failed: tcp_syncookies is ${syncookies}, expected 1."
     [[ "${ip_forward}" == "1" ]] || die "Post-sysctl check failed: ip_forward is ${ip_forward}, expected 1 (Docker requires this)."
+    [[ "${overcommit}" == "1" ]] || die "Post-sysctl check failed: vm.overcommit_memory is ${overcommit}, expected 1."
 
     if [[ "${bbr_available}" == "true" ]]; then
       local bbr
