@@ -830,7 +830,7 @@ coolify_phase4_binding_dns_shared() {
   log "Reconciling PUSHER env vars for ${DEPLOY_MODE} mode..."
   "${reconcile_pusher_fn}" || die "Failed to reconcile PUSHER env vars"
   if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
-    pass "PUSHER env vars configured: ${TS_IP}:6001 (http)"
+    pass "PUSHER env vars configured: ws.${DOMAIN}:443 (https)"
   else
     pass "PUSHER env vars cleared for standard mode"
   fi
