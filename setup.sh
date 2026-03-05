@@ -323,7 +323,7 @@ phase2_gates() {
   if docker version >/dev/null 2>&1; then
     log "Gate C pre-check: Docker detected; reconciling daemon and bridge-SSH rules..."
     reconcile_docker_daemon_local
-    systemctl start docker-user-hardening.service 2>/dev/null || true
+    systemctl enable --now docker-user-hardening.service 2>/dev/null || true
     systemctl start docker-ssh-cidr-sync.service 2>/dev/null || true
   fi
 
@@ -339,7 +339,7 @@ phase2_gates() {
 phase3_docker_coolify() {
   phase3_has_docker() { docker version >/dev/null 2>&1; }
   phase3_install_docker() { coolify_install_docker_engine_script | bash -s; }
-  phase3_start_docker_user() { systemctl start docker-user-hardening.service; }
+  phase3_start_docker_user() { systemctl enable --now docker-user-hardening.service; }
   phase3_verify_docker_user() { verify_docker_user_gate_local "$1"; }
   phase3_has_coolify_env() { [[ -f /data/coolify/source/.env ]] && docker inspect coolify >/dev/null 2>&1; }
   phase3_install_coolify() { coolify_install_coolify_script | bash -s; }

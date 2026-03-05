@@ -1764,20 +1764,26 @@ configure_docker_user() {
     systemctl disable docker-user-hardening.service 2>/dev/null || true
   fi
   run systemctl daemon-reload
-  run systemctl enable docker-user-hardening.service
+  local docker_service_present="false"
+  if unit_available "docker.service"; then
+    docker_service_present="true"
+    run systemctl enable docker-user-hardening.service
+  else
+    log "docker.service not found yet; deferring docker-user-hardening enable until Docker is installed."
+  fi
 
   if [[ "${DOCKER_PRESENT}" == "true" ]]; then
     # Docker CLI may exist while docker.service is not yet installed/available.
-    if unit_available "docker.service"; then
+    if [[ "${docker_service_present}" == "true" ]]; then
       run systemctl start docker-user-hardening.service || warn "docker-user-hardening.service could not be started; start after Docker is ready."
       if systemctl is-active --quiet docker-user-hardening.service 2>/dev/null; then
         DOCKER_RULES_APPLIED="true"
       fi
     else
-      warn "Docker CLI detected but docker.service is not present; DOCKER-USER start is deferred."
+      warn "Docker CLI detected but docker.service is not present; DOCKER-USER enable/start deferred."
     fi
   else
-    warn "Docker not detected; DOCKER-USER unit installed and enabled, but start is deferred."
+    warn "Docker not detected; DOCKER-USER unit installed, enable/start deferred."
   fi
 }
 

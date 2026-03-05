@@ -540,7 +540,7 @@ phase2_gates() {
   if ssh_admin_sudo 'docker version >/dev/null 2>&1'; then
     log "Gate C pre-check: Docker detected; reconciling daemon and bridge-SSH rules..."
     reconcile_docker_daemon_remote
-    ssh_admin_sudo 'systemctl start docker-user-hardening.service 2>/dev/null || true'
+    ssh_admin_sudo 'systemctl enable --now docker-user-hardening.service 2>/dev/null || true'
     ssh_admin_sudo 'systemctl start docker-ssh-cidr-sync.service 2>/dev/null || true'
   fi
 
@@ -557,7 +557,7 @@ phase2_gates() {
 phase3_docker_coolify() {
   phase3_has_docker() { ssh_admin_sudo 'docker version >/dev/null 2>&1'; }
   phase3_install_docker() { coolify_install_docker_engine_script | ssh_admin_sudo 'bash -s'; }
-  phase3_start_docker_user() { ssh_admin_sudo 'systemctl start docker-user-hardening.service'; }
+  phase3_start_docker_user() { ssh_admin_sudo 'systemctl enable --now docker-user-hardening.service'; }
   phase3_verify_docker_user() { verify_docker_user_gate_remote "$1"; }
   phase3_has_coolify_env() {
     ssh_admin_sudo "bash -c 'test -f /data/coolify/source/.env && docker inspect coolify >/dev/null 2>&1'" >/dev/null 2>&1

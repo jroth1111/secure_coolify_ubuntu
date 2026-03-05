@@ -532,6 +532,23 @@ docker_user_lifecycle_check() {
     record "FAIL" "docker-user: WantedBy=docker.service" "missing — rules may not re-apply after Docker start"
   fi
 
+  local docker_service_present="false"
+  if unit_available "docker.service"; then
+    docker_service_present="true"
+  fi
+  if [[ "${docker_service_present}" != "true" ]]; then
+    record "INFO" "docker-user: enabled state" "docker.service unavailable; enable/start deferred"
+    return
+  fi
+
+  local enabled_state
+  enabled_state="$(systemctl is-enabled docker-user-hardening.service 2>/dev/null || echo "unknown")"
+  if [[ "${enabled_state}" == "enabled" || "${enabled_state}" == "enabled-runtime" ]]; then
+    record "PASS" "docker-user: enabled"
+  else
+    record "FAIL" "docker-user: enabled" "state=${enabled_state} — rules may not re-apply on Docker restart"
+  fi
+
   # Functional: service must have run at least once since boot (rules are only in iptables if it did).
   local active_state
   active_state="$(systemctl show docker-user-hardening.service --property=ActiveState --value 2>/dev/null || echo "unknown")"
