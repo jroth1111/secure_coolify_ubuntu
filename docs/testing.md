@@ -37,7 +37,7 @@ make test-ci-max
 | `make test-all` | Lint + unit + contracts + integration | Mixed |
 | `make test-ci-max` | Max coverage gate (used for PR/main/nightly) | Mixed |
 
-Logs and JSON snapshots are stored in `artifacts/`.
+Logs and JSON snapshots are written to `artifacts/` during execution. These are ephemeral run artifacts and are git-ignored by default.
 
 ## Functionality Coverage Matrix
 

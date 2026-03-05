@@ -2,8 +2,12 @@ codebase/
 tests/lib/bats-assert/.git.embedded/
 tests/lib/bats-support/.git.embedded/
 
+# Test/build artifacts (ephemeral by default)
+artifacts/
+
 # Local agent/tool scratch output
 workspace/
+.code-state/
 
 # OS/editor junk
 .DS_Store
