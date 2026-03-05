@@ -44,6 +44,43 @@ load '../helpers'
   assert_success
 }
 
+@test "cleanup_remote_deploy_env: clears pending remote env via admin sudo path" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    DEPLOY_ENV_REMOTE_PENDING="true"
+    REMOTE_DEPLOY_ENV_PATH="/root/deploy.env"
+    TS_IP="100.64.0.10"
+    ADMIN_USER="alice"
+    PRIVATE_KEY="/tmp/id_ed25519"
+    SSH_OPTS=(-o StrictHostKeyChecking=accept-new)
+    ssh_admin_sudo() { [[ "$1" == "rm -f /root/deploy.env" ]]; }
+    cleanup_remote_deploy_env
+    [[ "${DEPLOY_ENV_REMOTE_PENDING}" == "false" ]]
+  '
+  assert_success
+}
+
+@test "phase5_fetch_validate_json (deploy): requests remote validator json via sudo" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    ssh_admin_sudo() {
+      [[ "$1" == "/root/validate_hardening.sh --json" ]]
+      echo "{\"fail\":0,\"checks\":[]}"
+    }
+    phase5_fetch_validate_json
+  '
+  assert_success
+  assert_output --partial '"fail":0'
+}
+
+@test "phase5_noop_operator_confirm (deploy): returns success" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    phase5_noop_operator_confirm
+  '
+  assert_success
+}
+
 @test "setup_exit_trap: removes pending deploy env file" {
   run bash -c '
     source "'"${SETUP_SCRIPT}"'"
@@ -57,6 +94,22 @@ load '../helpers'
     [[ -z "${PENDING_DEPLOY_ENV_FILE}" ]]
   '
   assert_success
+}
+
+@test "phase5_fetch_validate_json (setup): executes local validator with --json" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    SCRIPT_DIR="${tmpdir}"
+    cat > "${tmpdir}/validate_hardening.sh" <<EOF
+#!/usr/bin/env bash
+echo "{\"fail\":0,\"checks\":[]}"
+EOF
+    chmod +x "${tmpdir}/validate_hardening.sh"
+    phase5_fetch_validate_json
+  '
+  assert_success
+  assert_output --partial '"fail":0'
 }
 
 @test "init_ssh_options: initializes SSH and root SSH options as arrays" {

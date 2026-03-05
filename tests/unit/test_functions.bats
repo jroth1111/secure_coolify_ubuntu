@@ -606,6 +606,52 @@ EOF
   assert_output --partial "Unsupported env key"
 }
 
+@test "env-file helper functions: parse and assign safe values" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    trim_whitespace "  hi  " >/dev/null
+    [[ "$(trim_whitespace "  hi  ")" == "hi" ]]
+    unescape_backslash_sequences "ssh-rsa\\ AAA" >/dev/null
+    [[ "$(unescape_backslash_sequences "ssh-rsa\\ AAA")" == "ssh-rsa AAA" ]]
+    env_file_key_supported "ADMIN_USER"
+    ! env_file_key_supported "NOT_ALLOWED"
+    decode_env_file_value "\"alice\"" >/dev/null
+    [[ "$(decode_env_file_value "\"alice\"")" == "alice" ]]
+    [[ "$(decode_env_file_value "ssh-rsa\\ AAA")" == "ssh-rsa AAA" ]]
+    set_env_file_value "ADMIN_USER" "from-setter"
+    [[ "${ADMIN_USER}" == "from-setter" ]]
+    env_file="$(mktemp)"
+    cat > "${env_file}" <<EOF
+export ADMIN_USER="env-loader"
+TAILSCALE_DIRECT_WAN=true
+EOF
+    chmod 600 "${env_file}"
+    load_env_file_safely "${env_file}"
+    [[ "${ADMIN_USER}" == "env-loader" ]]
+    [[ "${TAILSCALE_DIRECT_WAN}" == "true" ]]
+    rm -f "${env_file}"
+  '
+  assert_success
+}
+
+@test "rsyslog post-check helpers: callable under stubbed runtime" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    rsyslog_collect_log_targets >/dev/null || true
+    stat() {
+      if [[ "${1:-}" == "-c" && "${2:-}" == "%U" ]]; then echo "root"; return 0; fi
+      if [[ "${1:-}" == "-c" && "${2:-}" == "%G" ]]; then echo "syslog"; return 0; fi
+      if [[ "${1:-}" == "-c" && "${2:-}" == "%a" ]]; then echo "0770"; return 0; fi
+      return 0
+    }
+    rsyslog_collect_log_targets() { echo "/var/log/auth.log"; }
+    su() { return 0; }
+    grep() { return 0; }
+    assert_rsyslog_posture
+  '
+  assert_success
+}
+
 # ── assert_sshd_effective() ──────────────────────────────────────────────────
 
 @test "assert_sshd_effective: correct config passes" {

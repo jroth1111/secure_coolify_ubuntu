@@ -66,6 +66,24 @@ setup() {
   assert_success
 }
 
+@test "run report internals and time helpers: step/gate bookkeeping is callable" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    RUN_REPORT_ACTIVE="true"
+    RUN_REPORT_STEPS_JSON=""
+    RUN_REPORT_GATES_JSON=""
+    run_report_step_start "0/5" "Pre-flight checks"
+    run_report_record_gate "pass" "Gate A: ok"
+    run_report_close_current_step "pass" ""
+    [[ "${RUN_REPORT_STEPS_JSON}" == *"\"id\":\"0/5\""* ]]
+    [[ "${RUN_REPORT_GATES_JSON}" == *"\"gate\":\"Gate A\""* ]]
+    utc_now >/dev/null
+    local_tz_offset >/dev/null
+    [[ "$(local_tz_offset)" =~ ^[+-][0-9]{2}:[0-9]{2}$ ]]
+  '
+  assert_success
+}
+
 @test "confirm: AUTO_YES=true skips prompt and returns success" {
   AUTO_YES="true"
   run confirm "Continue?"
@@ -96,6 +114,26 @@ setup() {
   assert_failure
 }
 
+@test "read_secret_file and load_cloudflare_tokens_from_files: read secure token files" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    api_file="$(mktemp)"
+    tunnel_file="$(mktemp)"
+    printf "dns-token\n" > "${api_file}"
+    printf "tunnel-token\n" > "${tunnel_file}"
+    chmod 600 "${api_file}" "${tunnel_file}"
+    read_secret_file "${api_file}" "Cloudflare API token" >/dev/null
+    [[ "$(read_secret_file "${api_file}" "Cloudflare API token")" == "dns-token" ]]
+    CF_API_TOKEN_FILE="${api_file}"
+    CF_TUNNEL_API_TOKEN_FILE="${tunnel_file}"
+    load_cloudflare_tokens_from_files
+    [[ "${CF_API_TOKEN}" == "dns-token" ]]
+    [[ "${CF_TUNNEL_API_TOKEN}" == "tunnel-token" ]]
+    rm -f "${api_file}" "${tunnel_file}"
+  '
+  assert_success
+}
+
 @test "cf_expect_success: passes for success=true and fails for success=false" {
   run cf_expect_success "action" '{"success":true}'
   assert_success
@@ -103,6 +141,23 @@ setup() {
   run cf_expect_success "action" '{"success":false,"errors":[{"message":"boom"}]}'
   assert_failure
   assert_output --partial "action failed"
+}
+
+@test "Cloudflare helper probes: tokened API wrapper and auth/validation checks" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    curl() { echo "{\"success\":true}"; }
+    cf_api_with_token GET /zones "" token-123 >/dev/null
+    resp="$(cf_api_with_token GET /zones "" token-123)"
+    [[ "${resp}" == *"\"success\":true"* ]]
+    cf_expect_probe_authorized_or_validation_error \
+      "dns probe" "{\"success\":false,\"errors\":[{\"code\":9000,\"message\":\"bad payload\"}]}" "9000,1004"
+    CF_ZONE_ID="zone-123"
+    cf_api() { echo "{\"success\":false,\"errors\":[{\"code\":9000,\"message\":\"bad payload\"}]}"; }
+    cf_expect_probe_authorized_or_validation_error() { return 0; }
+    cf_verify_dns_write_token
+  '
+  assert_success
 }
 
 @test "coolify_install_docker_engine_script: emits apt-repo based install script" {
@@ -247,6 +302,29 @@ setup() {
   run cf_verify_tunnel_token
   assert_failure
   assert_output --partial "required permissions"
+}
+
+@test "DNS record helpers: delete host records and validate private A records" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    CF_ZONE_ID="zone-123"
+    cf_expect_success() { :; }
+    cf_api() {
+      local method="$1" endpoint="$2"
+      if [[ "${method}" == "GET" && "${endpoint}" == *"dns_records?type=A"* ]]; then
+        echo "{\"success\":true,\"result\":[{\"id\":\"a1\",\"content\":\"100.64.0.10\",\"proxied\":false}]}"
+        return 0
+      fi
+      if [[ "${method}" == "GET" ]]; then
+        echo "{\"success\":true,\"result\":[{\"id\":\"x1\"}]}"
+        return 0
+      fi
+      echo "{\"success\":true}"
+    }
+    cf_delete_host_records "app.example.com"
+    cf_assert_private_tailscale_a_record "app.example.com" "100.64.0.10"
+  '
+  assert_success
 }
 
 @test "coolify_reconcile_pusher_env_script: emits PUSHER mode reconciliation script" {
@@ -484,6 +562,23 @@ setup() {
     grep -q "^ws.coolify.vps.example.com|100.64.0.25|false$" <<< "${a_records}"
     grep -q "^\\*.vps.example.com|tunnel-1234.cfargotunnel.com$" <<< "${cname_records}"
     grep -q "^\\*.example.com|tunnel-1234.cfargotunnel.com$" <<< "${cname_records}"
+  '
+  assert_success
+}
+
+@test "coolify_phase5_verify_shared: runs standard verification flow with callback fetcher" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    DEPLOY_MODE="standard"
+    TS_IP="100.64.0.10"
+    SERVER_IP="203.0.113.10"
+    DOMAIN="vps.example.com"
+    sleep() { :; }
+    curl() { echo "200"; }
+    fetch_validate_json() { echo "{\"fail\":0,\"checks\":[]}"; }
+    operator_confirm() { :; }
+    print_deployment_summary() { :; }
+    coolify_phase5_verify_shared fetch_validate_json operator operator_confirm
   '
   assert_success
 }

@@ -205,10 +205,10 @@ entries:
   function: detect_docker
   criticality: utility
   behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::detect_docker:
-    marks Docker present when docker command exists'
+    marks Docker present when docker command exists with iptables backend'
   checks:
   - 'tests/unit/test_bootstrap_additional_behavior.bats::detect_docker: marks Docker
-    present when docker command exists'
+    present when docker command exists with iptables backend'
 - id: LS-BOOT-024
   script_path: bootstrap_hardening.sh
   function: detect_os
@@ -1325,10 +1325,10 @@ entries:
   function: coolify_configure_cloudflared_script
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_configure_cloudflared_script:
-    emits path-based terminal ingress and service enable'
+    emits private-only dashboard/ws deny rules and service enable'
   checks:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_configure_cloudflared_script:
-    emits path-based terminal ingress and service enable'
+    emits private-only dashboard/ws deny rules and service enable'
 - id: LS-COM-013
   script_path: lib/coolify-common.sh
   function: coolify_fix_host_docker_internal_script
@@ -1527,3 +1527,402 @@ entries:
   checks:
   - 'tests/unit/test_common_additional_behavior.bats::log/warn helpers: emit expected
     prefixes'
+- id: LS-BOOT-061
+  script_path: bootstrap_hardening.sh
+  function: assert_rsyslog_posture
+  criticality: security
+  behavior_test: 'tests/unit/test_functions.bats::rsyslog post-check helpers: callable
+    under stubbed runtime'
+  checks:
+  - 'tests/unit/test_functions.bats::rsyslog post-check helpers: callable under stubbed
+    runtime'
+- id: LS-BOOT-062
+  script_path: bootstrap_hardening.sh
+  function: configure_rsyslog_targets
+  criticality: security
+  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_rsyslog_targets:
+    dry-run reports planned remediation and skips systemctl execution'
+  checks:
+  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_rsyslog_targets:
+    dry-run reports planned remediation and skips systemctl execution'
+- id: LS-BOOT-063
+  script_path: bootstrap_hardening.sh
+  function: configure_timezone
+  criticality: utility
+  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_timezone:
+    dry-run executes without timedatectl mutation'
+  checks:
+  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_timezone: dry-run
+    executes without timedatectl mutation'
+- id: LS-BOOT-064
+  script_path: bootstrap_hardening.sh
+  function: decode_env_file_value
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+    and assign safe values'
+  checks:
+  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+    values'
+- id: LS-BOOT-065
+  script_path: bootstrap_hardening.sh
+  function: ensure_logrotate_create_directive
+  criticality: utility
+  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_logrotate_create_directive:
+    inserts create line once and remains idempotent'
+  checks:
+  - 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_logrotate_create_directive:
+    inserts create line once and remains idempotent'
+- id: LS-BOOT-066
+  script_path: bootstrap_hardening.sh
+  function: env_file_key_supported
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+    and assign safe values'
+  checks:
+  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+    values'
+- id: LS-BOOT-067
+  script_path: bootstrap_hardening.sh
+  function: load_env_file_safely
+  criticality: security
+  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+    and assign safe values'
+  checks:
+  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+    values'
+- id: LS-BOOT-068
+  script_path: bootstrap_hardening.sh
+  function: rsyslog_collect_log_targets
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::rsyslog post-check helpers: callable
+    under stubbed runtime'
+  checks:
+  - 'tests/unit/test_functions.bats::rsyslog post-check helpers: callable under stubbed
+    runtime'
+- id: LS-BOOT-069
+  script_path: bootstrap_hardening.sh
+  function: set_env_file_value
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+    and assign safe values'
+  checks:
+  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+    values'
+- id: LS-BOOT-070
+  script_path: bootstrap_hardening.sh
+  function: trim_whitespace
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+    and assign safe values'
+  checks:
+  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+    values'
+- id: LS-BOOT-071
+  script_path: bootstrap_hardening.sh
+  function: unescape_backslash_sequences
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+    and assign safe values'
+  checks:
+  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+    values'
+- id: LS-VAL-035
+  script_path: validate_hardening.sh
+  function: docker_ssh_cidr_sync_check
+  criticality: security
+  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_ssh_cidr_sync_check:
+    records PASS when strict mode timer/service are healthy'
+  checks:
+  - 'tests/unit/test_validate_additional_behavior.bats::docker_ssh_cidr_sync_check:
+    records PASS when strict mode timer/service are healthy'
+  - 'tests/unit/test_validate_additional_behavior.bats::docker_ssh_cidr_sync_check:
+    fails when normalization is missing and service is failing'
+- id: LS-VAL-036
+  script_path: validate_hardening.sh
+  function: is_tailscale_ipv4
+  criticality: utility
+  behavior_test: 'tests/unit/test_validate_functions.bats::is_tailscale_ipv4: accepts
+    100.64.0.0/10 space and rejects others'
+  checks:
+  - 'tests/unit/test_validate_functions.bats::is_tailscale_ipv4: accepts 100.64.0.0/10
+    space and rejects others'
+- id: LS-VAL-037
+  script_path: validate_hardening.sh
+  function: rsyslog_check
+  criticality: security
+  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::rsyslog_check:
+    records PASS when log targets are writable and runtime is healthy'
+  checks:
+  - 'tests/unit/test_validate_additional_behavior.bats::rsyslog_check: records PASS
+    when log targets are writable and runtime is healthy'
+  - 'tests/unit/test_validate_additional_behavior.bats::rsyslog_check: records FAIL
+    when /var/log is not group-writable and targets are missing'
+- id: LS-VAL-038
+  script_path: validate_hardening.sh
+  function: rsyslog_collect_log_targets
+  criticality: utility
+  behavior_test: 'tests/unit/test_validate_functions.bats::rsyslog_collect_log_targets:
+    function is callable'
+  checks:
+  - 'tests/unit/test_validate_functions.bats::rsyslog_collect_log_targets: function
+    is callable'
+- id: LS-VAL-039
+  script_path: validate_hardening.sh
+  function: timezone_check
+  criticality: utility
+  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::timezone_check:
+    passes when current timezone matches configured state'
+  checks:
+  - 'tests/unit/test_validate_additional_behavior.bats::timezone_check: passes when
+    current timezone matches configured state'
+  - 'tests/unit/test_validate_additional_behavior.bats::timezone_check: fails when
+    configured timezone does not match current timezone'
+  - 'tests/unit/test_validate_additional_behavior.bats::timezone_check: records INFO
+    instead of FAIL when timedatectl is unavailable'
+- id: LS-DEP-023
+  script_path: deploy.sh
+  function: cleanup_remote_deploy_env
+  criticality: security
+  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::cleanup_remote_deploy_env:
+    clears pending remote env via admin sudo path'
+  checks:
+  - 'tests/unit/test_deploy_setup_additional_behavior.bats::cleanup_remote_deploy_env:
+    clears pending remote env via admin sudo path'
+- id: LS-DEP-024
+  script_path: deploy.sh
+  function: deploy_exit_trap
+  criticality: orchestration
+  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::deploy_exit_trap:
+    best-effort cleans remote deploy env then local temp files'
+  checks:
+  - 'tests/unit/test_deploy_setup_additional_behavior.bats::deploy_exit_trap: best-effort
+    cleans remote deploy env then local temp files'
+- id: LS-DEP-025
+  script_path: deploy.sh
+  function: phase1_skipped
+  criticality: orchestration
+  behavior_test: 'tests/unit/test_deploy_workflow_contract.bats::deploy: phase1 skipped
+    marker exists for --ts-ip resumes'
+  checks:
+  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: phase1 skipped marker
+    exists for --ts-ip resumes'
+- id: LS-DEP-026
+  script_path: deploy.sh
+  function: phase5_fetch_validate_json
+  criticality: orchestration
+  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::phase5_fetch_validate_json
+    (deploy): requests remote validator json via sudo'
+  checks:
+  - 'tests/unit/test_deploy_setup_additional_behavior.bats::phase5_fetch_validate_json
+    (deploy): requests remote validator json via sudo'
+- id: LS-DEP-027
+  script_path: deploy.sh
+  function: phase5_noop_operator_confirm
+  criticality: utility
+  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::phase5_noop_operator_confirm
+    (deploy): returns success'
+  checks:
+  - 'tests/unit/test_deploy_setup_additional_behavior.bats::phase5_noop_operator_confirm
+    (deploy): returns success'
+- id: LS-SET-015
+  script_path: setup.sh
+  function: phase5_fetch_validate_json
+  criticality: orchestration
+  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::phase5_fetch_validate_json
+    (setup): executes local validator with --json'
+  checks:
+  - 'tests/unit/test_deploy_setup_additional_behavior.bats::phase5_fetch_validate_json
+    (setup): executes local validator with --json'
+- id: LS-SET-016
+  script_path: setup.sh
+  function: setup_exit_trap
+  criticality: orchestration
+  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::setup_exit_trap:
+    removes pending deploy env file'
+  checks:
+  - 'tests/unit/test_deploy_setup_additional_behavior.bats::setup_exit_trap: removes
+    pending deploy env file'
+- id: LS-COM-035
+  script_path: lib/coolify-common.sh
+  function: cf_api_with_token
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper
+    probes: tokened API wrapper and auth/validation checks'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
+    API wrapper and auth/validation checks'
+- id: LS-COM-036
+  script_path: lib/coolify-common.sh
+  function: cf_assert_private_tailscale_a_record
+  criticality: orchestration
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::DNS record helpers:
+    delete host records and validate private A records'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::DNS record helpers: delete host
+    records and validate private A records'
+- id: LS-COM-037
+  script_path: lib/coolify-common.sh
+  function: cf_delete_host_records
+  criticality: orchestration
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::DNS record helpers:
+    delete host records and validate private A records'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::DNS record helpers: delete host
+    records and validate private A records'
+- id: LS-COM-038
+  script_path: lib/coolify-common.sh
+  function: cf_expect_probe_authorized_or_validation_error
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper
+    probes: tokened API wrapper and auth/validation checks'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
+    API wrapper and auth/validation checks'
+- id: LS-COM-039
+  script_path: lib/coolify-common.sh
+  function: cf_tunnel_api
+  criticality: orchestration
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_tunnel_api:
+    prefers dedicated tunnel token over DNS token'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::cf_tunnel_api: prefers dedicated
+    tunnel token over DNS token'
+- id: LS-COM-040
+  script_path: lib/coolify-common.sh
+  function: cf_verify_dns_write_token
+  criticality: orchestration
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper
+    probes: tokened API wrapper and auth/validation checks'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
+    API wrapper and auth/validation checks'
+- id: LS-COM-041
+  script_path: lib/coolify-common.sh
+  function: cf_verify_tunnel_token
+  criticality: orchestration
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_verify_tunnel_token:
+    fails fast on auth error code 10000'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::cf_verify_tunnel_token: fails
+    fast on auth error code 10000'
+  - 'tests/unit/test_common_additional_behavior.bats::cf_verify_tunnel_token: skips
+    tunnel permission checks in standard mode'
+- id: LS-COM-042
+  script_path: lib/coolify-common.sh
+  function: coolify_configure_private_dashboard_routes_script
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_configure_private_dashboard_routes_script:
+    emits managed Traefik routes for dashboard and ws hosts'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::coolify_configure_private_dashboard_routes_script:
+    emits managed Traefik routes for dashboard and ws hosts'
+- id: LS-COM-043
+  script_path: lib/coolify-common.sh
+  function: coolify_phase5_verify_shared
+  criticality: orchestration
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_verify_shared:
+    runs standard verification flow with callback fetcher'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_verify_shared:
+    runs standard verification flow with callback fetcher'
+- id: LS-COM-044
+  script_path: lib/coolify-common.sh
+  function: coolify_remove_private_dashboard_routes_script
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_remove_private_dashboard_routes_script:
+    emits managed route cleanup logic'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::coolify_remove_private_dashboard_routes_script:
+    emits managed route cleanup logic'
+- id: LS-COM-045
+  script_path: lib/coolify-common.sh
+  function: finalize_cloudflare_tokens
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::finalize_cloudflare_tokens:
+    reuses DNS token when tunnel token is omitted'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::finalize_cloudflare_tokens:
+    reuses DNS token when tunnel token is omitted'
+  - 'tests/unit/test_common_additional_behavior.bats::finalize_cloudflare_tokens:
+    keeps explicit split tunnel token'
+- id: LS-COM-046
+  script_path: lib/coolify-common.sh
+  function: load_cloudflare_tokens_from_files
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::read_secret_file
+    and load_cloudflare_tokens_from_files: read secure token files'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::read_secret_file and load_cloudflare_tokens_from_files:
+    read secure token files'
+- id: LS-COM-047
+  script_path: lib/coolify-common.sh
+  function: local_tz_offset
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
+    and time helpers: step/gate bookkeeping is callable'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
+    helpers: step/gate bookkeeping is callable'
+- id: LS-COM-048
+  script_path: lib/coolify-common.sh
+  function: read_secret_file
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::read_secret_file
+    and load_cloudflare_tokens_from_files: read secure token files'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::read_secret_file and load_cloudflare_tokens_from_files:
+    read secure token files'
+- id: LS-COM-049
+  script_path: lib/coolify-common.sh
+  function: run_report_close_current_step
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
+    and time helpers: step/gate bookkeeping is callable'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
+    helpers: step/gate bookkeeping is callable'
+- id: LS-COM-050
+  script_path: lib/coolify-common.sh
+  function: run_report_finalize
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run_report lifecycle:
+    emits structured JSON with steps and gates'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::run_report lifecycle: emits
+    structured JSON with steps and gates'
+- id: LS-COM-051
+  script_path: lib/coolify-common.sh
+  function: run_report_init
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run_report lifecycle:
+    emits structured JSON with steps and gates'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::run_report lifecycle: emits
+    structured JSON with steps and gates'
+- id: LS-COM-052
+  script_path: lib/coolify-common.sh
+  function: run_report_record_gate
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
+    and time helpers: step/gate bookkeeping is callable'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
+    helpers: step/gate bookkeeping is callable'
+- id: LS-COM-053
+  script_path: lib/coolify-common.sh
+  function: run_report_step_start
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
+    and time helpers: step/gate bookkeeping is callable'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
+    helpers: step/gate bookkeeping is callable'
+- id: LS-COM-054
+  script_path: lib/coolify-common.sh
+  function: utc_now
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
+    and time helpers: step/gate bookkeeping is callable'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
+    helpers: step/gate bookkeeping is callable'

@@ -142,6 +142,19 @@ setup() {
   assert_output 'a\.b\[c\]\\d\+\$'
 }
 
+@test "is_tailscale_ipv4: accepts 100.64.0.0/10 space and rejects others" {
+  run is_tailscale_ipv4 "100.100.1.2"
+  assert_success
+
+  run is_tailscale_ipv4 "203.0.113.10"
+  assert_failure
+}
+
+@test "rsyslog_collect_log_targets: function is callable" {
+  run rsyslog_collect_log_targets
+  assert_success
+}
+
 @test "load_docker_ssh_cidrs: emits de-duplicated CIDRs in declaration order" {
   DOCKER_SSH_CIDRS='10.0.0.0/8, 172.16.0.0/12,10.0.0.0/8'
   STRICT_DOCKER_SSH_CIDRS='false'
