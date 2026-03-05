@@ -1305,6 +1305,14 @@ reload_ssh_service() {
   return 1
 }
 
+unit_available() {
+  local unit_name="$1"
+  command -v systemctl >/dev/null 2>&1 || return 1
+  local load_state
+  load_state="$(systemctl show --property=LoadState --value "${unit_name}" 2>/dev/null || true)"
+  [[ -n "${load_state}" && "${load_state}" != "not-found" ]]
+}
+
 add_docker_ssh_cidr() {
   local cidr="$1"
   local existing
@@ -1616,7 +1624,7 @@ configure_rsyslog_targets() {
   ensure_logrotate_create_directive "/etc/logrotate.d/ufw" "${log_group}"
   ensure_logrotate_create_directive "/etc/logrotate.d/rsyslog" "${log_group}"
 
-  if systemctl list-unit-files --type=service 2>/dev/null | awk '{print $1}' | grep -qx 'rsyslog.service'; then
+  if unit_available "rsyslog.service"; then
     run systemctl restart rsyslog
   else
     warn "rsyslog.service not found; skipping restart."
@@ -1760,7 +1768,7 @@ configure_docker_user() {
 
   if [[ "${DOCKER_PRESENT}" == "true" ]]; then
     # Docker CLI may exist while docker.service is not yet installed/available.
-    if systemctl list-unit-files --type=service 2>/dev/null | awk '{print $1}' | grep -qx 'docker.service'; then
+    if unit_available "docker.service"; then
       run systemctl start docker-user-hardening.service || warn "docker-user-hardening.service could not be started; start after Docker is ready."
       if systemctl is-active --quiet docker-user-hardening.service 2>/dev/null; then
         DOCKER_RULES_APPLIED="true"
@@ -2176,7 +2184,7 @@ run_post_checks() {
 
   if [[ "${DOCKER_PRESENT}" == "true" ]]; then
     local docker_service_present="false"
-    if systemctl list-unit-files --type=service 2>/dev/null | awk '{print $1}' | grep -qx 'docker.service'; then
+    if unit_available "docker.service"; then
       docker_service_present="true"
     fi
 

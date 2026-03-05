@@ -83,6 +83,14 @@ check() {
   fi
 }
 
+unit_available() {
+  local unit_name="$1"
+  command -v systemctl >/dev/null 2>&1 || return 1
+  local load_state
+  load_state="$(systemctl show --property=LoadState --value "${unit_name}" 2>/dev/null || true)"
+  [[ -n "${load_state}" && "${load_state}" != "not-found" ]]
+}
+
 # Load state file for context (non-fatal if missing)
 ADMIN_USER=""
 SSH_PORT="22"
@@ -456,10 +464,8 @@ docker_user_check() {
   fi
 
   local docker_service_present="false"
-  if command -v systemctl >/dev/null 2>&1; then
-    if systemctl list-unit-files --type=service 2>/dev/null | awk '{print $1}' | grep -qx 'docker.service'; then
-      docker_service_present="true"
-    fi
+  if unit_available "docker.service"; then
+    docker_service_present="true"
   fi
   if [[ "${DOCKER_RULES_APPLIED}" != "true" && "${docker_service_present}" != "true" ]]; then
     record "INFO" "docker-user: IPv4" "docker.service unavailable and DOCKER-USER apply deferred"
