@@ -180,6 +180,116 @@ write_file() {
   rm -f "${tmp}"
 }
 
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "${value}"
+}
+
+unescape_backslash_sequences() {
+  local raw="$1"
+  local out="" char
+  local i=0
+  while (( i < ${#raw} )); do
+    char="${raw:i:1}"
+    if [[ "${char}" == "\\" && $((i + 1)) -lt ${#raw} ]]; then
+      i=$((i + 1))
+      out+="${raw:i:1}"
+    else
+      out+="${char}"
+    fi
+    i=$((i + 1))
+  done
+  printf '%s' "${out}"
+}
+
+env_file_key_supported() {
+  case "$1" in
+    ADMIN_USER|ADMIN_PUBKEY|TAILSCALE_CIDR|SSH_PORT|WAN_IFACE|ENABLE_AUTO_REBOOT|AUTO_REBOOT_TIME|UPDATE_PROFILE|JOURNAL_RETENTION|JOURNAL_MAX_USE|TUNNEL_MODE|SWAP_SIZE|TIMEZONE|DRY_RUN|FORCE|UPGRADE_MAIL|BIND_DASHBOARD_TO_TAILSCALE|INSTALL_TAILSCALE|TAILSCALE_AUTH_KEY|TAILSCALE_DIRECT_WAN|STRICT_DOCKER_SSH_CIDRS|INSECURE_ENV|DOCKER_NPROC_HARD|DOCKER_NPROC_SOFT)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+set_env_file_value() {
+  local key="$1"
+  local value="$2"
+  case "${key}" in
+    ADMIN_USER|ADMIN_PUBKEY|TAILSCALE_CIDR|SSH_PORT|WAN_IFACE|ENABLE_AUTO_REBOOT|AUTO_REBOOT_TIME|UPDATE_PROFILE|JOURNAL_RETENTION|JOURNAL_MAX_USE|TUNNEL_MODE|SWAP_SIZE|TIMEZONE|DRY_RUN|FORCE|UPGRADE_MAIL|BIND_DASHBOARD_TO_TAILSCALE|INSTALL_TAILSCALE|TAILSCALE_AUTH_KEY|TAILSCALE_DIRECT_WAN|STRICT_DOCKER_SSH_CIDRS|INSECURE_ENV|DOCKER_NPROC_HARD|DOCKER_NPROC_SOFT)
+      printf -v "${key}" '%s' "${value}"
+      ;;
+    *)
+      die "Internal error: unsupported env key assignment '${key}'"
+      ;;
+  esac
+}
+
+decode_env_file_value() {
+  local raw="$1"
+  local decoded
+
+  raw="$(trim_whitespace "${raw}")"
+  if [[ -z "${raw}" ]]; then
+    printf ''
+    return 0
+  fi
+
+  if [[ "${raw}" == \"* ]]; then
+    [[ "${raw}" == *\" ]] || return 1
+    decoded="${raw:1:${#raw}-2}"
+    unescape_backslash_sequences "${decoded}"
+    return 0
+  fi
+
+  if [[ "${raw}" == \'* ]]; then
+    [[ "${raw}" == *\' ]] || return 1
+    decoded="${raw:1:${#raw}-2}"
+    printf '%s' "${decoded}"
+    return 0
+  fi
+
+  if [[ "${raw}" == *\"* || "${raw}" == *\'* ]]; then
+    return 1
+  fi
+
+  # Supports legacy deploy files that used shell-style backslash escaping.
+  unescape_backslash_sequences "${raw}"
+}
+
+load_env_file_safely() {
+  local env_file="$1"
+  local line trimmed key raw value
+  local lineno=0
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    lineno=$((lineno + 1))
+    line="${line%$'\r'}"
+    trimmed="$(trim_whitespace "${line}")"
+    [[ -z "${trimmed}" || "${trimmed}" == \#* ]] && continue
+
+    if [[ "${trimmed}" == export[[:space:]]* ]]; then
+      trimmed="$(trim_whitespace "${trimmed#export}")"
+    fi
+
+    if [[ ! "${trimmed}" =~ ^([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+      die "Invalid env file syntax at ${env_file}:${lineno} (expected KEY=VALUE)"
+    fi
+    key="${BASH_REMATCH[1]}"
+    raw="${BASH_REMATCH[2]}"
+
+    env_file_key_supported "${key}" || die "Unsupported env key '${key}' in ${env_file}:${lineno}"
+
+    if ! value="$(decode_env_file_value "${raw}")"; then
+      die "Invalid env value for '${key}' in ${env_file}:${lineno}"
+    fi
+    set_env_file_value "${key}" "${value}"
+  done < "${env_file}"
+}
+
 parse_args() {
   # Pre-scan for --env-file to source it before parsing other args
   local env_file=""
@@ -218,8 +328,7 @@ parse_args() {
         die "Env file ${env_file} has permissions ${file_perms}; refusing to proceed (requires 0600 or 0400). Fix with: chmod 600 \"${env_file}\" or chmod 400 \"${env_file}\". Use --insecure-env only when unavoidable."
       fi
     fi
-    # shellcheck disable=SC1090
-    source "${env_file}"
+    load_env_file_safely "${env_file}"
   fi
 
   while [[ $# -gt 0 ]]; do
@@ -534,6 +643,7 @@ ensure_packages() {
   local missing=()
   packages=(
     curl
+    jq
     ufw
     auditd
     audispd-plugins
@@ -559,7 +669,7 @@ ensure_packages() {
 
 require_commands() {
   local commands=()
-  commands+=(ip awk grep sed)
+  commands+=(ip awk grep sed jq)
 
   if ! is_true "${DRY_RUN}"; then
     commands+=(sshd ufw iptables journalctl systemctl augenrules auditctl fail2ban-client)
@@ -1350,7 +1460,24 @@ EOF
 configure_ufw() {
   local cidr
 
-  run ufw --force reset
+  # Reconcile managed rules by comment to avoid an all-open fail window from `ufw reset`.
+  if is_true "${DRY_RUN}"; then
+    log "DRY-RUN: reconcile managed UFW rules (remove stale coolify-hardening-* rules)"
+  else
+    local ufw_numbered
+    local managed_nums=()
+    local line rule_num idx
+    ufw_numbered="$(ufw status numbered 2>/dev/null || true)"
+    while IFS= read -r line; do
+      [[ "${line}" == *"coolify-hardening-"* ]] || continue
+      rule_num="$(sed -n 's/^\[\([0-9]\+\)\].*/\1/p' <<< "${line}")"
+      [[ -n "${rule_num}" ]] && managed_nums+=("${rule_num}")
+    done <<< "${ufw_numbered}"
+    for (( idx=${#managed_nums[@]}-1; idx>=0; idx-- )); do
+      run ufw --force delete "${managed_nums[$idx]}"
+    done
+  fi
+
   run ufw default deny incoming
   run ufw default allow outgoing
   run ufw default deny routed
@@ -1606,12 +1733,11 @@ detect_docker() {
     DOCKER_PRESENT="true"
     log "Docker detected."
 
-    # Warn if Docker is using nftables backend (experimental in Docker 29+)
-    # DOCKER-USER chain behavior differs in nftables mode; iptables rules won't apply.
-    # See: https://docs.docker.com/engine/network/firewall-nftables/
-    if docker info 2>/dev/null | grep -qE 'iptables:\s*false|firewall:\s*nftables'; then
-      warn "Docker appears to be using nftables backend (experimental). DOCKER-USER iptables rules will NOT work."
-      warn "For nftables backend, firewall policy must be implemented via separate nftables chains."
+    # Docker nftables backend makes DOCKER-USER iptables enforcement ineffective.
+    local docker_info
+    docker_info="$(docker info 2>/dev/null || true)"
+    if [[ -n "${docker_info}" ]] && grep -qiE 'iptables:\s*false|firewall:\s*nftables' <<< "${docker_info}"; then
+      die "Docker nftables backend detected; DOCKER-USER iptables hardening is unsupported. Reconfigure Docker to iptables backend before continuing."
     fi
   else
     log "Docker not detected."

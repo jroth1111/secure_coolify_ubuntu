@@ -554,15 +554,56 @@ EOF
   assert_output --partial "Env file not found"
 }
 
-@test "parse_args: warns for env-file permissions looser than 0600" {
+@test "parse_args: rejects env-file permissions looser than 0600 by default" {
   local tmpfile
   tmpfile="$(mktemp)"
   echo 'ADMIN_USER="envuser"' > "${tmpfile}"
   chmod 644 "${tmpfile}"
-  run bash -c 'source "'"${SCRIPT}"'" && parse_args --env-file "'"${tmpfile}"'" && echo ok'
+  run bash -c 'source "'"${SCRIPT}"'" && parse_args --env-file "'"${tmpfile}"'" 2>&1'
+  rm -f "${tmpfile}"
+  assert_failure
+  assert_output --partial "refusing to proceed"
+}
+
+@test "parse_args: --insecure-env allows loose env-file permissions with warning" {
+  local tmpfile
+  tmpfile="$(mktemp)"
+  echo 'ADMIN_USER="envuser"' > "${tmpfile}"
+  chmod 644 "${tmpfile}"
+  run bash -c 'source "'"${SCRIPT}"'" && parse_args --insecure-env --env-file "'"${tmpfile}"'" && echo "${ADMIN_USER}"'
   rm -f "${tmpfile}"
   assert_success
-  assert_output --partial "recommend 0600 or stricter"
+  assert_output --partial "envuser"
+  assert_output --partial "--insecure-env used"
+}
+
+@test "parse_args: --env-file values are parsed as data, not executed" {
+  local tmpfile marker
+  tmpfile="$(mktemp)"
+  marker="$(mktemp)"
+  rm -f "${marker}"
+  cat > "${tmpfile}" <<EOF
+ADMIN_USER="\$(touch ${marker})"
+EOF
+  chmod 600 "${tmpfile}"
+  run bash -c 'source "'"${SCRIPT}"'" && parse_args --env-file "'"${tmpfile}"'" && echo "${ADMIN_USER}"'
+  rm -f "${tmpfile}"
+  assert_success
+  [ ! -f "${marker}" ]
+  assert_output --partial '$(touch '
+}
+
+@test "parse_args: --env-file rejects unsupported keys" {
+  local tmpfile
+  tmpfile="$(mktemp)"
+  cat > "${tmpfile}" <<'EOF'
+NOT_ALLOWED=value
+EOF
+  chmod 600 "${tmpfile}"
+  run bash -c 'source "'"${SCRIPT}"'" && parse_args --env-file "'"${tmpfile}"'" 2>&1'
+  rm -f "${tmpfile}"
+  assert_failure
+  assert_output --partial "Unsupported env key"
 }
 
 # ── assert_sshd_effective() ──────────────────────────────────────────────────

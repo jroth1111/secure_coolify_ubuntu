@@ -205,12 +205,12 @@ setup() {
   rm -rf "${tmpdir}"
 }
 
-@test "detect_docker: marks Docker present when docker command exists" {
+@test "detect_docker: marks Docker present when docker command exists with iptables backend" {
   DOCKER_PRESENT="false"
 
   docker() {
     if [[ "$1" == "info" ]]; then
-      printf 'Server:\n firewall: nftables\n'
+      printf 'Server:\n Firewall: iptables\n iptables: true\n'
       return 0
     fi
     return 0
@@ -218,6 +218,22 @@ setup() {
 
   detect_docker
   [ "${DOCKER_PRESENT}" = "true" ]
+}
+
+@test "detect_docker: fails when docker reports nftables backend" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    docker() {
+      if [[ "$1" == "info" ]]; then
+        printf "Server:\n firewall: nftables\n"
+        return 0
+      fi
+      return 0
+    }
+    detect_docker
+  '
+  assert_failure
+  assert_output --partial "nftables backend detected"
 }
 
 @test "configure_docker_user: dry-run installs/enables service without failure" {
