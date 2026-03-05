@@ -724,8 +724,11 @@ apply_system_package_updates() {
   fi
 
   retry_apt_update
-  log "Applying baseline package patches (apt-get full-upgrade)..."
-  retry_apt_noninteractive "apt-get full-upgrade" full-upgrade
+  log "Applying baseline package patches (apt-get full-upgrade, include phased updates)..."
+  retry_apt_noninteractive \
+    "apt-get full-upgrade" \
+    -o APT::Get::Always-Include-Phased-Updates=true \
+    full-upgrade
 
   log "Removing obsolete packages (apt-get autoremove --purge)..."
   retry_apt_noninteractive "apt-get autoremove --purge" autoremove --purge
