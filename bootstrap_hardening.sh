@@ -6,7 +6,7 @@ if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
 fi
 set -Eeuo pipefail
 
-SCRIPT_VERSION="1.2.4"
+SCRIPT_VERSION="1.2.5"
 SCRIPT_NAME="$(basename "$0")"
 
 LOG_FILE="/var/log/bootstrap-hardening.log"
@@ -25,6 +25,8 @@ APT_AUTO_FILE="/etc/apt/apt.conf.d/20auto-upgrades"
 APT_LOCAL_FILE="/etc/apt/apt.conf.d/52unattended-upgrades-local"
 SYSCTL_DROPIN_FILE="/etc/sysctl.d/99-coolify-hardening.conf"
 FAIL2BAN_JAIL_FILE="/etc/fail2ban/jail.d/coolify-hardening.local"
+FAIL2BAN_LOCAL_FILE="/etc/fail2ban/fail2ban.local"
+APPORT_DEFAULT_FILE="/etc/default/apport"
 COOLIFY_BINDING_GUARD_SCRIPT="/usr/local/sbin/coolify-binding-guard.sh"
 COOLIFY_BINDING_GUARD_SERVICE="/etc/systemd/system/coolify-binding-guard.service"
 COOLIFY_BINDING_GUARD_TIMER="/etc/systemd/system/coolify-binding-guard.timer"
@@ -749,10 +751,10 @@ install_tailscale() {
   # Authenticate Tailscale
   if [[ -n "${TAILSCALE_AUTH_KEY}" ]]; then
     log "Authenticating Tailscale with provided auth key..."
-    run tailscale up --ssh --authkey="${TAILSCALE_AUTH_KEY}"
+    run tailscale up --authkey="${TAILSCALE_AUTH_KEY}" --ssh=false
   else
     log "Interactive Tailscale authentication required."
-    log "Run: tailscale up --ssh"
+    log "Run: tailscale up --ssh=false"
     log "Waiting for Tailscale connection (timeout: 120s)..."
 
     local timeout=120
@@ -768,6 +770,33 @@ install_tailscale() {
   fi
 
   log "Tailscale installed and configured."
+}
+
+ensure_tailscale_ssh_disabled() {
+  if ! command -v tailscale >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local run_ssh_pref
+  run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r '.RunSSH // empty' 2>/dev/null || true)"
+  if [[ -z "${run_ssh_pref}" ]]; then
+    warn "Unable to read Tailscale RunSSH preference; skipping RunSSH enforcement."
+    return 0
+  fi
+
+  if [[ "${run_ssh_pref}" == "true" ]]; then
+    if is_true "${DRY_RUN}"; then
+      log "DRY-RUN: would run 'tailscale set --ssh=false' to keep host sshd as the only SSH control plane."
+      return 0
+    fi
+
+    run tailscale set --ssh=false
+    run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r '.RunSSH // empty' 2>/dev/null || true)"
+    [[ "${run_ssh_pref}" == "false" ]] || die "Failed to disable Tailscale SSH (RunSSH=${run_ssh_pref:-unknown})."
+    log "Tailscale SSH disabled (RunSSH=false); host sshd remains authoritative."
+  else
+    log "Tailscale SSH already disabled (RunSSH=false)."
+  fi
 }
 
 configure_coolify_binding_watchdog() {
@@ -1140,6 +1169,12 @@ SYSCTL_SWAP
 }
 
 configure_fail2ban() {
+  write_file "${FAIL2BAN_LOCAL_FILE}" "0644" "root" "root" <<'EOF'
+# Managed by bootstrap hardening
+[Definition]
+allowipv6 = auto
+EOF
+
   write_file "${FAIL2BAN_JAIL_FILE}" "0644" "root" "root" <<EOF
 # Managed by bootstrap hardening
 [DEFAULT]
@@ -1160,6 +1195,30 @@ EOF
   run systemctl enable --now fail2ban
   if ! is_true "${DRY_RUN}"; then
     run systemctl restart fail2ban
+  fi
+}
+
+configure_apport() {
+  if [[ -f "${APPORT_DEFAULT_FILE}" ]]; then
+    if grep -qE '^[[:space:]]*enabled[[:space:]]*=' "${APPORT_DEFAULT_FILE}"; then
+      run sed -i -E 's/^[[:space:]]*enabled[[:space:]]*=.*/enabled=0/' "${APPORT_DEFAULT_FILE}"
+    else
+      if is_true "${DRY_RUN}"; then
+        log "DRY-RUN: append 'enabled=0' to ${APPORT_DEFAULT_FILE}"
+      else
+        printf '\nenabled=0\n' >> "${APPORT_DEFAULT_FILE}"
+      fi
+    fi
+  else
+    warn "${APPORT_DEFAULT_FILE} not found; skipping apport defaults update."
+  fi
+
+  if unit_available "apport.service"; then
+    run systemctl disable --now apport.service
+    run systemctl mask apport.service
+    log "Apport disabled and masked."
+  else
+    log "apport.service not installed; skipping."
   fi
 }
 
@@ -2294,6 +2353,21 @@ run_post_checks() {
   [[ "${current_timezone}" == "${TIMEZONE}" ]] \
     || die "Post-check failed: timezone is ${current_timezone:-unknown}, expected ${TIMEZONE}."
 
+  local run_ssh_pref
+  run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r '.RunSSH // empty' 2>/dev/null || true)"
+  [[ "${run_ssh_pref}" == "false" ]] \
+    || die "Post-check failed: tailscale RunSSH is ${run_ssh_pref:-unknown}, expected false."
+
+  if [[ -f "${APPORT_DEFAULT_FILE}" ]]; then
+    local apport_enabled
+    apport_enabled="$(awk -F= '/^[[:space:]]*enabled[[:space:]]*=/{gsub(/[[:space:]]/, "", $2); print $2; exit}' "${APPORT_DEFAULT_FILE}" || true)"
+    [[ "${apport_enabled}" == "0" ]] \
+      || die "Post-check failed: apport enabled=${apport_enabled:-unknown}, expected 0."
+  fi
+  if unit_available "apport.service" && systemctl is-active --quiet apport.service 2>/dev/null; then
+    die "Post-check failed: apport.service is active."
+  fi
+
   systemctl is-active --quiet fail2ban || die "Post-check failed: fail2ban is not active."
   systemctl is-active --quiet rsyslog || die "Post-check failed: rsyslog is not active."
   assert_rsyslog_posture
@@ -2402,6 +2476,7 @@ generate_report() {
   local docker_drop_rule_v6
   local sysctl_syncookies
   local fail2ban_active
+  local tailscale_runssh_disabled
   local banner_present
   local docker_ssh_cidrs_csv
   local docker_sock_world_writable="false"
@@ -2426,6 +2501,7 @@ generate_report() {
   local swap_active
   swap_active="$(swapon --show --noheadings 2>/dev/null | grep -q . && echo "true" || echo "false")"
   fail2ban_active="$(systemctl is-active --quiet fail2ban && echo "true" || echo "false")"
+  tailscale_runssh_disabled="$(tailscale debug prefs 2>/dev/null | jq -r 'if .RunSSH == false then "true" else "false" end' 2>/dev/null || echo "false")"
   banner_present="$([[ -f /etc/issue.net ]] && echo "true" || echo "false")"
   docker_ssh_cidrs_csv="$(IFS=,; echo "${DOCKER_SSH_CIDRS[*]}")"
 
@@ -2498,6 +2574,7 @@ generate_report() {
     --argjson timesync_ntp "${timesync_ntp}" \
     --argjson swap_active "${swap_active}" \
     --argjson fail2ban_active "${fail2ban_active}" \
+    --argjson tailscale_runssh_disabled "${tailscale_runssh_disabled}" \
     --argjson banner_present "${banner_present}" \
     --argjson coolify_dashboard_bound_to_tailscale "${coolify_dashboard_bound}" \
     '{
@@ -2543,6 +2620,7 @@ generate_report() {
         timesync_ntp: $timesync_ntp,
         swap_active: $swap_active,
         fail2ban_active: $fail2ban_active,
+        tailscale_runssh_disabled: $tailscale_runssh_disabled,
         banner_present: $banner_present,
         coolify_dashboard_bound_to_tailscale: $coolify_dashboard_bound_to_tailscale
       }
@@ -2840,6 +2918,7 @@ main() {
 
   require_commands
   verify_tailscale_iface
+  ensure_tailscale_ssh_disabled
   detect_docker
   discover_docker_ssh_cidrs
 
@@ -2858,6 +2937,9 @@ main() {
 
   log "Applying auditd baseline."
   configure_auditd
+
+  log "Disabling apport crash reporting service."
+  configure_apport
 
   log "Applying sysctl kernel hardening."
   configure_sysctl
