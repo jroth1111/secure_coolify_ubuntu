@@ -1047,22 +1047,31 @@ coolify_phase5_verify_shared() {
   else
     # Gate F (tunnel/private): private host routes must work on Tailscale-only DNS.
     log "Gate F: Checking private host routes and public-origin blocking..."
-    local dashboard_private_code ws_private_code
+    local dashboard_private_code ws_private_code dashboard_private_https_code ws_private_https_code
     local gate_f_private_routes_passed=false
     for (( attempt=1; attempt<=attempts; attempt++ )); do
       dashboard_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${DOMAIN}" 2>/dev/null)" || dashboard_private_code=""
       ws_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://ws.${DOMAIN}" 2>/dev/null)" || ws_private_code=""
+      dashboard_private_https_code="$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 10 "https://${DOMAIN}" 2>/dev/null)" || dashboard_private_https_code=""
+      ws_private_https_code="$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 10 "https://ws.${DOMAIN}" 2>/dev/null)" || ws_private_https_code=""
       dashboard_private_code="${dashboard_private_code:-000}"
       ws_private_code="${ws_private_code:-000}"
+      dashboard_private_https_code="${dashboard_private_https_code:-000}"
+      ws_private_https_code="${ws_private_https_code:-000}"
       dashboard_private_code="${dashboard_private_code:0:3}"
       ws_private_code="${ws_private_code:0:3}"
+      dashboard_private_https_code="${dashboard_private_https_code:0:3}"
+      ws_private_https_code="${ws_private_https_code:0:3}"
 
-      if [[ "${dashboard_private_code}" =~ ^[23][0-9][0-9]$ && "${ws_private_code}" != "000" ]]; then
+      if [[ "${dashboard_private_code}" =~ ^[23][0-9][0-9]$ && \
+            "${ws_private_code}" != "000" && \
+            "${dashboard_private_https_code}" =~ ^[23][0-9][0-9]$ && \
+            "${ws_private_https_code}" != "000" ]]; then
         gate_f_private_routes_passed=true
         break
       fi
       if (( attempt < attempts )); then
-        log "  Gate F private routes not ready (dashboard=${dashboard_private_code}, ws=${ws_private_code}); retrying in ${delay}s (${attempt}/${attempts})..."
+        log "  Gate F private routes not ready (dashboard-http=${dashboard_private_code}, ws-http=${ws_private_code}, dashboard-https=${dashboard_private_https_code}, ws-https=${ws_private_https_code}); retrying in ${delay}s (${attempt}/${attempts})..."
         sleep "${delay}"
       fi
     done
@@ -1070,10 +1079,14 @@ coolify_phase5_verify_shared() {
     if [[ "${gate_f_private_routes_passed}" != "true" ]]; then
       fail "Gate F: private dashboard route failed (http://${DOMAIN} → HTTP ${dashboard_private_code})"
       fail "Gate F: private websocket host failed (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
+      fail "Gate F: private dashboard HTTPS route failed (https://${DOMAIN} → HTTP ${dashboard_private_https_code})"
+      fail "Gate F: private websocket HTTPS host failed (https://ws.${DOMAIN} → HTTP ${ws_private_https_code})"
       die "Gate F failed: private host routes are not functional on Tailscale."
     fi
     pass "Gate F: private dashboard route works (http://${DOMAIN} → HTTP ${dashboard_private_code})"
     pass "Gate F: private websocket host responds (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
+    pass "Gate F: private dashboard HTTPS route works (https://${DOMAIN} → HTTP ${dashboard_private_https_code})"
+    pass "Gate F: private websocket HTTPS host responds (https://ws.${DOMAIN} → HTTP ${ws_private_https_code})"
 
     if [[ "${public_probe_mode}" == "external" ]]; then
       local pub80_code pub443_code
@@ -1282,22 +1295,23 @@ EOF
 }
 
 # coolify_reconcile_pusher_env_script — Emit host-side script to reconcile
-# PUSHER_* environment variables by deployment mode. Requires DEPLOY_MODE, TS_IP.
+# PUSHER_* environment variables by deployment mode.
+# Tunnel mode requires DEPLOY_MODE=tunnel and DOMAIN.
 coolify_reconcile_pusher_env_script() {
   cat <<'EOF'
 set -Eeuo pipefail
 : "${DEPLOY_MODE:?DEPLOY_MODE is required}"
-: "${TS_IP:?TS_IP is required}"
 coolify_env="/data/coolify/source/.env"
 mode="${DEPLOY_MODE}"
 tmp="$(mktemp)"
 sed '/^PUSHER_HOST=/d; /^PUSHER_PORT=/d; /^PUSHER_SCHEME=/d' "${coolify_env}" > "${tmp}"
 
 if [[ "${mode}" == "tunnel" ]]; then
+  : "${DOMAIN:?DOMAIN is required for tunnel mode}"
   cat >> "${tmp}" <<INNER
-PUSHER_HOST=${TS_IP}
-PUSHER_PORT=6001
-PUSHER_SCHEME=http
+PUSHER_HOST=ws.${DOMAIN}
+PUSHER_PORT=443
+PUSHER_SCHEME=https
 INNER
 fi
 
@@ -1334,24 +1348,45 @@ http:
     coolify-private-gzip:
       compress: true
   routers:
-    coolify-private-dashboard:
+    coolify-private-dashboard-http:
       entryPoints:
         - http
       rule: "Host(\`${DOMAIN}\`)"
       service: coolify-private-dashboard
       middlewares:
         - coolify-private-gzip
-    coolify-private-realtime:
+    coolify-private-dashboard-https:
+      entryPoints:
+        - https
+      rule: "Host(\`${DOMAIN}\`)"
+      service: coolify-private-dashboard
+      middlewares:
+        - coolify-private-gzip
+      tls: {}
+    coolify-private-realtime-http:
       entryPoints:
         - http
       rule: "Host(\`ws.${DOMAIN}\`)"
       service: coolify-private-realtime
-    coolify-private-terminal:
+    coolify-private-realtime-https:
+      entryPoints:
+        - https
+      rule: "Host(\`ws.${DOMAIN}\`)"
+      service: coolify-private-realtime
+      tls: {}
+    coolify-private-terminal-http:
       entryPoints:
         - http
       rule: "Host(\`ws.${DOMAIN}\`) && PathPrefix(\`/terminal/ws\`)"
       service: coolify-private-terminal
       priority: 100
+    coolify-private-terminal-https:
+      entryPoints:
+        - https
+      rule: "Host(\`ws.${DOMAIN}\`) && PathPrefix(\`/terminal/ws\`)"
+      service: coolify-private-terminal
+      priority: 100
+      tls: {}
   services:
     coolify-private-dashboard:
       loadBalancer:

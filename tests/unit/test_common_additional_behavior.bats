@@ -207,6 +207,13 @@ setup() {
   run coolify_configure_private_dashboard_routes_script
   assert_success
   assert_output --partial "coolify-private-dashboard.yaml"
+  assert_output --partial "coolify-private-dashboard-http:"
+  assert_output --partial "coolify-private-dashboard-https:"
+  assert_output --partial "coolify-private-realtime-http:"
+  assert_output --partial "coolify-private-realtime-https:"
+  assert_output --partial "coolify-private-terminal-http:"
+  assert_output --partial "coolify-private-terminal-https:"
+  assert_output --partial "tls: {}"
   assert_output --partial 'rule: "Host(`ws.${DOMAIN}`)"'
   assert_output --partial "http://coolify:8080"
   assert_output --partial "http://coolify-realtime:6001"
@@ -330,9 +337,10 @@ setup() {
 @test "coolify_reconcile_pusher_env_script: emits PUSHER mode reconciliation script" {
   run coolify_reconcile_pusher_env_script
   assert_success
-  assert_output --partial 'PUSHER_HOST=${TS_IP}'
-  assert_output --partial "PUSHER_PORT=6001"
-  assert_output --partial "PUSHER_SCHEME=http"
+  assert_output --partial ': "${DOMAIN:?DOMAIN is required for tunnel mode}"'
+  assert_output --partial 'PUSHER_HOST=ws.${DOMAIN}'
+  assert_output --partial "PUSHER_PORT=443"
+  assert_output --partial "PUSHER_SCHEME=https"
   assert_output --partial "install -m 0600"
 }
 

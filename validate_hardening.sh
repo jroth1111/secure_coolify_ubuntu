@@ -1795,6 +1795,64 @@ cloudflared_check() {
       fi
     fi
 
+    if [[ -f "${private_route_file}" ]]; then
+      local private_router_name
+      local private_router_fail=0
+      for private_router_name in \
+        coolify-private-dashboard-http \
+        coolify-private-dashboard-https \
+        coolify-private-realtime-http \
+        coolify-private-realtime-https \
+        coolify-private-terminal-http \
+        coolify-private-terminal-https; do
+        if grep -Fq "${private_router_name}:" "${private_route_file}"; then
+          record "PASS" "cloudflared: private router present (${private_router_name})"
+        else
+          record "FAIL" "cloudflared: private router present (${private_router_name})" \
+            "missing router ${private_router_name} in ${private_route_file}"
+          private_router_fail=1
+        fi
+      done
+      if [[ "${private_router_fail}" -eq 0 ]]; then
+        record "PASS" "cloudflared: private http/https router set complete"
+      fi
+    fi
+
+    if [[ -n "${dashboard_host}" ]]; then
+      local coolify_env_file expected_pusher_host actual_pusher_host actual_pusher_port actual_pusher_scheme
+      coolify_env_file="/data/coolify/source/.env"
+      expected_pusher_host="ws.${dashboard_host}"
+      if [[ -f "${coolify_env_file}" ]]; then
+        actual_pusher_host="$(awk -F= '/^PUSHER_HOST=/{print $2; exit}' "${coolify_env_file}" | tr -d '"' || true)"
+        actual_pusher_port="$(awk -F= '/^PUSHER_PORT=/{print $2; exit}' "${coolify_env_file}" | tr -d '"' || true)"
+        actual_pusher_scheme="$(awk -F= '/^PUSHER_SCHEME=/{print $2; exit}' "${coolify_env_file}" | tr -d '"' || true)"
+
+        if [[ "${actual_pusher_host}" == "${expected_pusher_host}" ]]; then
+          record "PASS" "coolify: PUSHER_HOST private ws domain"
+        else
+          record "FAIL" "coolify: PUSHER_HOST private ws domain" \
+            "expected ${expected_pusher_host}, found ${actual_pusher_host:-<unset>}"
+        fi
+
+        if [[ "${actual_pusher_port}" == "443" ]]; then
+          record "PASS" "coolify: PUSHER_PORT private ws TLS"
+        else
+          record "FAIL" "coolify: PUSHER_PORT private ws TLS" \
+            "expected 443, found ${actual_pusher_port:-<unset>}"
+        fi
+
+        if [[ "${actual_pusher_scheme}" == "https" ]]; then
+          record "PASS" "coolify: PUSHER_SCHEME private ws TLS"
+        else
+          record "FAIL" "coolify: PUSHER_SCHEME private ws TLS" \
+            "expected https, found ${actual_pusher_scheme:-<unset>}"
+        fi
+      else
+        record "FAIL" "coolify: PUSHER env file present" \
+          "missing ${coolify_env_file}"
+      fi
+    fi
+
     if command -v getent >/dev/null 2>&1; then
       check_private_dns_host() {
         local host="$1"

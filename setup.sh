@@ -371,7 +371,7 @@ phase4_binding_dns() {
   phase4_configure_binding() { "${SCRIPT_DIR}/configure_coolify_binding.sh" --tailscale-ip "${TS_IP}"; }
   phase4_set_wildcard_domain() { APP_DOMAIN="${APP_DOMAIN}" coolify_set_wildcard_domain_script | bash -s; }
   phase4_reconcile_pusher_env() {
-    DEPLOY_MODE="${DEPLOY_MODE}" TS_IP="${TS_IP}" coolify_reconcile_pusher_env_script | bash -s
+    DEPLOY_MODE="${DEPLOY_MODE}" TS_IP="${TS_IP}" DOMAIN="${DOMAIN}" coolify_reconcile_pusher_env_script | bash -s
   }
   phase4_install_cloudflared() { coolify_install_cloudflared_script | bash -s; }
   phase4_configure_cloudflared() {
@@ -393,7 +393,7 @@ phase4_binding_dns() {
 
   # Contract anchors kept for tests/docs:
   # sed '/^PUSHER_HOST=/d; /^PUSHER_PORT=/d; /^PUSHER_SCHEME=/d'
-  # PUSHER_HOST=${TS_IP}
+  # PUSHER_HOST=ws.${DOMAIN}
   # coolify-private-dashboard.yaml
   # ws.${DOMAIN}
   coolify_phase4_binding_dns_shared \

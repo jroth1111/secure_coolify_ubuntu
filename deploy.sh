@@ -595,11 +595,12 @@ phase4_binding_dns() {
     coolify_set_wildcard_domain_script | ssh_admin_sudo "APP_DOMAIN=${app_domain_q} bash -s"
   }
   phase4_reconcile_pusher_env() {
-    local deploy_mode_q ts_ip_q
+    local deploy_mode_q ts_ip_q domain_q
     deploy_mode_q="$(printf '%q' "${DEPLOY_MODE}")"
     ts_ip_q="$(printf '%q' "${TS_IP}")"
+    domain_q="$(printf '%q' "${DOMAIN}")"
     coolify_reconcile_pusher_env_script \
-      | ssh_admin_sudo "DEPLOY_MODE=${deploy_mode_q} TS_IP=${ts_ip_q} bash -s"
+      | ssh_admin_sudo "DEPLOY_MODE=${deploy_mode_q} TS_IP=${ts_ip_q} DOMAIN=${domain_q} bash -s"
   }
   phase4_install_cloudflared() { coolify_install_cloudflared_script | ssh_admin_sudo 'bash -s'; }
   phase4_configure_cloudflared() {
@@ -626,7 +627,7 @@ phase4_binding_dns() {
 
   # Contract anchors kept for tests/docs:
   # mode="${DEPLOY_MODE}"
-  # PUSHER_HOST=${TS_IP}
+  # PUSHER_HOST=ws.${DOMAIN}
   # coolify-private-dashboard.yaml
   # ws.${DOMAIN}
   coolify_phase4_binding_dns_shared \

@@ -253,6 +253,10 @@ EOF
         echo "302"
       elif [[ "${url}" == "http://ws.${DOMAIN}" ]]; then
         echo "200"
+      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
+        echo "302"
+      elif [[ "${url}" == "https://ws.${DOMAIN}" ]]; then
+        echo "200"
       else
         echo "000"
       fi
@@ -297,6 +301,10 @@ EOF
       elif [[ "${url}" == "http://${DOMAIN}" ]]; then
         echo "302"
       elif [[ "${url}" == "http://ws.${DOMAIN}" ]]; then
+        echo "200"
+      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
+        echo "302"
+      elif [[ "${url}" == "https://ws.${DOMAIN}" ]]; then
         echo "200"
       else
         echo "000"
