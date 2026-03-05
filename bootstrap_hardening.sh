@@ -696,6 +696,54 @@ retry_apt_update() {
   die "apt-get update failed after ${attempts} attempts."
 }
 
+retry_apt_noninteractive() {
+  local description="$1"
+  shift
+
+  local attempts=3 delay=10 i
+  for (( i = 1; i <= attempts; i++ )); do
+    if run env DEBIAN_FRONTEND=noninteractive \
+      apt-get -y \
+      -o Dpkg::Options::=--force-confdef \
+      -o Dpkg::Options::=--force-confold \
+      "$@"; then
+      return 0
+    fi
+    if (( i < attempts )); then
+      log "${description} failed (attempt ${i}/${attempts}); retrying in ${delay}s..."
+      sleep "${delay}"
+    fi
+  done
+  die "${description} failed after ${attempts} attempts."
+}
+
+apply_system_package_updates() {
+  if is_true "${DRY_RUN}"; then
+    log "DRY-RUN: would run apt-get full-upgrade and autoremove for baseline patching."
+    return 0
+  fi
+
+  retry_apt_update
+  log "Applying baseline package patches (apt-get full-upgrade)..."
+  retry_apt_noninteractive "apt-get full-upgrade" full-upgrade
+
+  log "Removing obsolete packages (apt-get autoremove --purge)..."
+  retry_apt_noninteractive "apt-get autoremove --purge" autoremove --purge
+  run apt-get -y autoclean
+
+  local upgradable_count
+  upgradable_count="$(apt list --upgradable 2>/dev/null | awk 'NR>1{c++} END{print c+0}')"
+  if [[ "${upgradable_count}" =~ ^[0-9]+$ && "${upgradable_count}" -eq 0 ]]; then
+    log "Baseline patching complete: no upgradable packages remain."
+  else
+    warn "Baseline patching complete with ${upgradable_count:-unknown} upgradable package(s) still listed."
+  fi
+
+  if [[ -f /var/run/reboot-required ]]; then
+    warn "System reports reboot required after package updates (/var/run/reboot-required)."
+  fi
+}
+
 verify_tailscale_iface() {
   ip link show "${TAILSCALE_IFACE}" >/dev/null 2>&1 || die "Interface ${TAILSCALE_IFACE} not found. Refusing Tailscale-only SSH hardening."
 }
@@ -2909,6 +2957,7 @@ main() {
   detect_wan_iface
   ssh_session_safety_gate
   ensure_packages
+  apply_system_package_updates
 
   # Install Tailscale if requested (before verify_tailscale_iface)
   if is_true "${INSTALL_TAILSCALE}"; then
