@@ -396,7 +396,7 @@ Gate E passes when dashboard and websocket are reachable over Tailscale and bloc
 
 After deployment, complete these three steps to enable fully automatic subdomain + SSL for every app:
 
-1. **Cloudflare dashboard → SSL/TLS → Overview**: Set encryption mode to **Full**. Do not use Flexible (sends plaintext to origin) or Full Strict (tunnel does not present an origin certificate).
+1. **Cloudflare dashboard → SSL/TLS → Overview**: Set encryption mode to **Full**. Do not use Flexible (sends plaintext to origin).
 
 2. **Coolify UI → Servers → your server → Wildcard Domain**: Set to your zone root (e.g., `example.com`). This tells Coolify to auto-assign subdomains like `myapp.example.com` to every new resource you deploy. Since the scripts already created wildcard DNS records and tunnel ingress rules, each subdomain gets SSL (via Cloudflare Universal SSL) and routing (via Traefik Host-header matching) automatically — zero per-app DNS or cert configuration.
 
@@ -408,12 +408,13 @@ After these steps, the end-to-end flow for every new app is: deploy in Coolify �
 
 ### 4.5 TLS Architecture
 
-Both deployment modes use Cloudflare's edge for user-facing TLS via Universal SSL (`*.example.com`). No wildcard certificate is needed on the origin server:
+Both deployment modes use Cloudflare's edge for public app TLS via Universal SSL (`*.example.com`). For private dashboard/realtime hostnames in tunnel mode, scripts configure trusted origin certs via DNS-01:
 
-- **Tunnel mode**: Cloudflare terminates TLS at the edge. Public tunnel ingress is wildcard-app only (`*.app-domain` to `localhost:80`). Dashboard/realtime hosts stay blocked in cloudflared (`http_status:404`), while exact host DNS (`DOMAIN`, `ws.DOMAIN`) is pinned to the server `TS_IP` as DNS-only for private Tailscale access. No origin cert required.
-- **Standard mode** (proxied + Full SSL): Cloudflare terminates edge TLS and connects to the origin via HTTPS, but Full mode accepts any cert — including self-signed or Traefik's default. No wildcard cert required.
+- **Tunnel mode (apps via wildcard)**: Cloudflare terminates TLS at the edge. Public tunnel ingress is wildcard-app only (`*.app-domain` to `localhost:80`).
+- **Tunnel mode (private dashboard/realtime hostnames)**: cloudflared blocks public ingress (`http_status:404`), exact host DNS (`DOMAIN`, `ws.DOMAIN`) is pinned to server `TS_IP` as DNS-only, and Traefik issues trusted certs for those exact hosts using ACME DNS-01 (Cloudflare token).
+- **Standard mode** (proxied + Full SSL): Cloudflare terminates edge TLS and connects to the origin via HTTPS; Full mode accepts any cert.
 
-**Optional: origin wildcard certs.** If you need Full (Strict) SSL or DNS-only subdomains where Traefik terminates TLS, configure Traefik's DNS-01 challenge with your Cloudflare API token in the Coolify UI (Servers > Proxy). See [Coolify wildcard cert docs](https://coolify.io/docs/knowledge-base/proxy/traefik/wildcard-certs). Add `CF_DNS_API_TOKEN` as an environment variable in the Traefik container. This is a Coolify-level config change — our hardening scripts do not modify it.
+For custom Full (Strict) scenarios beyond script-managed private hostnames, you can still configure additional Traefik DNS-01 certificates in Coolify UI (Servers > Proxy). See [Coolify wildcard cert docs](https://coolify.io/docs/knowledge-base/proxy/traefik/wildcard-certs).
 
 ### 4.6 Tunnel Mode Limitations
 
@@ -522,8 +523,8 @@ sudo systemctl status cloudflared        # Should be active
 sudo ufw status verbose                  # Should NOT show 80/443 ALLOW on WAN
 curl -s -o /dev/null -w '%{http_code}' http://<your-domain>        # Should be 2xx/3xx on Tailscale clients
 curl -s -o /dev/null -w '%{http_code}' http://ws.<your-domain>     # Should be non-000 on Tailscale clients
-curl -k -s -o /dev/null -w '%{http_code}' https://<your-domain>    # Should be 2xx/3xx on Tailscale clients
-curl -k -s -o /dev/null -w '%{http_code}' https://ws.<your-domain> # Should be non-000 on Tailscale clients
+curl -s -o /dev/null -w '%{http_code}' https://<your-domain>    # Should be 2xx/3xx on Tailscale clients with trusted cert
+curl -s -o /dev/null -w '%{http_code}' https://ws.<your-domain> # Should be non-000 on Tailscale clients with trusted cert
 curl -s -o /dev/null -w '%{http_code}' http://<public-ip>          # Should fail/timeout
 curl -k -s -o /dev/null -w '%{http_code}' https://<public-ip>      # Should fail/timeout
 

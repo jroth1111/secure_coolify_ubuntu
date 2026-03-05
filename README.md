@@ -177,7 +177,7 @@ Already SSH'd into the server? Use `setup.sh` instead — same flags, runs local
 
 After `deploy.sh` or `setup.sh` completes, three manual steps enable automatic SSL + subdomains:
 
-1. **Cloudflare: SSL/TLS > Overview** — set encryption mode to **Full** (not Flexible, not Full Strict)
+1. **Cloudflare: SSL/TLS > Overview** — set encryption mode to **Full** (not Flexible)
 2. **Coolify: Servers > your server > Wildcard Domain** — set to your zone root (e.g., `example.com`)
 3. **Coolify: resource domains** — use `http://` protocol, not `https://`
 
@@ -212,11 +212,10 @@ If these apply, use `--mode standard`.
 
 ### TLS Architecture
 
-Both modes use Cloudflare's edge for user-facing TLS. No wildcard certificate is needed on the origin.
-
 | Mode | Edge TLS | Edge > Origin | Origin cert needed? |
 |------|----------|---------------|---------------------|
-| Tunnel | Universal SSL | Encrypted tunnel (no TLS check) | No |
+| Tunnel (apps via wildcard) | Universal SSL | Encrypted tunnel (no TLS check) | No wildcard cert needed |
+| Tunnel (private dashboard/realtime hostnames) | Direct Tailscale HTTPS to origin | TLS terminates on Traefik | Yes, auto-issued via DNS-01 by script |
 | Standard (Full SSL) | Universal SSL | HTTPS, any cert accepted | Any (self-signed OK) |
 
 Wildcard DNS (`*.example.com`) and tunnel ingress rules are created automatically.
@@ -500,7 +499,7 @@ ssh admin@100.x.x.x  # Use the Tailscale IP output by the script
 
 **Solution:**
 1. Ensure Tailscale is running on your laptop: `tailscale status`
-2. Access via `http://100.x.x.x:8000` (Tailscale IP, not public IP)
+2. Access via `https://<your-domain>` (trusted cert) or fallback `http://100.x.x.x:8000` (Tailscale IP)
 
 ### Cloudflare Tunnel Not Working
 
