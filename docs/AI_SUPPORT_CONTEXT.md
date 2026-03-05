@@ -121,9 +121,9 @@ If the state file shows `tunnel_mode=true`, the server uses **Cloudflare Tunnel*
 - By default, there are no inbound WAN management/web ports; optional UDP 41641 can be enabled for direct Tailscale paths (`TAILSCALE_DIRECT_WAN=true`).
 - Private dashboard/realtime behavior is enforced by:
   - cloudflared deny routes (`http_status:404`) for `DOMAIN` and `ws.DOMAIN`
-  - managed private Traefik routes in `/data/coolify/proxy/dynamic/coolify-private-dashboard.yaml`
+  - managed private Traefik routes (HTTP + HTTPS) in `/data/coolify/proxy/dynamic/coolify-private-dashboard.yaml`
   - DNS-only `A` records for `DOMAIN` and `ws.DOMAIN` pointing to the server Tailscale IP
-  - `PUSHER_HOST=<tailscale-ip>`, `PUSHER_PORT=6001`, `PUSHER_SCHEME=http`
+  - `PUSHER_HOST=ws.<domain>`, `PUSHER_PORT=443`, `PUSHER_SCHEME=https`
 
 ## Coolify-Specific Notes
 

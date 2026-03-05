@@ -410,11 +410,11 @@ cloudflare_api="https://api.cloudflare.com/client/v4"
 # Create/update A ws.your-domain.com -> <tailscale-ip> (proxied=false)
 ```
 
-Also set Coolify realtime env vars to Tailscale:
+Also set Coolify realtime env vars to the private websocket hostname:
 
 ```bash
 sudo sed -i '/^PUSHER_HOST=/d;/^PUSHER_PORT=/d;/^PUSHER_SCHEME=/d' /data/coolify/source/.env
-printf '%s\n' "PUSHER_HOST=<tailscale-ip>" "PUSHER_PORT=6001" "PUSHER_SCHEME=http" | sudo tee -a /data/coolify/source/.env >/dev/null
+printf '%s\n' "PUSHER_HOST=ws.<your-domain>" "PUSHER_PORT=443" "PUSHER_SCHEME=https" | sudo tee -a /data/coolify/source/.env >/dev/null
 docker compose -f /data/coolify/source/docker-compose.yml -f /data/coolify/source/docker-compose.prod.yml up -d --force-recreate coolify soketi
 ```
 
@@ -465,6 +465,8 @@ sudo systemctl status cloudflared        # Should be active
 sudo ufw status verbose                  # Should NOT show 80/443 ALLOW on WAN
 curl -s -o /dev/null -w '%{http_code}' http://<your-domain>        # Should be 2xx/3xx on Tailscale clients
 curl -s -o /dev/null -w '%{http_code}' http://ws.<your-domain>     # Should be non-000 on Tailscale clients
+curl -k -s -o /dev/null -w '%{http_code}' https://<your-domain>    # Should be 2xx/3xx on Tailscale clients
+curl -k -s -o /dev/null -w '%{http_code}' https://ws.<your-domain> # Should be non-000 on Tailscale clients
 curl -s -o /dev/null -w '%{http_code}' http://<public-ip>          # Should fail/timeout
 curl -k -s -o /dev/null -w '%{http_code}' https://<public-ip>      # Should fail/timeout
 

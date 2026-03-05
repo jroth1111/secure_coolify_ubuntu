@@ -455,12 +455,13 @@ ssh admin@100.x.x.x  # Use the Tailscale IP output by the script
 
 ### "Cannot connect to real-time service" in Coolify UI
 
-**Cause:** Realtime is not configured to use the Tailscale endpoint.
+**Cause:** Realtime is not configured to use the private websocket hostname over TLS.
 
 **Solution (tunnel mode, private-only default):**
-1. Check Coolify env: `PUSHER_HOST=<tailscale-ip>`, `PUSHER_PORT=6001`, `PUSHER_SCHEME=http`
+1. Check Coolify env: `PUSHER_HOST=ws.<your-domain>`, `PUSHER_PORT=443`, `PUSHER_SCHEME=https`
 2. Check `/etc/cloudflared/config.yml` does **not** route `localhost:8000`, `localhost:6001`, or `localhost:6002`
-3. Check Cloudflare DNS has `A` records for `DOMAIN` and `ws.DOMAIN` pointing to the server `100.x` Tailscale IP with proxy disabled (DNS-only)
+3. Check `/data/coolify/proxy/dynamic/coolify-private-dashboard.yaml` has both HTTP and HTTPS routers for `DOMAIN` and `ws.DOMAIN`
+4. Check Cloudflare DNS has `A` records for `DOMAIN` and `ws.DOMAIN` pointing to the server `100.x` Tailscale IP with proxy disabled (DNS-only)
 
 ### Validation Failures
 
