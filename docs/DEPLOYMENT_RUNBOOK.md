@@ -34,13 +34,56 @@ Use this to decide inputs before running commands.
 
 | Workflow | Required inputs | Optional inputs with defaults | Not required |
 |----------|-----------------|-------------------------------|--------------|
-| `deploy.sh` fresh run | `--server-ip`, `--domain`, root password (prompt or `--root-pass-file`), `--tailscale-auth-key`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`) | `--admin-user` (`coolifyadmin`), `--pubkey-file` (`~/.ssh/id_ed25519.pub`), `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--server-timezone` (`UTC` interactive), `--tailscale-direct-wan` (off), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, optional split tunnel token (`--cf-tunnel-api-token-file`) | `--ts-ip` |
-| `deploy.sh --ts-ip <ip>` resume | `--server-ip`, `--domain`, `--ts-ip`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`) | Same optional defaults as fresh run | root password / `--root-pass-file`, `--tailscale-auth-key` |
-| `setup.sh` server-local run | `--server-ip`, `--admin-user`, `--pubkey-file`, `--domain`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), `--tailscale-auth-key` unless `--preflight-only` | `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--server-timezone` (`UTC` interactive), `--tailscale-direct-wan` (off), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, optional split tunnel token (`--cf-tunnel-api-token-file`) | root password / `--root-pass-file`, `--ts-ip` |
+| `deploy.sh` fresh run | `--server-ip`, `--domain`, root password (prompt or `--root-pass-file`), `--tailscale-auth-key`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), server timezone choice (`--server-timezone`; mandatory with `--yes`) | `--admin-user` (`coolifyadmin`), `--pubkey-file` (`~/.ssh/id_ed25519.pub`), `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--tailscale-direct-wan` (off), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, optional split tunnel token (`--cf-tunnel-api-token-file`) | `--ts-ip` |
+| `deploy.sh --ts-ip <ip>` resume | `--server-ip`, `--domain`, `--ts-ip`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), server timezone choice (`--server-timezone`; mandatory with `--yes`) | Same optional defaults as fresh run | root password / `--root-pass-file`, `--tailscale-auth-key` |
+| `setup.sh` server-local run | `--server-ip`, `--admin-user`, `--pubkey-file`, `--domain`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), `--tailscale-auth-key` unless `--preflight-only`, server timezone choice (`--server-timezone`; mandatory with `--yes`) | `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--tailscale-direct-wan` (off), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, optional split tunnel token (`--cf-tunnel-api-token-file`) | root password / `--root-pass-file`, `--ts-ip` |
+
+Recommended defaults (if undecided):
+- `--mode tunnel`
+- `--app-domain-mode apex`
+- `--admin-user coolifyadmin`
+- `--pubkey-file ~/.ssh/id_ed25519.pub`
+- `--swap-size 2G`
+- `--no-tailscale-direct-wan`
+
+Minimal commands by workflow:
+
+```bash
+# deploy.sh fresh run
+bash deploy.sh --server-ip <ip> --domain <fqdn> --root-pass-file <path> \
+  --tailscale-auth-key <tskey-auth-...> --server-timezone <IANA> \
+  --cf-api-token-file <path> --yes
+
+# deploy.sh resume from phase 2
+bash deploy.sh --server-ip <ip> --domain <fqdn> --ts-ip <100.x.x.x> \
+  --server-timezone <IANA> --cf-api-token-file <path> --yes
+
+# setup.sh server-local
+sudo bash setup.sh --server-ip <ip> --admin-user <name> --pubkey-file <path> \
+  --domain <fqdn> --tailscale-auth-key <tskey-auth-...> --server-timezone <IANA> \
+  --cf-api-token-file <path> --yes
+```
+
+Decision tree:
+- Exposure model: `tunnel` (private-only dashboard/realtime, no inbound 80/443) or `standard` (public 80/443).
+- App hostnames: `apex` (`appname.<zone>`) or `vps` (`appname.<domain>`).
+- Token model: combined token (single API token) or split tokens (DNS token + tunnel token).
 
 Rules that prevent confusion:
 - With `--yes`, set `--server-timezone <IANA>` (or `SERVER_TIMEZONE`) explicitly.
 - `--cf-api-token` and `--cf-tunnel-api-token` CLI flags are intentionally removed; use env vars or `--*-token-file`.
+
+Resume semantics:
+- `--ts-ip` skips phase 1 hardening.
+- In `--ts-ip` mode, root password and Tailscale auth key are not required.
+
+Pre-run checklist:
+- Confirm execution surface: `deploy.sh` on laptop, `setup.sh` on server.
+- Confirm server target: public IPv4 and (for resume) Tailscale IPv4.
+- Confirm domain target and deployment mode.
+- Confirm app-domain mode (`apex` or `vps`).
+- Confirm timezone value (IANA string).
+- Confirm token source (env vars or token file path(s)).
 
 For fast permission validation before touching the server, run:
 
