@@ -669,6 +669,27 @@ ensure_packages() {
   fi
 }
 
+ensure_system_group() {
+  local group_name="$1"
+  [[ -n "${group_name}" ]] || die "ensure_system_group requires a non-empty group name."
+
+  if getent group "${group_name}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if is_true "${DRY_RUN}"; then
+    log "DRY-RUN: would create missing system group '${group_name}'."
+    return 0
+  fi
+
+  log "Creating missing system group '${group_name}'."
+  run groupadd --system "${group_name}"
+}
+
+ensure_power_group() {
+  ensure_system_group "power"
+}
+
 require_commands() {
   local commands=()
   commands+=(ip awk grep sed jq)
@@ -2960,6 +2981,7 @@ main() {
   detect_wan_iface
   ssh_session_safety_gate
   ensure_packages
+  ensure_power_group
   apply_system_package_updates
 
   # Install Tailscale if requested (before verify_tailscale_iface)
