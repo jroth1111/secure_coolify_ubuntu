@@ -1082,6 +1082,8 @@ net.ipv4.conf.all.log_martians = 1
 net.ipv4.conf.default.log_martians = 1
 net.ipv4.icmp_echo_ignore_broadcasts = 1
 net.ipv4.icmp_ignore_bogus_error_responses = 1
+# Allow non-root ping sockets so cloudflared ICMP proxy init does not warn.
+net.ipv4.ping_group_range = 0 2147483647
 net.ipv4.conf.all.rp_filter = 2
 net.ipv4.conf.default.rp_filter = 2
 # SYN flood hardening

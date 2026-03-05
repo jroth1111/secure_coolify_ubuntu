@@ -1699,6 +1699,31 @@ cloudflared_check() {
     return
   fi
 
+  # cloudflared warns at startup when ping_group_range excludes gid 0.
+  # Keep a sane range that includes root to avoid noisy ICMP proxy warnings.
+  if command -v sysctl >/dev/null 2>&1; then
+    local ping_group_range pg_lo pg_hi
+    ping_group_range="$(sysctl -n net.ipv4.ping_group_range 2>/dev/null || true)"
+    if [[ "${ping_group_range}" =~ ^[[:space:]]*([0-9]+)[[:space:]]+([0-9]+)[[:space:]]*$ ]]; then
+      pg_lo="${BASH_REMATCH[1]}"
+      pg_hi="${BASH_REMATCH[2]}"
+      if (( pg_hi < pg_lo )); then
+        record "FAIL" "cloudflared: ping_group_range" \
+          "invalid range (${pg_lo} ${pg_hi}); expected ascending values including gid 0"
+      elif (( pg_lo > 0 || pg_hi < 0 )); then
+        record "FAIL" "cloudflared: ping_group_range" \
+          "gid 0 excluded (${pg_lo} ${pg_hi}); cloudflared logs ICMP proxy warnings"
+      else
+        record "PASS" "cloudflared: ping_group_range includes gid 0 (${pg_lo} ${pg_hi})"
+      fi
+    else
+      record "INFO" "cloudflared: ping_group_range" \
+        "unable to parse net.ipv4.ping_group_range (${ping_group_range:-unknown})"
+    fi
+  else
+    record "INFO" "cloudflared: ping_group_range" "sysctl not found; skipped"
+  fi
+
   # Config file checks
   local config_file="/etc/cloudflared/config.yml"
   if [[ ! -f "${config_file}" ]]; then
