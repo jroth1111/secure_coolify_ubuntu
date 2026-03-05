@@ -125,6 +125,35 @@ UFW
   assert_json_fail_count "${json}" "0"
 }
 
+@test "ufw_check: does not treat 2222/tcp as a match for SSH_PORT=22" {
+  SSH_PORT="22"
+  TAILSCALE_IFACE="tailscale0"
+  WAN_IFACE="eth0"
+  TUNNEL_MODE="false"
+  TAILSCALE_DIRECT_WAN="false"
+  DOCKER_SSH_CIDRS='10.0.0.0/8'
+
+  ufw() {
+    if [[ "$1" == "status" ]]; then
+      cat <<UFW
+Status: active
+2222/tcp                   ALLOW IN    on tailscale0
+22                         ALLOW       10.0.0.0/8
+8000/tcp                   ALLOW IN    on tailscale0
+6001/tcp                   ALLOW IN    on tailscale0
+6002/tcp                   ALLOW IN    on tailscale0
+UFW
+      return 0
+    fi
+    return 0
+  }
+
+  ufw_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "ufw: SSH on tailscale0" "FAIL"
+}
+
 @test "swap_check: reports disabled swap when swap_size is 0" {
   swap_size="0"
 
@@ -649,6 +678,65 @@ EOF
   rm -f "${daemon_backup}"
 }
 
+@test "docker_daemon_check: fails when live-restore is explicitly false" {
+  local daemon_json="/etc/docker/daemon.json"
+  local daemon_backup=""
+  local had_daemon="false"
+
+  mkdir -p "/etc/docker" 2>/dev/null || skip "unable to create /etc/docker"
+  if [[ -f "${daemon_json}" ]]; then
+    had_daemon="true"
+    daemon_backup="$(mktemp)"
+    cp "${daemon_json}" "${daemon_backup}"
+  fi
+
+  cat > "${daemon_json}" <<'EOF'
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m"
+  },
+  "live-restore": false,
+  "default-ipc-mode": "private",
+  "storage-driver": "overlay2",
+  "default-ulimits": {
+    "nofile": {"Name":"nofile","Hard":1048576,"Soft":1048576},
+    "nproc": {"Name":"nproc","Hard":65535,"Soft":65535}
+  }
+}
+EOF
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  docker() {
+    if [[ "${1:-}" == "info" && "${2:-}" == "--format" ]]; then
+      echo "json-file"
+      return 0
+    fi
+    if [[ "${1:-}" == "info" ]]; then
+      return 0
+    fi
+    return 0
+  }
+
+  docker_daemon_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-daemon: live-restore" "FAIL"
+
+  if [[ "${had_daemon}" == "true" ]]; then
+    cp "${daemon_backup}" "${daemon_json}"
+  else
+    rm -f "${daemon_json}"
+  fi
+  rm -f "${daemon_backup}"
+}
+
 @test "docker_trust_boundary_check: records info when Docker is unavailable" {
   command() {
     if [[ "$1" == "-v" && "$2" == "docker" ]]; then
@@ -1040,6 +1128,61 @@ EOF
   rm -f "${jail_backup}"
 }
 
+@test "fail2ban_check: parses banaction with spaces and inline comment" {
+  local jail_file="/etc/fail2ban/jail.d/coolify-hardening.local"
+  local jail_backup=""
+  local had_jail="false"
+
+  mkdir -p "/etc/fail2ban/jail.d" 2>/dev/null || skip "unable to create /etc/fail2ban/jail.d"
+  if [[ -f "${jail_file}" ]]; then
+    had_jail="true"
+    jail_backup="$(mktemp)"
+    cp "${jail_file}" "${jail_backup}"
+  fi
+
+  cat > "${jail_file}" <<'EOF'
+[DEFAULT]
+ignoreip = 127.0.0.1/8 100.64.0.0/10
+banaction    =    ufw   # required in this environment
+EOF
+
+  TAILSCALE_CIDR="100.64.0.0/10"
+
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "fail2ban" ]]; then
+      return 0
+    fi
+    return 0
+  }
+
+  fail2ban-client() {
+    if [[ "${1:-}" == "status" && "${2:-}" == "sshd" ]]; then
+      return 0
+    fi
+    return 1
+  }
+
+  ufw() {
+    if [[ "${1:-}" == "status" ]]; then
+      echo "Status: active"
+      return 0
+    fi
+    return 0
+  }
+
+  fail2ban_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "fail2ban: banaction=ufw and UFW active" "PASS"
+
+  if [[ "${had_jail}" == "true" ]]; then
+    cp "${jail_backup}" "${jail_file}"
+  else
+    rm -f "${jail_file}"
+  fi
+  rm -f "${jail_backup}"
+}
+
 @test "journald_check: records journald persistence posture" {
   JOURNALD_DROPIN="$(mktemp)"
   cat > "${JOURNALD_DROPIN}" <<'EOF'
@@ -1222,6 +1365,21 @@ SSHD
   local json
   json="$(emit_validate_results_json)"
   assert_json_check_status "${json}" "timezone: configured (UTC)" "FAIL"
+}
+
+@test "timezone_check: records INFO instead of FAIL when timedatectl is unavailable" {
+  CONFIGURED_TIMEZONE=""
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "timedatectl" ]]; then
+      return 1
+    fi
+    builtin command "$@"
+  }
+
+  timezone_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_fail_count "${json}" "0"
 }
 
 @test "tailscale_check: fails when tailscale interface is missing" {

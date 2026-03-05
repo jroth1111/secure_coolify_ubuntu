@@ -134,6 +134,36 @@ RULES
   assert_json_check_status "${json}" "docker-user: IPv4 wan-drop" "FAIL"
 }
 
+@test "docker_user_check: fails when docker info reports Firewall: nftables" {
+  TUNNEL_MODE="false"
+  DOCKER_RULES_APPLIED="true"
+
+  command() {
+    if [[ "${1:-}" == "-v" ]]; then
+      case "${2:-}" in
+        iptables|docker|systemctl) return 0 ;;
+      esac
+    fi
+    builtin command "$@"
+  }
+
+  docker() {
+    if [[ "${1:-}" == "info" ]]; then
+      cat <<'INFO'
+Server:
+ Firewall: nftables
+INFO
+      return 0
+    fi
+    return 0
+  }
+
+  docker_user_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-user: backend" "FAIL"
+}
+
 @test "docker_user_check: fails in tunnel mode when wan-web rule exists" {
   TUNNEL_MODE="true"
   DOCKER_RULES_APPLIED="true"

@@ -119,6 +119,15 @@ setup() {
   assert_output --partial "mutually exclusive"
 }
 
+@test "parse_cli_args: rejects unknown flags" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    parse_cli_args --bogus
+  '
+  assert_failure
+  assert_output --partial "unknown option"
+}
+
 @test "detect_container_runtime: flags docker runtime via container variable" {
   container="docker"
 

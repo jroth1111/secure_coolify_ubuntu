@@ -25,6 +25,10 @@ parse_cli_args() {
       --json) JSON_MODE="true" ;;
       --health-check) HEALTH_CHECK_MODE="true" ;;
       --gate-c) GATE_C_MODE="true" ;;
+      *)
+        printf 'Error: unknown option: %s\n' "${arg}" >&2
+        exit 1
+        ;;
     esac
   done
 
@@ -319,12 +323,13 @@ ufw_check() {
   local ufw_out
   ufw_out="$(ufw status verbose 2>/dev/null)" || { record "FAIL" "ufw: status query" "cannot run ufw"; return; }
   ufw_has_port_on_iface() {
-    local port="$1" iface="$2" proto="${3:-tcp}"
-    grep -qE "${port}/${proto}.*(on[[:space:]]+${iface}.*ALLOW IN|ALLOW IN.*on[[:space:]]+${iface})" <<< "${ufw_out}"
+    local port="$1" iface="$2" proto="${3:-tcp}" iface_re
+    iface_re="$(regex_escape "${iface}")"
+    grep -qE "(^|[[:space:]])${port}/${proto}([[:space:]]|$).*(on[[:space:]]+${iface_re}.*ALLOW IN|ALLOW IN.*on[[:space:]]+${iface_re})([[:space:]]|$)" <<< "${ufw_out}"
   }
   ufw_has_port_anywhere_unscoped() {
     local port="$1" proto="${2:-tcp}"
-    grep -qE "${port}/${proto}[[:space:]]+ALLOW IN[[:space:]]+Anywhere([[:space:]]+\\(v6\\))?$" <<< "${ufw_out}"
+    grep -qE "(^|[[:space:]])${port}/${proto}([[:space:]]|$)[[:space:]]+ALLOW IN[[:space:]]+Anywhere([[:space:]]+\\(v6\\))?$" <<< "${ufw_out}"
   }
 
   if grep -q "^Status: active$" <<< "${ufw_out}"; then
@@ -443,7 +448,7 @@ docker_user_check() {
   # Warn if Docker is using nftables backend (experimental in Docker 29+)
   # DOCKER-USER chain behavior differs in nftables mode; iptables rules won't apply.
   # See: https://docs.docker.com/engine/network/firewall-nftables/
-  if docker info 2>/dev/null | grep -qE 'iptables:\s*false|firewall:\s*nftables'; then
+  if docker info 2>/dev/null | grep -qiE 'iptables:\s*false|firewall:\s*nftables'; then
     record "FAIL" "docker-user: backend" "Docker using nftables backend — DOCKER-USER iptables rules will NOT work"
     return
   else
@@ -677,8 +682,17 @@ fail2ban_check() {
   # When banaction=ufw, fail2ban delegates to UFW instead of creating iptables chains directly.
   # When banaction=iptables-multiport (default), it creates f2b-* chains.
   local banaction
-  banaction="$(grep -m1 '^banaction' /etc/fail2ban/jail.d/coolify-hardening.local 2>/dev/null \
-    | awk '{print $3}' || true)"
+  banaction="$(
+    awk -F= '
+      /^[[:space:]]*banaction[[:space:]]*=/ {
+        value=$2
+        sub(/[[:space:]]*#.*$/, "", value)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+        print value
+        exit
+      }
+    ' /etc/fail2ban/jail.d/coolify-hardening.local 2>/dev/null || true
+  )"
   banaction="${banaction:-iptables-multiport}"
 
   if [[ "${banaction}" == "ufw" ]]; then
@@ -955,10 +969,20 @@ timesync_check() {
 }
 
 timezone_check() {
-  local current_tz
-  current_tz="$(timedatectl show --property=Timezone --value 2>/dev/null || echo "?")"
-  if [[ "${current_tz}" == "?" || -z "${current_tz}" ]]; then
-    record "FAIL" "timezone: current timezone" "unable to determine timezone via timedatectl"
+  local current_tz=""
+  if command -v timedatectl >/dev/null 2>&1; then
+    current_tz="$(timedatectl show --property=Timezone --value 2>/dev/null || true)"
+  fi
+  if [[ -z "${current_tz}" || "${current_tz}" == "n/a" ]]; then
+    if [[ -f /etc/timezone ]]; then
+      current_tz="$(tr -d '[:space:]' < /etc/timezone 2>/dev/null || true)"
+    elif [[ -L /etc/localtime ]]; then
+      current_tz="$(readlink /etc/localtime 2>/dev/null || true)"
+      current_tz="${current_tz#*/zoneinfo/}"
+    fi
+  fi
+  if [[ -z "${current_tz}" || "${current_tz}" == "n/a" ]]; then
+    record "INFO" "timezone: current timezone" "unable to determine timezone from timedatectl or system files"
     return
   fi
   record "INFO" "timezone: current" "${current_tz}"
@@ -1147,11 +1171,22 @@ docker_daemon_check() {
     record "FAIL" "docker-daemon: log-opts.max-size" "not set in daemon.json"
   fi
 
-  if grep -q '"live-restore"' "${daemon_json}"; then
-    record "PASS" "docker-daemon: live-restore configured"
-  else
-    record "FAIL" "docker-daemon: live-restore" "not set in daemon.json"
-  fi
+  local live_restore
+  live_restore="$(jq -r 'if has("live-restore") then .["live-restore"] else "missing" end | tostring' "${daemon_json}" 2>/dev/null || echo "invalid")"
+  case "${live_restore}" in
+    true)
+      record "PASS" "docker-daemon: live-restore=true"
+      ;;
+    false)
+      record "FAIL" "docker-daemon: live-restore" "expected true, got false"
+      ;;
+    missing)
+      record "FAIL" "docker-daemon: live-restore" "not set in daemon.json"
+      ;;
+    *)
+      record "FAIL" "docker-daemon: live-restore" "invalid value in daemon.json"
+      ;;
+  esac
 
   # CIS 5.19: isolate container IPC namespaces
   local ipc_mode
