@@ -470,8 +470,15 @@ phase1_upload_harden() {
   harden_tmp="$(mktemp)" || die "Failed to create temp file for hardening output"
 
   # Capture stdout/stderr while preserving failure semantics from the SSH command.
-  if ! ssh_root "/root/bootstrap_hardening.sh --env-file ${REMOTE_DEPLOY_ENV_PATH} --install-tailscale --force" \
-    2>&1 | tee "${harden_tmp}"; then
+  # Emit heartbeat lines so the operator sees progress even when apt/tee is quiet.
+  if ! run_with_heartbeat \
+    "bootstrap_hardening.sh on ${SERVER_IP}" \
+    stream_command_output "${harden_tmp}" \
+    ssh_root "/root/bootstrap_hardening.sh --env-file ${REMOTE_DEPLOY_ENV_PATH} --install-tailscale --force"; then
+    warn "bootstrap_hardening.sh failed. Last 50 lines of captured output:"
+    tail -n 50 "${harden_tmp}" || true
+    warn "Attempting to fetch remote /var/log/bootstrap-hardening.log tail (best effort)..."
+    ssh_root 'tail -n 50 /var/log/bootstrap-hardening.log 2>/dev/null || true' || true
     rm -f "${harden_tmp}"
     die "bootstrap_hardening.sh failed. Check server logs: /var/log/bootstrap-hardening.log"
   fi

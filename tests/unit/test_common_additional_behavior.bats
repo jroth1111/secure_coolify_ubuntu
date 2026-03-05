@@ -25,6 +25,40 @@ setup() {
   assert_output --partial "WARN: careful"
 }
 
+@test "run_with_heartbeat: emits begin/end markers and preserves command output" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    HEARTBEAT_INTERVAL_SECONDS=20
+    run_with_heartbeat "quick-step" bash -c "echo heartbeat-ok"
+  '
+  assert_success
+  assert_output --partial "BEGIN: quick-step"
+  assert_output --partial "END: quick-step"
+  assert_output --partial "heartbeat-ok"
+}
+
+@test "run_with_heartbeat: propagates command failure with failed marker" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    HEARTBEAT_INTERVAL_SECONDS=20
+    run_with_heartbeat "failing-step" bash -c "exit 7"
+  '
+  assert_failure
+  assert_output --partial "FAILED: failing-step (exit=7"
+}
+
+@test "stream_command_output: writes capture file and streams output" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    capture="'"${BATS_TEST_TMPDIR}"'/capture.log"
+    stream_command_output "${capture}" bash -c "echo stream-ok"
+    [[ -f "${capture}" ]]
+    grep -q "stream-ok" "${capture}"
+  '
+  assert_success
+  assert_output --partial "stream-ok"
+}
+
 @test "die helper: exits non-zero with fatal message" {
   run die "boom"
   assert_failure

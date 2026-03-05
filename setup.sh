@@ -285,8 +285,13 @@ EOF
 
   # Run hardening
   log "Running bootstrap_hardening.sh (this may take a few minutes)..."
-  "${SCRIPT_DIR}/bootstrap_hardening.sh" --env-file "${deploy_env_file}" --install-tailscale --force \
-    || die "bootstrap_hardening.sh failed. Check: /var/log/bootstrap-hardening.log"
+  if ! run_with_heartbeat \
+    "bootstrap_hardening.sh (local server)" \
+    "${SCRIPT_DIR}/bootstrap_hardening.sh" --env-file "${deploy_env_file}" --install-tailscale --force; then
+    warn "bootstrap_hardening.sh failed. Last 50 lines from /var/log/bootstrap-hardening.log:"
+    tail -n 50 /var/log/bootstrap-hardening.log 2>/dev/null || true
+    die "bootstrap_hardening.sh failed. Check: /var/log/bootstrap-hardening.log"
+  fi
   pass "Hardening completed"
 
   # Capture Tailscale IP

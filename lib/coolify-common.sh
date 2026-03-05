@@ -216,6 +216,61 @@ die()  {
   log "FATAL: $*" >&2
   exit 1
 }
+HEARTBEAT_INTERVAL_SECONDS="${HEARTBEAT_INTERVAL_SECONDS:-20}"
+
+# run_with_heartbeat <label> <command...>
+# Execute a command while emitting periodic progress lines when command output is quiet.
+run_with_heartbeat() {
+  local label="$1"
+  shift
+  [[ -n "${label}" ]] || die "run_with_heartbeat: label is required"
+  (( $# > 0 )) || die "run_with_heartbeat: command is required"
+
+  local interval="${HEARTBEAT_INTERVAL_SECONDS:-20}"
+  if ! [[ "${interval}" =~ ^[0-9]+$ ]] || (( interval < 5 )); then
+    interval=20
+  fi
+
+  local started elapsed rc hb_pid
+  started="$(date '+%s')"
+  log "BEGIN: ${label}"
+
+  (
+    while :; do
+      sleep "${interval}"
+      elapsed="$(( $(date '+%s') - started ))"
+      log "IN-PROGRESS: ${label} (${elapsed}s elapsed)"
+    done
+  ) &
+  hb_pid=$!
+
+  if "$@"; then
+    rc=0
+  else
+    rc=$?
+  fi
+
+  kill "${hb_pid}" >/dev/null 2>&1 || true
+  wait "${hb_pid}" 2>/dev/null || true
+
+  elapsed="$(( $(date '+%s') - started ))"
+  if (( rc == 0 )); then
+    log "END: ${label} (${elapsed}s)"
+  else
+    warn "FAILED: ${label} (exit=${rc}, elapsed=${elapsed}s)"
+  fi
+  return "${rc}"
+}
+
+# stream_command_output <capture_file> <command...>
+# Stream command output to stdout while persisting a copy to capture_file.
+stream_command_output() {
+  local capture_file="$1"
+  shift
+  [[ -n "${capture_file}" ]] || die "stream_command_output: capture file is required"
+  (( $# > 0 )) || die "stream_command_output: command is required"
+  "$@" 2>&1 | tee "${capture_file}"
+}
 step() {
   printf '\n\033[1;36m[%s] %s\033[0m\n' "$1" "$2"
   run_report_step_start "$1" "$2"
@@ -705,7 +760,8 @@ coolify_phase3_docker_coolify_shared() {
     log "Docker already installed — skipping install."
   else
     log "Installing Docker via official apt repository..."
-    "${install_docker_fn}" || die "Docker installation failed."
+    run_with_heartbeat "Docker installation" "${install_docker_fn}" \
+      || die "Docker installation failed."
     pass "Docker installed"
   fi
   pass "Docker present"
@@ -738,7 +794,8 @@ coolify_phase3_docker_coolify_shared() {
     pass "Coolify already installed"
   else
     log "Installing Coolify (this may take a few minutes)..."
-    "${install_coolify_fn}" || die "Coolify installation failed."
+    run_with_heartbeat "Coolify installation" "${install_coolify_fn}" \
+      || die "Coolify installation failed."
     pass "Coolify installed"
   fi
 
@@ -763,7 +820,8 @@ coolify_phase3_docker_coolify_shared() {
   # Patch Coolify's docker-compose.yml to use the actual coolify network gateway IP,
   # then recreate the container so the fix takes effect.
   log "Fixing host.docker.internal for Linux Docker..."
-  "${fix_host_docker_internal_fn}" || die "Failed to reconcile host.docker.internal in Coolify compose."
+  run_with_heartbeat "host.docker.internal reconcile" "${fix_host_docker_internal_fn}" \
+    || die "Failed to reconcile host.docker.internal in Coolify compose."
   pass "host.docker.internal patched in Coolify docker-compose"
 
   # Coolify may create new Docker bridge CIDRs (for example 10.0.0.0/24 and 10.0.1.0/24)
@@ -828,7 +886,8 @@ coolify_phase4_binding_dns_shared() {
   # Configure PUSHER_* for the selected mode.
   # Tunnel mode keeps realtime traffic on Tailscale; standard mode clears explicit overrides.
   log "Reconciling PUSHER env vars for ${DEPLOY_MODE} mode..."
-  "${reconcile_pusher_fn}" || die "Failed to reconcile PUSHER env vars"
+  run_with_heartbeat "PUSHER env reconcile (${DEPLOY_MODE})" "${reconcile_pusher_fn}" \
+    || die "Failed to reconcile PUSHER env vars"
   if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
     pass "PUSHER env vars configured: ws.${DOMAIN}:443 (https)"
   else
@@ -864,10 +923,11 @@ coolify_phase4_binding_dns_shared() {
   pass "Tunnel created: ${TUNNEL_ID}"
 
   log "Installing cloudflared..."
-  "${install_cloudflared_fn}" || die "Failed to install cloudflared"
+  run_with_heartbeat "cloudflared install" "${install_cloudflared_fn}" \
+    || die "Failed to install cloudflared"
   pass "cloudflared installed"
 
-  "${configure_cloudflared_fn}" \
+  run_with_heartbeat "cloudflared tunnel configure" "${configure_cloudflared_fn}" \
     || die "Failed to write cloudflared credentials/config or start service"
   local wc_summary="*.${APP_DOMAIN}"
   [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]] && wc_summary+=" and *.${CF_ZONE_NAME}"
