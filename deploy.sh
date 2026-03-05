@@ -623,10 +623,19 @@ phase4_binding_dns() {
   }
   phase4_stop_cloudflared() { ssh_admin_sudo 'systemctl stop cloudflared 2>/dev/null || true'; }
   phase4_configure_private_routes() {
-    local domain_q
+    local domain_q resolver_q
     domain_q="$(printf '%q' "${DOMAIN}")"
+    resolver_q="$(printf '%q' "privatedns")"
     coolify_configure_private_dashboard_routes_script \
-      | ssh_admin_sudo "DOMAIN=${domain_q} bash -s"
+      | ssh_admin_sudo "DOMAIN=${domain_q} PRIVATE_TLS_RESOLVER=${resolver_q} bash -s"
+  }
+  phase4_configure_private_tls() {
+    local cf_dns_token_q cf_zone_name_q resolver_q
+    cf_dns_token_q="$(printf '%q' "${CF_API_TOKEN}")"
+    cf_zone_name_q="$(printf '%q' "${CF_ZONE_NAME}")"
+    resolver_q="$(printf '%q' "privatedns")"
+    coolify_configure_private_tls_dns_script \
+      | ssh_admin_sudo "CF_DNS_API_TOKEN=${cf_dns_token_q} CF_ZONE_NAME=${cf_zone_name_q} PRIVATE_TLS_RESOLVER=${resolver_q} bash -s"
   }
   phase4_remove_private_routes() {
     coolify_remove_private_dashboard_routes_script | ssh_admin_sudo 'bash -s'
@@ -646,6 +655,7 @@ phase4_binding_dns() {
     phase4_configure_cloudflared \
     phase4_stop_cloudflared \
     phase4_configure_private_routes \
+    phase4_configure_private_tls \
     phase4_remove_private_routes
 }
 

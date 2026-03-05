@@ -843,6 +843,7 @@ coolify_phase3_docker_coolify_shared() {
 #   configure_cloudflared_fn()
 #   stop_cloudflared_fn()
 #   configure_private_routes_fn()
+#   configure_private_tls_fn()
 #   remove_private_routes_fn()
 coolify_phase4_binding_dns_shared() {
   local coolify_env_exists_fn="$1"
@@ -853,7 +854,8 @@ coolify_phase4_binding_dns_shared() {
   local configure_cloudflared_fn="$6"
   local stop_cloudflared_fn="$7"
   local configure_private_routes_fn="$8"
-  local remove_private_routes_fn="$9"
+  local configure_private_tls_fn="$9"
+  local remove_private_routes_fn="${10}"
 
   step "4/5" "Configure dashboard binding & DNS"
 
@@ -937,6 +939,9 @@ coolify_phase4_binding_dns_shared() {
   # Private-only dashboard/realtime routes via Tailscale-only host records.
   "${configure_private_routes_fn}" || die "Failed to configure private-only dashboard routes."
   pass "Private dashboard/realtime routes configured for ${DOMAIN} and ws.${DOMAIN}"
+
+  "${configure_private_tls_fn}" || die "Failed to configure trusted private TLS for dashboard/realtime routes."
+  pass "Trusted private TLS configured for ${DOMAIN} and ws.${DOMAIN}"
 
   # Ensure exact host records are rebuilt as DNS-only Tailscale records on every run.
   cf_delete_host_records "${DOMAIN}"
@@ -1112,8 +1117,8 @@ coolify_phase5_verify_shared() {
     for (( attempt=1; attempt<=attempts; attempt++ )); do
       dashboard_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${DOMAIN}" 2>/dev/null)" || dashboard_private_code=""
       ws_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://ws.${DOMAIN}" 2>/dev/null)" || ws_private_code=""
-      dashboard_private_https_code="$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 10 "https://${DOMAIN}" 2>/dev/null)" || dashboard_private_https_code=""
-      ws_private_https_code="$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 10 "https://ws.${DOMAIN}" 2>/dev/null)" || ws_private_https_code=""
+      dashboard_private_https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://${DOMAIN}" 2>/dev/null)" || dashboard_private_https_code=""
+      ws_private_https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://ws.${DOMAIN}" 2>/dev/null)" || ws_private_https_code=""
       dashboard_private_code="${dashboard_private_code:-000}"
       ws_private_code="${ws_private_code:-000}"
       dashboard_private_https_code="${dashboard_private_https_code:-000}"
@@ -1396,6 +1401,7 @@ coolify_configure_private_dashboard_routes_script() {
   cat <<'EOF'
 set -Eeuo pipefail
 : "${DOMAIN:?DOMAIN is required}"
+: "${PRIVATE_TLS_RESOLVER:=privatedns}"
 
 dynamic_dir="/data/coolify/proxy/dynamic"
 route_file="${dynamic_dir}/coolify-private-dashboard.yaml"
@@ -1422,7 +1428,8 @@ http:
       service: coolify-private-dashboard
       middlewares:
         - coolify-private-gzip
-      tls: {}
+      tls:
+        certResolver: ${PRIVATE_TLS_RESOLVER}
     coolify-private-realtime-http:
       entryPoints:
         - http
@@ -1433,7 +1440,8 @@ http:
         - https
       rule: "Host(\`ws.${DOMAIN}\`)"
       service: coolify-private-realtime
-      tls: {}
+      tls:
+        certResolver: ${PRIVATE_TLS_RESOLVER}
     coolify-private-terminal-http:
       entryPoints:
         - http
@@ -1446,7 +1454,8 @@ http:
       rule: "Host(\`ws.${DOMAIN}\`) && PathPrefix(\`/terminal/ws\`)"
       service: coolify-private-terminal
       priority: 100
-      tls: {}
+      tls:
+        certResolver: ${PRIVATE_TLS_RESOLVER}
   services:
     coolify-private-dashboard:
       loadBalancer:
@@ -1463,6 +1472,68 @@ http:
 CFG
 
 echo "Private dashboard routes written: ${route_file}"
+EOF
+}
+
+# coolify_configure_private_tls_dns_script — Emit host-side script to ensure
+# Traefik can issue trusted certificates for private dashboard/realtime routes
+# via ACME DNS-01 using Cloudflare.
+coolify_configure_private_tls_dns_script() {
+  cat <<'EOF'
+set -Eeuo pipefail
+: "${CF_DNS_API_TOKEN:?CF_DNS_API_TOKEN is required}"
+: "${CF_ZONE_NAME:?CF_ZONE_NAME is required}"
+: "${PRIVATE_TLS_RESOLVER:=privatedns}"
+
+proxy_dir="/data/coolify/proxy"
+compose_file="${proxy_dir}/docker-compose.yml"
+env_file="${proxy_dir}/.env"
+
+[[ -f "${compose_file}" ]] || { echo "Missing ${compose_file}" >&2; exit 1; }
+install -d -m 0700 "${proxy_dir}"
+cat > "${env_file}" <<ENV
+CLOUDFLARE_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
+CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
+ENV
+chmod 0600 "${env_file}"
+
+# Remove token-specific environment overrides so env_file values are effective.
+sed -i "/^[[:space:]]*-[[:space:]]*CLOUDFLARE_DNS_API_TOKEN=.*/d" "${compose_file}"
+sed -i "/^[[:space:]]*-[[:space:]]*CF_DNS_API_TOKEN=.*/d" "${compose_file}"
+
+# Ensure Traefik service has env_file reference.
+if ! grep -q "^[[:space:]]*-[[:space:]]*/data/coolify/proxy/.env[[:space:]]*$" "${compose_file}"; then
+  if grep -q "^[[:space:]]*env_file:[[:space:]]*$" "${compose_file}"; then
+    sed -i "/^[[:space:]]*env_file:[[:space:]]*$/a\\      - /data/coolify/proxy/.env" "${compose_file}"
+  else
+    sed -i "/^[[:space:]]*networks:[[:space:]]*$/,/^[[:space:]]*ports:[[:space:]]*$/ {
+/^[[:space:]]*-[[:space:]]*coolify[[:space:]]*$/a\\    env_file:\\n      - /data/coolify/proxy/.env
+}" "${compose_file}"
+  fi
+fi
+
+ensure_compose_flag() {
+  local flag="$1"
+  if grep -Fq -- "${flag}" "${compose_file}"; then
+    return 0
+  fi
+  sed -i "/--certificatesresolvers\\.letsencrypt\\.acme\\.storage=\\/traefik\\/acme\\.json/a\\      - '${flag}'" "${compose_file}"
+}
+
+ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.dnschallenge=true"
+ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.dnschallenge.provider=cloudflare"
+ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53"
+ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.email=coolify-admin@${CF_ZONE_NAME}"
+ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.storage=/traefik/acme.json"
+
+if docker compose -f "${compose_file}" config >/dev/null 2>&1; then
+  docker compose -f "${compose_file}" up -d
+else
+  echo "Invalid Traefik compose generated at ${compose_file}" >&2
+  exit 1
+fi
+
+echo "Private TLS DNS challenge configured for resolver '${PRIVATE_TLS_RESOLVER}'."
 EOF
 }
 
@@ -1656,6 +1727,13 @@ resolve_app_domain() {
 # print_deployment_summary — Print completion banner and next-steps block.
 # Uses globals: SERVER_IP, TS_IP, ADMIN_USER, DEPLOY_MODE, DOMAIN, CF_ZONE_NAME, APP_DOMAIN, TUNNEL_ID, SERVER_TIMEZONE
 print_deployment_summary() {
+  local dashboard_url
+  if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
+    dashboard_url="https://${DOMAIN}"
+  else
+    dashboard_url="http://${TS_IP}:8000"
+  fi
+
   printf '\n'
   printf '┌─────────────────────────────────────────────────────────────┐\n'
   printf '│                    DEPLOYMENT COMPLETE                      │\n'
@@ -1666,7 +1744,7 @@ print_deployment_summary() {
   printf '│  Deploy Mode      : %-40s│\n' "${DEPLOY_MODE}"
   printf '│  Domain           : %-40s│\n' "${DOMAIN}"
   printf '│  Server Timezone  : %-40s│\n' "${SERVER_TIMEZONE}"
-  printf '│  Dashboard URL    : %-40s│\n' "http://${TS_IP}:8000"
+  printf '│  Dashboard URL    : %-40s│\n' "${dashboard_url}"
   printf '│  SSH Access       : ssh %-36s│\n' "${ADMIN_USER}@${TS_IP}"
   printf '├─────────────────────────────────────────────────────────────┤\n'
   if [[ "${DEPLOY_MODE}" == "standard" ]]; then
@@ -1688,7 +1766,7 @@ print_deployment_summary() {
   printf '\n'
   log "Next steps:"
   if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
-    log "  1. Open http://${DOMAIN} (or http://${TS_IP}:8000) and create your Coolify admin account."
+    log "  1. Open https://${DOMAIN} (or fallback http://${TS_IP}:8000) and create your Coolify admin account."
   else
     log "  1. Open http://${TS_IP}:8000 and create your Coolify admin account."
   fi

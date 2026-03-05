@@ -390,7 +390,11 @@ phase4_binding_dns() {
   }
   phase4_stop_cloudflared() { systemctl stop cloudflared 2>/dev/null || true; }
   phase4_configure_private_routes() {
-    DOMAIN="${DOMAIN}" coolify_configure_private_dashboard_routes_script | bash -s
+    DOMAIN="${DOMAIN}" PRIVATE_TLS_RESOLVER="privatedns" coolify_configure_private_dashboard_routes_script | bash -s
+  }
+  phase4_configure_private_tls() {
+    CF_DNS_API_TOKEN="${CF_API_TOKEN}" CF_ZONE_NAME="${CF_ZONE_NAME}" PRIVATE_TLS_RESOLVER="privatedns" \
+      coolify_configure_private_tls_dns_script | bash -s
   }
   phase4_remove_private_routes() {
     coolify_remove_private_dashboard_routes_script | bash -s
@@ -410,6 +414,7 @@ phase4_binding_dns() {
     phase4_configure_cloudflared \
     phase4_stop_cloudflared \
     phase4_configure_private_routes \
+    phase4_configure_private_tls \
     phase4_remove_private_routes
 }
 
