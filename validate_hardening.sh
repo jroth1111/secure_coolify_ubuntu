@@ -110,6 +110,8 @@ COOLIFY_ENV_FILE="/data/coolify/source/.env"
 DOCKER_SSH_CIDR_SYNC_SCRIPT="/usr/local/sbin/docker-ssh-cidr-sync.sh"
 DOCKER_SSH_CIDR_SYNC_SERVICE="docker-ssh-cidr-sync.service"
 DOCKER_SSH_CIDR_SYNC_TIMER="docker-ssh-cidr-sync.timer"
+FAIL2BAN_LOCAL_FILE="/etc/fail2ban/fail2ban.local"
+APPORT_DEFAULT_FILE="/etc/default/apport"
 
 load_state_context() {
   [[ -f "${STATE_FILE}" ]] || return 0
@@ -699,6 +701,15 @@ fail2ban_check() {
     record "FAIL" "fail2ban: ignoreip" "jail file missing"
   else
     record "FAIL" "fail2ban: ignoreip" "${TAILSCALE_CIDR} not in ignoreip"
+  fi
+
+  if [[ -f "${FAIL2BAN_LOCAL_FILE}" ]] \
+    && grep -Eq '^[[:space:]]*allowipv6[[:space:]]*=[[:space:]]*auto([[:space:]]|$)' "${FAIL2BAN_LOCAL_FILE}"; then
+    record "PASS" "fail2ban: allowipv6=auto"
+  elif [[ ! -f "${FAIL2BAN_LOCAL_FILE}" ]]; then
+    record "FAIL" "fail2ban: allowipv6" "${FAIL2BAN_LOCAL_FILE} missing"
+  else
+    record "FAIL" "fail2ban: allowipv6" "expected allowipv6 = auto in ${FAIL2BAN_LOCAL_FILE}"
   fi
 
   # Functional check: verify fail2ban's ban backend is operational.
@@ -1366,6 +1377,38 @@ disabled_services_check() {
   done
 }
 
+apport_check() {
+  if [[ -f "${APPORT_DEFAULT_FILE}" ]]; then
+    local apport_enabled
+    apport_enabled="$(awk -F= '/^[[:space:]]*enabled[[:space:]]*=/{gsub(/[[:space:]]/, "", $2); print $2; exit}' "${APPORT_DEFAULT_FILE}" || true)"
+    if [[ "${apport_enabled}" == "0" ]]; then
+      record "PASS" "apport: enabled=0"
+    else
+      record "FAIL" "apport: enabled" "expected 0, got ${apport_enabled:-<unset>}"
+    fi
+  else
+    record "INFO" "apport: defaults file" "${APPORT_DEFAULT_FILE} missing"
+  fi
+
+  if systemctl list-unit-files --no-legend apport.service 2>/dev/null | grep -q "^apport\\.service"; then
+    if systemctl is-active --quiet apport.service 2>/dev/null; then
+      record "FAIL" "apport: service active" "apport.service is running"
+    else
+      record "PASS" "apport: service inactive"
+    fi
+
+    local state
+    state="$(systemctl is-enabled apport.service 2>/dev/null || true)"
+    if [[ "${state}" == "masked" || "${state}" == "disabled" ]]; then
+      record "PASS" "apport: service disabled/masked (${state})"
+    else
+      record "FAIL" "apport: service enabled state" "expected masked/disabled, got ${state:-unknown}"
+    fi
+  else
+    record "INFO" "apport: service" "not installed"
+  fi
+}
+
 # ── Tailscale interface ──
 
 tailscale_check() {
@@ -1396,6 +1439,14 @@ tailscale_check() {
       record "PASS" "tailscale: IPv4 assigned (${ts_ip})"
     else
       record "FAIL" "tailscale: IPv4 address" "no Tailscale IPv4 — check auth key and login state"
+    fi
+
+    local run_ssh_pref
+    run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r '.RunSSH // "unknown"' 2>/dev/null || echo "unknown")"
+    if [[ "${run_ssh_pref}" == "false" ]]; then
+      record "PASS" "tailscale: RunSSH=false"
+    else
+      record "FAIL" "tailscale: RunSSH" "expected false, got ${run_ssh_pref}"
     fi
 
     local direct_count relay_count
@@ -1642,9 +1693,11 @@ coolify_ssh_check() {
 
   # Functional test 1: SSH as root to 127.0.0.1 using Coolify's key (host-side).
   # Tests key + sshd Match block from the host loopback perspective.
+  local host_known_hosts
+  host_known_hosts="$(mktemp /tmp/validate-hardening-host-known-hosts.XXXXXX)"
   if ssh \
-      -o StrictHostKeyChecking=no \
-      -o UserKnownHostsFile=/dev/null \
+      -o StrictHostKeyChecking=accept-new \
+      -o UserKnownHostsFile="${host_known_hosts}" \
       -o ConnectTimeout=5 \
       -o BatchMode=yes \
       -o LogLevel=ERROR \
@@ -1655,6 +1708,7 @@ coolify_ssh_check() {
     record "FAIL" "coolify: root@127.0.0.1 SSH functional" \
       "key auth failed — check sshd Match block and authorized_keys"
   fi
+  rm -f "${host_known_hosts}"
 
   # Functional test 2: SSH from INSIDE the coolify container to host.docker.internal.
   # This is the exact path Coolify uses for 'This Machine'. Catches:
@@ -1663,16 +1717,21 @@ coolify_ssh_check() {
   #   - sshd Match block not covering the Docker bridge address range
   if command -v docker >/dev/null 2>&1 && docker inspect coolify >/dev/null 2>&1; then
     local container_keyfile
+    local container_known_hosts
     container_keyfile="/var/www/html/storage/app/ssh/keys/$(basename "${keyfile}")"
+    container_known_hosts="/tmp/validate-hardening-container-known-hosts"
     if docker exec coolify \
-        sh -c "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        sh -c "rm -f '${container_known_hosts}' \
+               && ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile='${container_known_hosts}' \
                -o ConnectTimeout=5 -o BatchMode=yes -o LogLevel=ERROR \
-               -i '${container_keyfile}' root@host.docker.internal 'exit 0'" \
+               -i '${container_keyfile}' root@host.docker.internal 'exit 0' \
+               && rm -f '${container_known_hosts}'" \
         2>/dev/null; then
       record "PASS" "coolify: container→host SSH via host.docker.internal"
     else
       record "FAIL" "coolify: container→host SSH via host.docker.internal" \
         "SSH from coolify container failed — check host.docker.internal in /etc/hosts, UFW Docker-bridge SSH rules, and sshd Match block"
+      docker exec coolify sh -c "rm -f '${container_known_hosts}'" >/dev/null 2>&1 || true
     fi
   else
     record "INFO" "coolify: container→host SSH" "coolify container not running; skipped"
@@ -2083,6 +2142,7 @@ main() {
   admin_sudo_check
   apparmor_check
   disabled_services_check
+  apport_check
   tailscale_check
   coolify_binding_check
   if [[ "${GATE_C_MODE}" == "true" ]]; then
