@@ -669,7 +669,8 @@ ensure_packages() {
   if ((${#missing[@]} > 0)); then
     log "Installing required packages: ${missing[*]}"
     retry_apt_update
-    run env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+    run_apt_command env DEBIAN_FRONTEND=noninteractive PYTHONWARNINGS=ignore::SyntaxWarning \
+      apt-get install -y --no-install-recommends "${missing[@]}"
   fi
 }
 
@@ -819,11 +820,18 @@ ensure_bootloader_embed_safety() {
     die "BIOS/GPT bootloader risk: no room to auto-create a 1MiB EF02 partition before ${disk}p1. Rebuild with a BIOS boot partition."
   fi
 
-  part_num=1
-  while sgdisk -i "${part_num}" "${disk}" >/dev/null 2>&1; do
-    ((part_num++))
-    ((part_num <= 128)) || die "No free GPT partition slots available on ${disk}."
-  done
+  part_num="$(sgdisk -p "${disk}" | awk '
+    /^[[:space:]]*[0-9]+[[:space:]]+[0-9]+/ { used[$1]=1 }
+    END {
+      for (i=1; i<=128; i++) {
+        if (!(i in used)) {
+          print i
+          exit
+        }
+      }
+    }'
+  )"
+  [[ "${part_num}" =~ ^[0-9]+$ ]] || die "No free GPT partition slots available on ${disk}."
 
   run sgdisk -n "${part_num}:${start}:${end}" -t "${part_num}:ef02" -c "${part_num}:BIOS boot partition" "${disk}"
   run partprobe "${disk}" || true
