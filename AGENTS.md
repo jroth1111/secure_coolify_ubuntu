@@ -1,11 +1,7 @@
-# AGENTS.md — Agent Governance Spec
+# AGENTS.md — Agent Governance + Deployment Operator Spec
 
----
-
-## Deploy Skill
-
-Before deploying or provisioning a Coolify server, read [`AGENTS_DEPLOY.md`](AGENTS_DEPLOY.md)
-for the full collection sequence, invocation reference, and troubleshooting guide.
+This is the single canonical agent guide for this repository.
+`AGENTS_DEPLOY.md` has been retired; keep deployment governance and runbook content here.
 
 ---
 
@@ -19,14 +15,106 @@ Decompose user requests into tasks.
 
 Work follows claim → execute → verify → close. Project-specific additions:
 
-- **Never start a deployment task** without first verifying operator machine prerequisites
+- **Never start a deployment task** without first verifying operator machine prerequisites.
 - **Never start phase 3** (Docker+Coolify) unless Gate C (`validate_hardening.sh --json --gate-c`) shows `"fail":0`.
-- **Never close a deployment task** without recording the gate output in the task notes.
-- **Never close a script-change task** without `bash -n <script>` passing and the result recorded.
+- **Never close a deployment task** without recording gate output in task notes.
+- **Never close a script-change task** without `bash -n <script>` passing and result recorded.
 
 ---
 
-## 3. Quality Gates (Machine-Checkable)
+## 3. First-Principles LLM Model
+
+An LLM can run this project safely only if it tracks this operator model:
+
+1. **Project goal**: provision and harden Ubuntu for Coolify, then configure DNS/tunnel routing safely.
+2. **Execution surfaces**: `deploy.sh` (operator laptop), `setup.sh` (server-local).
+3. **External systems**: VPS provider, Tailscale, Cloudflare API, Docker/Coolify.
+4. **Prerequisites**: operator machine has Tailscale connected, SSH keypair, and required CLI tools.
+5. **Required inputs/secrets**: server IP, root auth (laptop flow), Tailscale auth key, domain, Cloudflare token(s).
+6. **Mode decision**: `tunnel` vs `standard` changes exposure, DNS, and verification behavior.
+7. **State machine**: phases `[0/5]..[5/5]` with hard gates (A-F); do not skip failed gates.
+8. **Machine contracts**:
+   - `bootstrap_hardening.sh` emits `HARDEN_RESULT_TAILSCALE_IP=<ip>` on stdout.
+   - `validate_hardening.sh --json` emits `{pass,fail,info,checks}`.
+9. **Security invariants**: UFW default-deny, strict SSH posture, DOCKER-USER WAN drop semantics, fail2ban posture.
+10. **Idempotency/resume**: reruns must be safe; `--ts-ip` resumes from phase 2; companion scripts re-sync in phase 2.
+11. **Destructive-op discipline**: deploying and Cloudflare mutations are high impact; state command + effect and require explicit confirmation.
+12. **Recovery discipline**: separate real misconfiguration from validation false positives before editing checks.
+13. **Success criteria**: final validation must report `"fail":0` and gate evidence must be captured in notes.
+14. **Change control**: shell scripts are frozen unless explicitly authorized (exception: confirmed Gate C false positive fix).
+
+---
+
+## 4. Deployment Collection Sequence (LLM)
+
+Use this sequence when driving deployment with a user.
+
+### Step 1: Verify Operator Machine First (no secret collection yet)
+
+Run locally:
+
+```bash
+tailscale status
+ls ~/.ssh/id_ed25519.pub
+command -v ssh && command -v scp && command -v curl && command -v jq && command -v sshpass && command -v ssh-keygen && command -v openssl
+```
+
+If any prerequisite fails, fix that first.
+
+### Step 2: Collect Non-Secret Deployment Shape
+
+Collect:
+
+- domain (Cloudflare-managed)
+- server public IPv4
+- mode preference (default: tunnel)
+- app-domain mode (`apex` default, `vps` optional)
+
+### Step 3: Collect Secrets and Required Credentials
+
+Collect:
+
+- root password (or root password file path for automation)
+- Tailscale auth key (`tskey-auth-*`) unless resuming with `--ts-ip`
+- Cloudflare API token (or `--cf-api-token-file`)
+- Cloudflare tunnel token if split-token model is used (`--cf-tunnel-api-token-file`)
+
+### Step 4: Confirm Defaults
+
+Unless user overrides:
+
+- admin user: `coolifyadmin`
+- pubkey file: `~/.ssh/id_ed25519.pub`
+- swap size: `2G`
+- server timezone: `UTC`
+- deploy mode: `tunnel`
+- app domain mode: `apex`
+
+### Step 5: Confirm Command + Impact, Then Execute
+
+Before running `deploy.sh` or `setup.sh`, state exact command and impact and wait for explicit user confirmation.
+
+---
+
+## 5. Deployment Phases and Gates
+
+- **[0/5] Pre-flight**: local tools, key validity, Cloudflare auth/capability checks.
+- **[1/5] Harden**: upload companion scripts + run `bootstrap_hardening.sh`; capture `HARDEN_RESULT_TAILSCALE_IP=<ip>`.
+- **[2/5] Gates**:
+  - Gate A: SSH admin over Tailscale works.
+  - Gate B: admin identity check.
+  - Gate C: `validate_hardening.sh --json --gate-c` reports 0 failures.
+- **[3/5] Docker+Coolify**:
+  - Gate D: DOCKER-USER hardening service/rules active.
+- **[4/5] Binding+DNS**: configure dashboard binding, Cloudflare DNS/tunnel depending on mode.
+- **[5/5] Final verify**:
+  - Gate E: dashboard/websocket reachable on Tailscale and blocked on public paths.
+  - Gate F: mode-specific external/private route assertions.
+  - Final `validate_hardening.sh --json` must report 0 failures.
+
+---
+
+## 6. Quality Gates (Machine-Checkable)
 
 ### Pre-Work Gate (run before starting any task)
 
@@ -38,37 +126,34 @@ bash -n deploy.sh setup.sh \
      configure_coolify_binding.sh
 ```
 
-Must be clean. If syntax check fails on an unmodified file, stop and escalate — do not proceed
-until the cause is understood.
+Must be clean. If syntax check fails on an unmodified file, stop and escalate.
 
 ### Pre-Close Gate (run before closing a task)
 
 | Task type | Required evidence |
 |-----------|------------------|
-| Script edited | `bash -n <script>` → zero errors; recorded in task notes |
+| Script edited | `bash -n <script>` -> zero errors; recorded in task notes |
 | Gate C ran | `validate_hardening.sh --json --gate-c` output with `"fail":0`; recorded in task notes |
 | DNS/tunnel changed | CF API GET confirms record exists with correct value; recorded in task notes |
 | Full deploy completed | Final `validate_hardening.sh --json` with `"fail":0`; summary box captured in task notes |
 
 ---
 
-## 4. Invariants — Do Not Break
+## 7. Invariants — Do Not Break
 
-These are external contracts and security properties. Treat them as read-only unless an
-invariant change is the explicit, user-confirmed goal.
+These are external contracts and security properties. Treat them as read-only unless invariant
+change is the explicit, user-confirmed goal.
 
 ### Machine-Readable API Contracts
 
 | Contract | Defined in | Consumed by |
 |----------|-----------|-------------|
 | `validate_hardening.sh --json` schema: `{"pass":N,"fail":N,"info":N,"checks":[...]}` | `validate_hardening.sh` | `report_validation_result()` in `lib/coolify-common.sh` |
-| `HARDEN_RESULT_TAILSCALE_IP=<ip>` sentinel — last stdout line of bootstrap | `bootstrap_hardening.sh` | `deploy.sh` phase 1 via `tee` capture (only channel after UFW blocks root SSH) |
-| State file at `/var/lib/bootstrap-hardening/state` — key=value, sourced at runtime | `bootstrap_hardening.sh write_state()` | `validate_hardening.sh` — field names are implicit API |
-| Tunnel name `${DOMAIN%%.*}-coolify` — used for stale-tunnel lookup by name | `lib/coolify-common.sh cf_create_tunnel()` | Same function on re-run (DELETE by name before CREATE) |
+| `HARDEN_RESULT_TAILSCALE_IP=<ip>` sentinel (stdout) | `bootstrap_hardening.sh` | `deploy.sh` phase 1 capture via `tee` |
+| State file `/var/lib/bootstrap-hardening/state` (key=value) | `bootstrap_hardening.sh write_state()` | `validate_hardening.sh` (state-derived checks) |
+| Tunnel name `${DOMAIN%%.*}-coolify` | `lib/coolify-common.sh cf_create_tunnel()` | same function on re-run (delete stale by name before create) |
 
-Changing any of these without updating all consumers is a breaking change. Changes to
-`validate_hardening.sh` JSON fields require matching changes to `report_validation_result()`.
-Changes to the sentinel name require matching changes in `deploy.sh` phase 1.
+Changing these without updating all consumers is a breaking change.
 
 ### Security Invariants — Must Not Weaken
 
@@ -76,54 +161,51 @@ Changes to the sentinel name require matching changes in `deploy.sh` phase 1.
   CIDRs (`docker_ssh_cidrs` from state); dashboard ports (8000/6001/6002) only on `tailscale0`;
   WAN 80/443 absent in tunnel mode.
 - **DOCKER-USER**: WAN ingress dropped in tunnel mode; bridge traffic returned; no WAN bypass.
-- **SSH**: global `PermitRootLogin no`; key-only root login only from localhost
-  (`127.0.0.1`, `::1`) plus Docker bridge CIDRs via the `Match Address` block. CIDRs come from
-  strict discovery (`STRICT_DOCKER_SSH_CIDRS=true`) with compatibility fallback to
-  `10.0.0.0/8,172.16.0.0/12`.
-- **fail2ban**: ignores Tailscale CIDR (100.64.0.0/10); bans WAN brute-force.
+- **SSH**: global `PermitRootLogin no`; key-only root login only from localhost (`127.0.0.1`, `::1`)
+  plus Docker bridge CIDRs via `Match Address`. CIDRs come from strict discovery
+  (`STRICT_DOCKER_SSH_CIDRS=true`) with compatibility fallback to `10.0.0.0/8,172.16.0.0/12`.
+- **fail2ban**: ignores Tailscale CIDR (`100.64.0.0/10`); bans WAN brute-force.
 
 ### Idempotency Contract
 
 Every operation in every script must be safe to re-run on an already-provisioned server.
-Companion scripts are re-uploaded and re-run every time `--ts-ip` resumes a deployment
-(via `sync_companion_scripts()` in phase 2). Any non-idempotent logic is a bug.
+Companion scripts are re-uploaded every `--ts-ip` resume via `sync_companion_scripts()` in phase 2.
+Any non-idempotent logic is a bug.
 
 ---
 
-## 5. Auditability
+## 8. Auditability
 
 Every task close must include evidence, not just intent. Example:
 
-```
+```text
 Fixed fstab grep pattern in validate_hardening.sh swap_check;
 bash -n exits 0; Gate C passed on resume with --ts-ip 100.x.x.x (0 failures)
 ```
 
-Append raw gate output to task notes for deployment tasks. Trace each code change back to a
-task. No ad-hoc edits outside the task loop.
+Append raw gate output to task notes for deployment tasks. Trace each code change back to a task.
 
 ---
 
-## 6. Destructive Operations — Confirm Before Executing
+## 9. Destructive Operations — Confirm Before Executing
 
-These affect live infrastructure and are difficult or impossible to reverse:
+These affect live infrastructure and are difficult/impossible to reverse:
 
 | Operation | Impact |
 |-----------|--------|
 | Running `deploy.sh` or `setup.sh` against a server | Irreversible system changes (UFW reset, SSH hardening) |
 | Deleting a Cloudflare Tunnel | Drops live traffic for all tunnel-routed apps immediately |
-| Deleting or modifying Cloudflare DNS records | Drops or misdirects live traffic |
-| `ufw --force reset` on a live server | Removes all firewall rules; may lock out all SSH access |
+| Deleting/modifying Cloudflare DNS records | Drops or misdirects live traffic |
+| `ufw --force reset` on a live server | Removes all firewall rules; can lock out SSH |
 | Editing `/data/coolify` files or querying `coolify-db` | Risk of Coolify data corruption |
 
-State the exact command and its effect before running. Wait for explicit user confirmation.
+State exact command and effect before running. Wait for explicit user confirmation.
 
 ---
 
 ## Script Edit Policy
 
-The shell scripts are frozen — tested against a live deployment. **Do not edit any `.sh` file**
-without an explicit instruction:
+The shell scripts are frozen. **Do not edit any `.sh` file** without explicit instruction:
 
 - `bootstrap_hardening.sh`
 - `validate_hardening.sh`
@@ -132,49 +214,51 @@ without an explicit instruction:
 - `setup.sh`
 - `lib/coolify-common.sh`
 
-Files free to edit: `AGENTS_DEPLOY.md`, `AGENTS.md`.
+Files free to edit by default:
 
-**Exception — Gate C false positives**: If Gate C fails and the failing check does not correspond
-to any real server misconfiguration, the cause may be a bug in `validate_hardening.sh`
-(wrong grep pattern, missing format variant). Protocol:
+- `AGENTS.md`
 
-1. Confirm on the server that the expected state actually holds (e.g., `swapon --show`,
-   `cat /etc/fstab`) before concluding it is a false positive.
-2. Fix `validate_hardening.sh` locally — this is a legitimate edit.
-3. Resume with `--ts-ip <ip>` — the corrected script is re-synced automatically via
-   `sync_companion_scripts()` in phase 2.
-4. **Never comment out or weaken a check to suppress a real failure.**
+**Exception — Gate C false positives**: If Gate C fails but server state is actually correct,
+the validator may be wrong.
+
+Protocol:
+
+1. Confirm expected state directly on server (for example `swapon --show`, `cat /etc/fstab`).
+2. Fix `validate_hardening.sh` locally.
+3. Resume with `--ts-ip <ip>`; corrected script re-syncs in phase 2.
+4. Never weaken checks to suppress a real failure.
 
 ---
 
 ## Recovery Rules
 
-### Phase 1 output gap (3–5 min silence in background output file)
-Normal. `tee` block-buffers when stdout is not a terminal. `unattended-upgrades` and Tailscale
-install produce no output while running. Wait for `PASS Hardening completed` followed by
-`PASS Server Tailscale IP: 100.x.x.x`.
+### Phase 1 output gap (3-5 minutes of silence)
+
+Normal when output is file-buffered through `tee`; `unattended-upgrades` and Tailscale install can
+be quiet. Wait for `PASS Hardening completed` then `PASS Server Tailscale IP: 100.x.x.x`.
 
 ### Wrong root password (`sshpass` exit code 5)
-VPS providers auto-generate a new root password after a rebuild. Verify the current password
-in the VPS control panel. Re-run with the correct `--root-pass-file` (or interactive prompt).
+
+VPS providers often rotate root password after rebuild. Verify in provider panel and re-run with
+correct `--root-pass-file` (or interactive prompt).
 
 ### Gate A/B fails (SSH timeout)
-Check `tailscale status` on operator machine. If the server appears in the Tailscale admin
-panel with a `100.x.x.x` IP, resume with `--ts-ip <ip>`.
+
+Check operator `tailscale status`. If server appears in Tailscale admin with `100.x.x.x`, resume
+with `--ts-ip <ip>`.
 
 ### Gate C fails
-Distinguish cause before touching anything:
 
-1. **Real server failure**: read `/var/log/bootstrap-hardening.log` on server; run
-   `sudo /root/validate_hardening.sh --json --gate-c` and inspect `"checks"` array for failing items.
-   Fix the server condition, then resume with `--ts-ip`.
-2. **Script false positive**: verify the expected state directly on the server. If correct,
-   fix `validate_hardening.sh` locally (see Script Edit Policy exception above).
+Distinguish cause before changes:
+
+1. **Real server failure**: inspect `/var/log/bootstrap-hardening.log`; run
+   `sudo /root/validate_hardening.sh --json --gate-c`; fix server state; resume with `--ts-ip`.
+2. **Script false positive**: verify expected state manually, then fix validator logic.
 
 ### No ready tasks mid-deployment
-If phase 1 completed (server has a Tailscale IP), create a task to resume from phase 2
-via `--ts-ip <ip>` and proceed.
+
+If phase 1 completed (server has Tailscale IP), create task to resume from phase 2 via `--ts-ip`.
 
 ### Escalation trigger
-If two consecutive recovery attempts produce no progress — stop, document current state in
-task notes, and surface a decision request to the user before continuing.
+
+If two consecutive recovery attempts make no progress, stop and request user decision.

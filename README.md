@@ -6,7 +6,7 @@ Turn a fresh Ubuntu VPS into a **production-hardened Coolify server** in ~15 min
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu)](https://ubuntu.com/)
 [![Coolify](https://img.shields.io/badge/Coolify-v4+-purple?logo=docker)](https://coolify.io/)
 [![Shellcheck](https://img.shields.io/badge/ShellCheck-passed-brightgreen)](https://www.shellcheck.net/)
-[![LLM Friendly](https://img.shields.io/badge/LLM-friendly-blue)](AGENTS_DEPLOY.md)
+[![LLM Friendly](https://img.shields.io/badge/LLM-friendly-blue)](AGENTS.md)
 
 ---
 
@@ -104,12 +104,12 @@ Phase 5: Final reachability + security verification
 
 This project is designed to be LLM-friendly. If you're using Claude, GPT-5 Codex, or another AI assistant to help deploy:
 
-- **[AGENTS_DEPLOY.md](AGENTS_DEPLOY.md)** — Detailed instructions for AI agents to execute the deployment
+- **[AGENTS.md](AGENTS.md)** — Canonical governance + deployment operator instructions for AI agents
 - **Clear phase structure** — Each phase has explicit inputs, outputs, and verification gates
 - **Idempotent operations** — Safe to re-run if interrupted or if the AI needs to retry
 - **Validation at every step** — `validate_hardening.sh` provides machine-readable JSON output
 
-Just point your AI assistant to `AGENTS_DEPLOY.md` and it can guide you through the entire process.
+Point your AI assistant to `AGENTS.md` and it can guide you through the entire process.
 
 ---
 
