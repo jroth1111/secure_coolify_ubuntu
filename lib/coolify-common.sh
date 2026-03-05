@@ -1773,7 +1773,7 @@ print_deployment_summary() {
   log ""
   log "  2. Cloudflare SSL mode (one-time):"
   log "       Cloudflare dashboard > your zone > SSL/TLS > Overview > set to 'Full'"
-  log "       (not Full Strict — Coolify uses self-signed certs internally)"
+  log "       (use Full Strict only if you manage strict-valid origin certs for all proxied hosts)"
   log ""
   log "  3. Start the proxy: Coolify UI > Servers > localhost > Proxy > Start Proxy"
   log "       (required for app subdomains to route through Traefik)"
