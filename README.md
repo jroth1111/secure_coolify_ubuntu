@@ -330,6 +330,18 @@ make test-all            # Full suite with Docker
 
 ## CLI Reference
 
+### What You Actually Need To Decide
+
+| Workflow | Required inputs | Optional with defaults | Not required |
+|----------|-----------------|------------------------|--------------|
+| `deploy.sh` fresh run | `--server-ip`, `--domain`, root password (prompt or `--root-pass-file`), `--tailscale-auth-key`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`) | `--admin-user` (`coolifyadmin`), `--pubkey-file` (`~/.ssh/id_ed25519.pub`), `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--server-timezone` (`UTC` in interactive mode), `--tailscale-direct-wan` (off), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, optional split tunnel token (`--cf-tunnel-api-token-file`) | `--ts-ip` |
+| `deploy.sh --ts-ip <ip>` resume | `--server-ip`, `--domain`, `--ts-ip`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`) | Same optional defaults as fresh run | root password / `--root-pass-file`, `--tailscale-auth-key` |
+| `setup.sh` server-local run | `--server-ip`, `--admin-user`, `--pubkey-file`, `--domain`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), `--tailscale-auth-key` unless `--preflight-only` | `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--server-timezone` (`UTC` in interactive mode), `--tailscale-direct-wan` (off), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, optional split tunnel token (`--cf-tunnel-api-token-file`) | root password / `--root-pass-file`, `--ts-ip` |
+
+Important:
+- With `--yes`, set `--server-timezone <IANA>` (or `SERVER_TIMEZONE`) explicitly.
+- Removed on purpose: `--cf-api-token`, `--cf-tunnel-api-token`. Use env vars or `--*-token-file`.
+
 <details>
 <summary>📋 deploy.sh flags</summary>
 

@@ -28,6 +28,20 @@ Token input options:
 Timezone input:
 - In non-interactive runs, pass `--server-timezone <IANA>` explicitly (for example `Australia/Melbourne` or `UTC`).
 
+### Automated Input Checklist (What You Must Decide)
+
+Use this to decide inputs before running commands.
+
+| Workflow | Required inputs | Optional inputs with defaults | Not required |
+|----------|-----------------|-------------------------------|--------------|
+| `deploy.sh` fresh run | `--server-ip`, `--domain`, root password (prompt or `--root-pass-file`), `--tailscale-auth-key`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`) | `--admin-user` (`coolifyadmin`), `--pubkey-file` (`~/.ssh/id_ed25519.pub`), `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--server-timezone` (`UTC` interactive), `--tailscale-direct-wan` (off), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, optional split tunnel token (`--cf-tunnel-api-token-file`) | `--ts-ip` |
+| `deploy.sh --ts-ip <ip>` resume | `--server-ip`, `--domain`, `--ts-ip`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`) | Same optional defaults as fresh run | root password / `--root-pass-file`, `--tailscale-auth-key` |
+| `setup.sh` server-local run | `--server-ip`, `--admin-user`, `--pubkey-file`, `--domain`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), `--tailscale-auth-key` unless `--preflight-only` | `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--server-timezone` (`UTC` interactive), `--tailscale-direct-wan` (off), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, optional split tunnel token (`--cf-tunnel-api-token-file`) | root password / `--root-pass-file`, `--ts-ip` |
+
+Rules that prevent confusion:
+- With `--yes`, set `--server-timezone <IANA>` (or `SERVER_TIMEZONE`) explicitly.
+- `--cf-api-token` and `--cf-tunnel-api-token` CLI flags are intentionally removed; use env vars or `--*-token-file`.
+
 For fast permission validation before touching the server, run:
 
 ```bash

@@ -94,6 +94,20 @@ Unless user overrides:
 
 Before running `deploy.sh` or `setup.sh`, state exact command and impact and wait for explicit user confirmation.
 
+### Step 6: Workflow Input Contract (No Guesswork)
+
+Use this checklist to avoid over-asking or missing required inputs.
+
+| Workflow | Must be user-provided/decided | Optional overrides (safe defaults exist) | Not required in this workflow |
+|----------|-------------------------------|------------------------------------------|-------------------------------|
+| `deploy.sh` fresh run | `--server-ip`, `--domain`, root password (prompt or `--root-pass-file`), `--tailscale-auth-key`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`) | `--admin-user` (`coolifyadmin`), `--pubkey-file` (`~/.ssh/id_ed25519.pub`), `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--server-timezone` (`UTC` interactive), `--tailscale-direct-wan` (disabled by default), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, split tunnel token file (`--cf-tunnel-api-token-file`) | `--ts-ip` |
+| `deploy.sh --ts-ip <ip>` resume | `--server-ip`, `--domain`, `--ts-ip`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`) | Same overrides/defaults as fresh run | root password, `--root-pass-file`, `--tailscale-auth-key` |
+| `setup.sh` server-local run | `--server-ip`, `--admin-user`, `--pubkey-file`, `--domain`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), `--tailscale-auth-key` unless `--preflight-only` | `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--server-timezone` (`UTC` interactive), `--tailscale-direct-wan` (disabled by default), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, split tunnel token file (`--cf-tunnel-api-token-file`) | root password / `--root-pass-file`, `--ts-ip` |
+
+Non-interactive caveat:
+- With `--yes`, pass `--server-timezone` (or `SERVER_TIMEZONE`) explicitly. The scripts do not prompt in non-interactive mode.
+- `--cf-api-token` and `--cf-tunnel-api-token` flags are removed; use env vars or `--*-token-file`.
+
 ---
 
 ## 5. Deployment Phases and Gates
