@@ -1128,8 +1128,8 @@ coolify_phase5_verify_shared() {
       dashboard_private_https_code="${dashboard_private_https_code:0:3}"
       ws_private_https_code="${ws_private_https_code:0:3}"
 
-      if [[ "${dashboard_private_code}" =~ ^[23][0-9][0-9]$ && \
-            "${ws_private_code}" != "000" && \
+      if [[ "${dashboard_private_code}" =~ ^30[1278]$ && \
+            "${ws_private_code}" =~ ^30[1278]$ && \
             "${dashboard_private_https_code}" =~ ^[23][0-9][0-9]$ && \
             "${ws_private_https_code}" != "000" ]]; then
         gate_f_private_routes_passed=true
@@ -1142,14 +1142,14 @@ coolify_phase5_verify_shared() {
     done
 
     if [[ "${gate_f_private_routes_passed}" != "true" ]]; then
-      fail "Gate F: private dashboard route failed (http://${DOMAIN} → HTTP ${dashboard_private_code})"
-      fail "Gate F: private websocket host failed (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
+      fail "Gate F: private dashboard HTTP did not redirect to HTTPS (http://${DOMAIN} → HTTP ${dashboard_private_code})"
+      fail "Gate F: private websocket HTTP did not redirect to HTTPS (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
       fail "Gate F: private dashboard HTTPS route failed (https://${DOMAIN} → HTTP ${dashboard_private_https_code})"
       fail "Gate F: private websocket HTTPS host failed (https://ws.${DOMAIN} → HTTP ${ws_private_https_code})"
       die "Gate F failed: private host routes are not functional on Tailscale."
     fi
-    pass "Gate F: private dashboard route works (http://${DOMAIN} → HTTP ${dashboard_private_code})"
-    pass "Gate F: private websocket host responds (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
+    pass "Gate F: private dashboard HTTP redirects to HTTPS (http://${DOMAIN} → HTTP ${dashboard_private_code})"
+    pass "Gate F: private websocket HTTP redirects to HTTPS (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
     pass "Gate F: private dashboard HTTPS route works (https://${DOMAIN} → HTTP ${dashboard_private_https_code})"
     pass "Gate F: private websocket HTTPS host responds (https://ws.${DOMAIN} → HTTP ${ws_private_https_code})"
 
@@ -1413,14 +1413,18 @@ http:
   middlewares:
     coolify-private-gzip:
       compress: true
+    coolify-private-force-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
   routers:
     coolify-private-dashboard-http:
       entryPoints:
         - http
       rule: "Host(\`${DOMAIN}\`)"
-      service: coolify-private-dashboard
+      service: noop@internal
       middlewares:
-        - coolify-private-gzip
+        - coolify-private-force-https
     coolify-private-dashboard-https:
       entryPoints:
         - https
@@ -1434,7 +1438,9 @@ http:
       entryPoints:
         - http
       rule: "Host(\`ws.${DOMAIN}\`)"
-      service: coolify-private-realtime
+      service: noop@internal
+      middlewares:
+        - coolify-private-force-https
     coolify-private-realtime-https:
       entryPoints:
         - https
@@ -1446,7 +1452,9 @@ http:
       entryPoints:
         - http
       rule: "Host(\`ws.${DOMAIN}\`) && PathPrefix(\`/terminal/ws\`)"
-      service: coolify-private-terminal
+      service: noop@internal
+      middlewares:
+        - coolify-private-force-https
       priority: 100
     coolify-private-terminal-https:
       entryPoints:

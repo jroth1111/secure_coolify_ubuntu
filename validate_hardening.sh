@@ -1917,6 +1917,41 @@ cloudflared_check() {
       if [[ "${private_router_fail}" -eq 0 ]]; then
         record "PASS" "cloudflared: private http/https router set complete"
       fi
+
+      if grep -Fq "coolify-private-force-https:" "${private_route_file}" \
+        && grep -Fq "redirectScheme:" "${private_route_file}" \
+        && grep -Eq '^[[:space:]]*scheme:[[:space:]]*https[[:space:]]*$' "${private_route_file}"; then
+        record "PASS" "cloudflared: private HTTP→HTTPS redirect middleware"
+      else
+        record "FAIL" "cloudflared: private HTTP→HTTPS redirect middleware" \
+          "missing coolify-private-force-https redirectScheme in ${private_route_file}"
+      fi
+
+      local http_router_name http_router_block
+      for http_router_name in \
+        coolify-private-dashboard-http \
+        coolify-private-realtime-http \
+        coolify-private-terminal-http; do
+        http_router_block="$(awk -v router="${http_router_name}:" '
+          $0 ~ "^    " router "[[:space:]]*$" {in_router=1; next}
+          in_router && $0 ~ "^    [a-zA-Z0-9_-]+:[[:space:]]*$" {exit}
+          in_router {print}
+        ' "${private_route_file}")"
+        if grep -Fq "service: noop@internal" <<< "${http_router_block}" \
+          && grep -Fq "coolify-private-force-https" <<< "${http_router_block}"; then
+          record "PASS" "cloudflared: ${http_router_name} enforces HTTPS redirect"
+        else
+          record "FAIL" "cloudflared: ${http_router_name} enforces HTTPS redirect" \
+            "expected service noop@internal + coolify-private-force-https middleware"
+        fi
+      done
+
+      if grep -Eq '^[[:space:]]*certResolver:[[:space:]]*[^[:space:]]+' "${private_route_file}"; then
+        record "PASS" "cloudflared: private HTTPS routers use certResolver"
+      else
+        record "FAIL" "cloudflared: private HTTPS routers use certResolver" \
+          "missing certResolver on private HTTPS routers in ${private_route_file}"
+      fi
     fi
 
     if [[ -n "${dashboard_host}" ]]; then
