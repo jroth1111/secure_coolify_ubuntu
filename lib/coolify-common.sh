@@ -986,9 +986,9 @@ coolify_phase5_verify_shared() {
   sleep 5
 
   local ts_code pub_code
-  local attempts=12
+  local attempts=24
   local attempt
-  local delay=10
+  local delay=5
   local gate_e_passed=false
   for (( attempt=1; attempt<=attempts; attempt++ )); do
     ts_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 10 "http://${TS_IP}:8000" 2>/dev/null)" || ts_code=""
@@ -1391,7 +1391,7 @@ rm -f "${tmp}"
 echo "PUSHER env updated for mode=${mode}"
 docker compose -f /data/coolify/source/docker-compose.yml \
                -f /data/coolify/source/docker-compose.prod.yml \
-               up -d --force-recreate coolify soketi 2>&1 | tail -5
+               up -d --no-deps coolify
 EOF
 }
 
