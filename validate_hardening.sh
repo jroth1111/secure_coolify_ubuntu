@@ -112,6 +112,7 @@ DOCKER_SSH_CIDR_SYNC_SERVICE="docker-ssh-cidr-sync.service"
 DOCKER_SSH_CIDR_SYNC_TIMER="docker-ssh-cidr-sync.timer"
 FAIL2BAN_LOCAL_FILE="/etc/fail2ban/fail2ban.local"
 APPORT_DEFAULT_FILE="/etc/default/apport"
+CRON_EXTRA_OPTS_DROPIN="/etc/systemd/system/cron.service.d/10-extra-opts.conf"
 
 load_state_context() {
   [[ -f "${STATE_FILE}" ]] || return 0
@@ -1409,6 +1410,33 @@ apport_check() {
   fi
 }
 
+cron_check() {
+  if ! unit_available "cron.service"; then
+    record "INFO" "cron: service" "not installed"
+    return 0
+  fi
+
+  local cron_env
+  cron_env="$(systemctl show cron.service -p Environment --value 2>/dev/null || true)"
+  if [[ "${cron_env}" =~ (^|[[:space:]])EXTRA_OPTS= ]]; then
+    record "PASS" "cron: EXTRA_OPTS environment set"
+  else
+    record "FAIL" "cron: EXTRA_OPTS environment set" "missing Environment override (expected ${CRON_EXTRA_OPTS_DROPIN})"
+  fi
+
+  if command -v journalctl >/dev/null 2>&1; then
+    local unset_count
+    unset_count="$(journalctl -b -u cron --no-pager 2>/dev/null | grep -c 'Referenced but unset environment variable evaluates to an empty string: EXTRA_OPTS' || true)"
+    if [[ "${unset_count}" =~ ^[0-9]+$ && "${unset_count}" -eq 0 ]]; then
+      record "PASS" "cron: no EXTRA_OPTS unset warnings this boot"
+    else
+      record "FAIL" "cron: no EXTRA_OPTS unset warnings this boot" "found ${unset_count:-unknown} warning(s)"
+    fi
+  else
+    record "INFO" "cron: warning scan" "journalctl not available"
+  fi
+}
+
 # ── Tailscale interface ──
 
 tailscale_check() {
@@ -2178,6 +2206,7 @@ main() {
   apparmor_check
   disabled_services_check
   apport_check
+  cron_check
   tailscale_check
   coolify_binding_check
   if [[ "${GATE_C_MODE}" == "true" ]]; then
