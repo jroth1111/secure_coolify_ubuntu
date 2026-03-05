@@ -340,10 +340,25 @@ phase2_gates() {
   fi
 
   log "Gate C: Running validate_hardening.sh..."
-  local validate_json
-  validate_json="$("${SCRIPT_DIR}/validate_hardening.sh" --json --gate-c 2>/dev/null)" || true
-  report_validation_result "Gate C" "${validate_json}" \
-    "Gate C failed. Fix validation failures before continuing."
+  local validate_json gate_c_fail attempt max_attempts=6 delay=10
+  for (( attempt=1; attempt<=max_attempts; attempt++ )); do
+    validate_json="$("${SCRIPT_DIR}/validate_hardening.sh" --json --gate-c 2>/dev/null)" || true
+    gate_c_fail="$(jq -r '.fail // 999' 2>/dev/null <<< "${validate_json:-}" || echo "999")"
+    if [[ "${gate_c_fail}" == "0" ]]; then
+      report_validation_result "Gate C" "${validate_json}" \
+        "Gate C failed. Fix validation failures before continuing."
+      break
+    fi
+    if (( attempt < max_attempts )) \
+      && jq -e '.checks | [ .[] | select(.status=="FAIL") | .check ] as $fails | ($fails|length)>0 and all($fails[]; .=="timesync: NTPSynchronized")' \
+        >/dev/null 2>&1 <<< "${validate_json}"; then
+      log "  Gate C transient failure (timesync not yet synchronized); retrying in ${delay}s (${attempt}/${max_attempts})..."
+      sleep "${delay}"
+      continue
+    fi
+    report_validation_result "Gate C" "${validate_json}" \
+      "Gate C failed. Fix validation failures before continuing."
+  done
 }
 
 # ── Phase 3: Docker + Coolify ──────────────────────────────────────────────
