@@ -809,7 +809,7 @@ install_tailscale() {
     local elapsed=0
     while ! ip link show "${TAILSCALE_IFACE}" >/dev/null 2>&1; do
       if (( elapsed >= timeout )); then
-        die "Timeout waiting for Tailscale interface. Run 'tailscale up --ssh' manually and retry."
+        die "Timeout waiting for Tailscale interface. Run 'tailscale up --ssh=false' manually and retry."
       fi
       sleep 2
       elapsed=$((elapsed + 2))
@@ -826,8 +826,8 @@ ensure_tailscale_ssh_disabled() {
   fi
 
   local run_ssh_pref
-  run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r '.RunSSH // empty' 2>/dev/null || true)"
-  if [[ -z "${run_ssh_pref}" ]]; then
+  run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r 'if has("RunSSH") then (.RunSSH|tostring) else "unknown" end' 2>/dev/null || echo "unknown")"
+  if [[ "${run_ssh_pref}" == "unknown" ]]; then
     warn "Unable to read Tailscale RunSSH preference; skipping RunSSH enforcement."
     return 0
   fi
@@ -839,7 +839,7 @@ ensure_tailscale_ssh_disabled() {
     fi
 
     run tailscale set --ssh=false
-    run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r '.RunSSH // empty' 2>/dev/null || true)"
+    run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r 'if has("RunSSH") then (.RunSSH|tostring) else "unknown" end' 2>/dev/null || echo "unknown")"
     [[ "${run_ssh_pref}" == "false" ]] || die "Failed to disable Tailscale SSH (RunSSH=${run_ssh_pref:-unknown})."
     log "Tailscale SSH disabled (RunSSH=false); host sshd remains authoritative."
   else
@@ -2402,7 +2402,7 @@ run_post_checks() {
     || die "Post-check failed: timezone is ${current_timezone:-unknown}, expected ${TIMEZONE}."
 
   local run_ssh_pref
-  run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r '.RunSSH // empty' 2>/dev/null || true)"
+  run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r 'if has("RunSSH") then (.RunSSH|tostring) else "unknown" end' 2>/dev/null || echo "unknown")"
   [[ "${run_ssh_pref}" == "false" ]] \
     || die "Post-check failed: tailscale RunSSH is ${run_ssh_pref:-unknown}, expected false."
 

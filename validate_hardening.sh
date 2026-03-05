@@ -1442,7 +1442,7 @@ tailscale_check() {
     fi
 
     local run_ssh_pref
-    run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r '.RunSSH // "unknown"' 2>/dev/null || echo "unknown")"
+    run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r 'if has("RunSSH") then (.RunSSH|tostring) else "unknown" end' 2>/dev/null || echo "unknown")"
     if [[ "${run_ssh_pref}" == "false" ]]; then
       record "PASS" "tailscale: RunSSH=false"
     else
