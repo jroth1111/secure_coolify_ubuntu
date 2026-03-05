@@ -1091,6 +1091,74 @@ swap_check() {
   fi
 }
 
+resolve_root_disk() {
+  local root_src root_pk
+  root_src="$(findmnt -n -o SOURCE / 2>/dev/null || true)"
+  [[ "${root_src}" =~ ^/dev/ ]] || return 1
+
+  root_pk="$(lsblk -no PKNAME "${root_src}" 2>/dev/null | head -n1 || true)"
+  if [[ -z "${root_pk}" ]]; then
+    case "${root_src}" in
+      /dev/nvme*n[0-9]p[0-9]*) root_pk="${root_src#/dev/}"; root_pk="${root_pk%p*}" ;;
+      /dev/*[0-9]) root_pk="${root_src#/dev/}"; root_pk="${root_pk%%[0-9]*}" ;;
+      /dev/*) root_pk="${root_src#/dev/}" ;;
+    esac
+  fi
+  [[ -n "${root_pk}" ]] || return 1
+  printf '/dev/%s\n' "${root_pk}"
+}
+
+bootloader_check() {
+  if [[ "${IS_CONTAINER}" == "true" ]]; then
+    record "INFO" "bootloader: partition safety" "unavailable in container"
+    return
+  fi
+
+  if [[ -d /sys/firmware/efi ]]; then
+    record "PASS" "bootloader: UEFI mode"
+    return
+  fi
+
+  local root_disk pttype
+  root_disk="$(resolve_root_disk 2>/dev/null || true)"
+  if [[ -z "${root_disk}" || ! -b "${root_disk}" ]]; then
+    record "INFO" "bootloader: BIOS/GPT safety" "unable to resolve root disk"
+    return
+  fi
+
+  pttype="$(lsblk -dn -o PTTYPE "${root_disk}" 2>/dev/null | head -n1 | tr -d '[:space:]')"
+  if [[ "${pttype}" != "gpt" ]]; then
+    record "PASS" "bootloader: BIOS non-GPT mode (${pttype:-unknown})"
+    return
+  fi
+
+  if ! command -v sgdisk >/dev/null 2>&1; then
+    record "FAIL" "bootloader: BIOS/GPT safety" "sgdisk missing; cannot verify EF02 BIOS boot partition"
+    return
+  fi
+
+  if sgdisk -p "${root_disk}" 2>/dev/null | awk '/^[[:space:]]*[0-9]+[[:space:]]+[0-9]+/{ if ($6=="EF02") found=1 } END{ exit(found?0:1) }'; then
+    record "PASS" "bootloader: BIOS/GPT has EF02 partition (${root_disk})"
+  else
+    record "FAIL" "bootloader: BIOS/GPT missing EF02 partition (${root_disk})" \
+      "GRUB BIOS installs may fall back to unreliable blocklists"
+  fi
+}
+
+reboot_required_check() {
+  if [[ -f /run/reboot-required ]]; then
+    local pkgs
+    pkgs="$(tr '\n' ',' < /run/reboot-required.pkgs 2>/dev/null | sed 's/,$//' || true)"
+    if [[ -n "${pkgs}" ]]; then
+      record "FAIL" "reboot: pending" "reboot required by updated packages (${pkgs})"
+    else
+      record "FAIL" "reboot: pending" "reboot required"
+    fi
+  else
+    record "PASS" "reboot: not required"
+  fi
+}
+
 # ── Banner ──
 
 banner_check() {
@@ -2253,11 +2321,13 @@ main() {
   fail2ban_check
   auditd_check
   unattended_upgrades_check
+  reboot_required_check
   journald_check
   rsyslog_check
   timesync_check
   timezone_check
   swap_check
+  bootloader_check
   banner_check
   admin_sudo_check
   apparmor_check

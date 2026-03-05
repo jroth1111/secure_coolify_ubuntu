@@ -649,6 +649,7 @@ ensure_packages() {
   packages=(
     curl
     jq
+    gdisk
     ufw
     auditd
     audispd-plugins
@@ -695,7 +696,7 @@ ensure_power_group() {
 
 require_commands() {
   local commands=()
-  commands+=(ip awk grep sed jq)
+  commands+=(ip awk grep sed jq sgdisk)
 
   if ! is_true "${DRY_RUN}"; then
     commands+=(sshd ufw iptables journalctl systemctl augenrules auditctl fail2ban-client)
@@ -709,7 +710,7 @@ require_commands() {
 retry_apt_update() {
   local attempts=3 delay=5 i
   for (( i = 1; i <= attempts; i++ )); do
-    if run apt-get update; then
+    if run_apt_command apt-get update; then
       return 0
     fi
     if (( i < attempts )); then
@@ -726,7 +727,7 @@ retry_apt_noninteractive() {
 
   local attempts=3 delay=10 i
   for (( i = 1; i <= attempts; i++ )); do
-    if run env DEBIAN_FRONTEND=noninteractive \
+    if run_apt_command env DEBIAN_FRONTEND=noninteractive PYTHONWARNINGS=ignore::SyntaxWarning \
       apt-get -y \
       -o Dpkg::Options::=--force-confdef \
       -o Dpkg::Options::=--force-confold \
@@ -739,6 +740,101 @@ retry_apt_noninteractive() {
     fi
   done
   die "${description} failed after ${attempts} attempts."
+}
+
+emit_filtered_package_output() {
+  sed -E \
+    -e '/SyntaxWarning: invalid escape sequence/d' \
+    -e '/dpkg: warning: while removing .* directory .* not empty so not removed/d' \
+    -e '/Service restarts being deferred:/d' \
+    -e '/No containers need to be restarted\./d' \
+    -e '/No user sessions are running outdated binaries\./d' \
+    -e '/No VM guests are running outdated hypervisor.*\./d'
+}
+
+run_apt_command() {
+  if is_true "${DRY_RUN}"; then
+    log "DRY-RUN: $*"
+    return 0
+  fi
+
+  local tmp rc
+  tmp="$(mktemp)"
+  if "$@" >"${tmp}" 2>&1; then
+    rc=0
+  else
+    rc=$?
+  fi
+  emit_filtered_package_output < "${tmp}" || true
+  rm -f "${tmp}"
+  return "${rc}"
+}
+
+ensure_bootloader_embed_safety() {
+  # UEFI does not require a BIOS boot partition.
+  if [[ -d /sys/firmware/efi ]]; then
+    log "UEFI boot detected; BIOS embedding safety check skipped."
+    return 0
+  fi
+
+  local root_src root_pk disk pttype
+  root_src="$(findmnt -n -o SOURCE / 2>/dev/null || true)"
+  [[ "${root_src}" =~ ^/dev/ ]] || {
+    warn "Unable to determine root block device from '/'; skipping BIOS/GPT bootloader check."
+    return 0
+  }
+
+  root_pk="$(lsblk -no PKNAME "${root_src}" 2>/dev/null | head -n1 || true)"
+  if [[ -z "${root_pk}" ]]; then
+    case "${root_src}" in
+      /dev/nvme*n[0-9]p[0-9]*) root_pk="${root_src#/dev/}"; root_pk="${root_pk%p*}" ;;
+      /dev/*[0-9]) root_pk="${root_src#/dev/}"; root_pk="${root_pk%%[0-9]*}" ;;
+      /dev/*) root_pk="${root_src#/dev/}" ;;
+    esac
+  fi
+  [[ -n "${root_pk}" ]] || die "Failed to determine parent disk for root device '${root_src}'."
+  disk="/dev/${root_pk}"
+  [[ -b "${disk}" ]] || die "Resolved boot disk '${disk}' is not a block device."
+
+  pttype="$(lsblk -dn -o PTTYPE "${disk}" 2>/dev/null | head -n1 | tr -d '[:space:]')"
+  if [[ "${pttype}" != "gpt" ]]; then
+    log "Boot disk ${disk} partition table is '${pttype:-unknown}'; BIOS/GPT embedding risk not applicable."
+    return 0
+  fi
+
+  if sgdisk -p "${disk}" | awk '/^[[:space:]]*[0-9]+[[:space:]]+[0-9]+/{ if ($6=="EF02") found=1 } END{ exit(found?0:1) }'; then
+    log "BIOS boot partition already present on ${disk} (EF02)."
+    return 0
+  fi
+
+  log "Detected BIOS boot on GPT without EF02 partition on ${disk}; attempting auto-remediation."
+
+  local first_start end start part_num
+  first_start="$(sgdisk -p "${disk}" | awk '/^[[:space:]]*[0-9]+[[:space:]]+[0-9]+/{ print $2; exit }')"
+  [[ "${first_start}" =~ ^[0-9]+$ ]] || die "Failed to determine first partition start sector on ${disk}."
+
+  end="$(( first_start - 1 ))"
+  start="$(( end - 2047 ))"
+  if (( start < 34 )); then
+    die "BIOS/GPT bootloader risk: no room to auto-create a 1MiB EF02 partition before ${disk}p1. Rebuild with a BIOS boot partition."
+  fi
+
+  part_num=1
+  while sgdisk -i "${part_num}" "${disk}" >/dev/null 2>&1; do
+    ((part_num++))
+    ((part_num <= 128)) || die "No free GPT partition slots available on ${disk}."
+  done
+
+  run sgdisk -n "${part_num}:${start}:${end}" -t "${part_num}:ef02" -c "${part_num}:BIOS boot partition" "${disk}"
+  run partprobe "${disk}" || true
+  run grub-install "${disk}"
+  run update-grub
+
+  if sgdisk -p "${disk}" | awk '/^[[:space:]]*[0-9]+[[:space:]]+[0-9]+/{ if ($6=="EF02") found=1 } END{ exit(found?0:1) }'; then
+    log "Bootloader embedding safety fixed: created EF02 BIOS boot partition on ${disk} and reinstalled GRUB."
+  else
+    die "Failed to verify EF02 BIOS boot partition on ${disk} after remediation."
+  fi
 }
 
 apply_system_package_updates() {
@@ -3071,6 +3167,7 @@ main() {
   detect_wan_iface
   ssh_session_safety_gate
   ensure_packages
+  ensure_bootloader_embed_safety
   configure_networkd_wait_online
   configure_cron_extra_opts
   ensure_power_group
