@@ -114,6 +114,7 @@ FAIL2BAN_LOCAL_FILE="/etc/fail2ban/fail2ban.local"
 APPORT_DEFAULT_FILE="/etc/default/apport"
 CRON_EXTRA_OPTS_DROPIN="/etc/systemd/system/cron.service.d/10-extra-opts.conf"
 TAILSCALED_NOTIFY_DROPIN="/etc/systemd/system/tailscaled.service.d/10-notify-access.conf"
+NETWORKD_WAIT_ONLINE_DROPIN="/etc/systemd/system/systemd-networkd-wait-online.service.d/10-any-timeout.conf"
 
 load_state_context() {
   [[ -f "${STATE_FILE}" ]] || return 0
@@ -1440,6 +1441,28 @@ cron_check() {
   fi
 }
 
+networkd_wait_online_check() {
+  if ! unit_available "systemd-networkd-wait-online.service"; then
+    record "INFO" "networkd-wait-online: service" "not installed"
+    return 0
+  fi
+
+  if [[ -f "${NETWORKD_WAIT_ONLINE_DROPIN}" ]] \
+    && grep -Eq '^[[:space:]]*ExecStart=/lib/systemd/systemd-networkd-wait-online --any --timeout=15[[:space:]]*$' "${NETWORKD_WAIT_ONLINE_DROPIN}"; then
+    record "PASS" "networkd-wait-online: drop-in present (--any --timeout=15)"
+  else
+    record "FAIL" "networkd-wait-online: drop-in present" "missing/invalid ${NETWORKD_WAIT_ONLINE_DROPIN}"
+  fi
+
+  local exec_start
+  exec_start="$(systemctl show systemd-networkd-wait-online.service -p ExecStart --value 2>/dev/null || true)"
+  if [[ "${exec_start}" == *"--any"* && "${exec_start}" == *"--timeout=15"* ]]; then
+    record "PASS" "networkd-wait-online: effective ExecStart tuned"
+  else
+    record "FAIL" "networkd-wait-online: effective ExecStart tuned" "expected --any --timeout=15, got ${exec_start:-unknown}"
+  fi
+}
+
 # ── Tailscale interface ──
 
 tailscale_check() {
@@ -2240,6 +2263,7 @@ main() {
   disabled_services_check
   apport_check
   cron_check
+  networkd_wait_online_check
   tailscale_check
   coolify_binding_check
   if [[ "${GATE_C_MODE}" == "true" ]]; then
