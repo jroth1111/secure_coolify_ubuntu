@@ -396,6 +396,12 @@ phase3_docker_coolify() {
 phase4_binding_dns() {
   phase4_coolify_env_exists() { [[ -f /data/coolify/source/.env ]]; }
   phase4_configure_binding() { "${SCRIPT_DIR}/configure_coolify_binding.sh" --tailscale-ip "${TS_IP}"; }
+  phase4_mark_binding_state() {
+    {
+      coolify_mark_bind_dashboard_state_script
+      coolify_install_binding_guard_script
+    } | bash -s
+  }
   phase4_set_wildcard_domain() { APP_DOMAIN="${APP_DOMAIN}" coolify_set_wildcard_domain_script | bash -s; }
   phase4_reconcile_pusher_env() {
     DEPLOY_MODE="${DEPLOY_MODE}" TS_IP="${TS_IP}" DOMAIN="${DOMAIN}" coolify_reconcile_pusher_env_script | bash -s
@@ -430,6 +436,7 @@ phase4_binding_dns() {
   coolify_phase4_binding_dns_shared \
     phase4_coolify_env_exists \
     phase4_configure_binding \
+    phase4_mark_binding_state \
     phase4_set_wildcard_domain \
     phase4_reconcile_pusher_env \
     phase4_install_cloudflared \

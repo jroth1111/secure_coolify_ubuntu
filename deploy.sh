@@ -660,6 +660,12 @@ phase3_docker_coolify() {
 phase4_binding_dns() {
   phase4_coolify_env_exists() { ssh_admin_sudo 'test -f /data/coolify/source/.env' >/dev/null 2>&1; }
   phase4_configure_binding() { ssh_admin_sudo "/root/configure_coolify_binding.sh --tailscale-ip ${TS_IP}"; }
+  phase4_mark_binding_state() {
+    {
+      coolify_mark_bind_dashboard_state_script
+      coolify_install_binding_guard_script
+    } | ssh_admin_sudo 'bash -s'
+  }
   phase4_set_wildcard_domain() {
     local app_domain_q
     app_domain_q="$(printf '%q' "${APP_DOMAIN}")"
@@ -713,6 +719,7 @@ phase4_binding_dns() {
   coolify_phase4_binding_dns_shared \
     phase4_coolify_env_exists \
     phase4_configure_binding \
+    phase4_mark_binding_state \
     phase4_set_wildcard_domain \
     phase4_reconcile_pusher_env \
     phase4_install_cloudflared \

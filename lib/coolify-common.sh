@@ -837,6 +837,7 @@ coolify_phase3_docker_coolify_shared() {
 # Callback signatures:
 #   coolify_env_exists_fn()
 #   configure_binding_fn()
+#   mark_binding_state_fn()
 #   set_wildcard_domain_fn()
 #   reconcile_pusher_fn()
 #   install_cloudflared_fn()
@@ -848,14 +849,15 @@ coolify_phase3_docker_coolify_shared() {
 coolify_phase4_binding_dns_shared() {
   local coolify_env_exists_fn="$1"
   local configure_binding_fn="$2"
-  local set_wildcard_domain_fn="$3"
-  local reconcile_pusher_fn="$4"
-  local install_cloudflared_fn="$5"
-  local configure_cloudflared_fn="$6"
-  local stop_cloudflared_fn="$7"
-  local configure_private_routes_fn="$8"
-  local configure_private_tls_fn="$9"
-  local remove_private_routes_fn="${10}"
+  local mark_binding_state_fn="$3"
+  local set_wildcard_domain_fn="$4"
+  local reconcile_pusher_fn="$5"
+  local install_cloudflared_fn="$6"
+  local configure_cloudflared_fn="$7"
+  local stop_cloudflared_fn="$8"
+  local configure_private_routes_fn="$9"
+  local configure_private_tls_fn="${10}"
+  local remove_private_routes_fn="${11}"
 
   step "4/5" "Configure dashboard binding & DNS"
 
@@ -873,6 +875,7 @@ coolify_phase4_binding_dns_shared() {
 
   log "Binding Coolify dashboard to Tailscale IP..."
   "${configure_binding_fn}" || die "configure_coolify_binding.sh failed. Fix binding errors before continuing."
+  "${mark_binding_state_fn}" || die "Failed to persist bind_dashboard_to_tailscale=true in state."
   pass "Dashboard binding configured"
 
   # Set Coolify wildcard domain directly in the database.
@@ -1329,6 +1332,112 @@ if ! systemctl restart docker; then
   echo "Failed to restart Docker after daemon.json update" >&2
   exit 1
 fi
+EOF
+}
+
+# coolify_mark_bind_dashboard_state_script — Emit host-side script that updates
+# bootstrap-hardening state after phase-4 dashboard binding is enforced.
+coolify_mark_bind_dashboard_state_script() {
+  cat <<'EOF'
+set -Eeuo pipefail
+state_file="/var/lib/bootstrap-hardening/state"
+tmp="$(mktemp)"
+
+if [[ ! -f "${state_file}" ]]; then
+  rm -f "${tmp}"
+  exit 0
+fi
+
+awk '
+  BEGIN { seen=0 }
+  /^bind_dashboard_to_tailscale=/ {
+    print "bind_dashboard_to_tailscale=true"
+    seen=1
+    next
+  }
+  { print }
+  END {
+    if (seen == 0) {
+      print "bind_dashboard_to_tailscale=true"
+    }
+  }
+' "${state_file}" > "${tmp}"
+
+install -m 0640 "${tmp}" "${state_file}"
+rm -f "${tmp}"
+EOF
+}
+
+# coolify_install_binding_guard_script — Emit host-side script that installs and
+# enables the Coolify UFW binding guard timer after phase-4 binding is configured.
+coolify_install_binding_guard_script() {
+  cat <<'EOF'
+set -Eeuo pipefail
+guard_script="/usr/local/sbin/coolify-binding-guard.sh"
+guard_service="/etc/systemd/system/coolify-binding-guard.service"
+guard_timer="/etc/systemd/system/coolify-binding-guard.timer"
+
+install -d -m 0755 /usr/local/sbin
+
+cat > "${guard_script}" <<'GUARD_EOF'
+#!/usr/bin/env bash
+set -Euo pipefail
+
+TAILSCALE_IFACE="tailscale0"
+LOG_TAG="coolify-binding-guard"
+
+log() { logger -t "${LOG_TAG}" -- "$*"; }
+
+command -v ufw >/dev/null 2>&1 || { log "ufw not found; skipping."; exit 0; }
+ufw_status="$(ufw status 2>/dev/null | head -1)" || true
+[[ "${ufw_status}" == "Status: active" ]] || { log "UFW not active; skipping."; exit 0; }
+
+changed=false
+if ! ufw status | grep -q "8000.*on ${TAILSCALE_IFACE}"; then
+  ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 8000 comment "coolify-hardening-dashboard-tailscale" >/dev/null 2>&1 || true
+  changed=true
+fi
+if ! ufw status | grep -q "6001.*on ${TAILSCALE_IFACE}"; then
+  ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 6001 comment "coolify-hardening-soketi-tailscale" >/dev/null 2>&1 || true
+  changed=true
+fi
+if ! ufw status | grep -q "6002.*on ${TAILSCALE_IFACE}"; then
+  ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 6002 comment "coolify-hardening-terminal-tailscale" >/dev/null 2>&1 || true
+  changed=true
+fi
+
+if "${changed}"; then
+  log "UFW binding rules repaired on ${TAILSCALE_IFACE}."
+fi
+GUARD_EOF
+chmod 0750 "${guard_script}"
+
+cat > "${guard_service}" <<'UNIT_EOF'
+[Unit]
+Description=Verify Coolify dashboard UFW rules on tailscale0 are present
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/coolify-binding-guard.sh
+UNIT_EOF
+
+cat > "${guard_timer}" <<'TIMER_EOF'
+[Unit]
+Description=Periodically verify Coolify dashboard UFW rules on tailscale0
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
+TIMER_EOF
+
+systemctl daemon-reload
+systemctl enable --now coolify-binding-guard.timer
+systemctl start coolify-binding-guard.service || true
 EOF
 }
 

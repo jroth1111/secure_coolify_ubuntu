@@ -272,6 +272,14 @@ setup() {
   assert_output --partial "systemctl enable --now cloudflared"
 }
 
+@test "coolify_install_binding_guard_script: emits guard timer install and enable flow" {
+  run coolify_install_binding_guard_script
+  assert_success
+  assert_output --partial "/usr/local/sbin/coolify-binding-guard.sh"
+  assert_output --partial "coolify-binding-guard.timer"
+  assert_output --partial "systemctl enable --now coolify-binding-guard.timer"
+}
+
 @test "collect_common_inputs: preserves pre-populated values without prompting" {
   SERVER_IP="203.0.113.10"
   ADMIN_USER="alice"
@@ -509,6 +517,7 @@ setup() {
     SERVER_IP="203.0.113.10"
     wait_checks=0
     bind_calls=0
+    mark_binding_state_calls=0
     wildcard_calls=0
     pusher_calls=0
     configure_private_routes_calls=0
@@ -517,6 +526,7 @@ setup() {
 
     coolify_env_exists() { wait_checks=$((wait_checks + 1)); return 0; }
     configure_binding() { bind_calls=$((bind_calls + 1)); }
+    mark_binding_state() { mark_binding_state_calls=$((mark_binding_state_calls + 1)); }
     set_wildcard_domain() { wildcard_calls=$((wildcard_calls + 1)); }
     reconcile_pusher() { pusher_calls=$((pusher_calls + 1)); }
     install_cloudflared() { return 0; }
@@ -529,12 +539,13 @@ setup() {
     cf_upsert_cname() { echo "unexpected cname" >&2; return 1; }
 
     coolify_phase4_binding_dns_shared \
-      coolify_env_exists configure_binding set_wildcard_domain reconcile_pusher \
+      coolify_env_exists configure_binding mark_binding_state set_wildcard_domain reconcile_pusher \
       install_cloudflared configure_cloudflared stop_cloudflared \
       configure_private_routes remove_private_routes
 
     [[ "${wait_checks}" -eq 1 ]]
     [[ "${bind_calls}" -eq 1 ]]
+    [[ "${mark_binding_state_calls}" -eq 1 ]]
     [[ "${wildcard_calls}" -eq 1 ]]
     [[ "${pusher_calls}" -eq 1 ]]
     [[ "${configure_private_routes_calls}" -eq 0 ]]
@@ -557,6 +568,7 @@ setup() {
     TUNNEL_ID="tunnel-1234"
     wait_checks=0
     bind_calls=0
+    mark_binding_state_calls=0
     wildcard_calls=0
     pusher_calls=0
     install_calls=0
@@ -571,6 +583,7 @@ setup() {
 
     coolify_env_exists() { wait_checks=$((wait_checks + 1)); return 0; }
     configure_binding() { bind_calls=$((bind_calls + 1)); }
+    mark_binding_state() { mark_binding_state_calls=$((mark_binding_state_calls + 1)); }
     set_wildcard_domain() { wildcard_calls=$((wildcard_calls + 1)); }
     reconcile_pusher() { pusher_calls=$((pusher_calls + 1)); }
     install_cloudflared() { install_calls=$((install_calls + 1)); }
@@ -584,12 +597,13 @@ setup() {
     cf_upsert_cname() { cname_records+="$1|$2"$'"'"'\n'"'"'; }
 
     coolify_phase4_binding_dns_shared \
-      coolify_env_exists configure_binding set_wildcard_domain reconcile_pusher \
+      coolify_env_exists configure_binding mark_binding_state set_wildcard_domain reconcile_pusher \
       install_cloudflared configure_cloudflared stop_cloudflared \
       configure_private_routes remove_private_routes
 
     [[ "${wait_checks}" -eq 1 ]]
     [[ "${bind_calls}" -eq 1 ]]
+    [[ "${mark_binding_state_calls}" -eq 1 ]]
     [[ "${wildcard_calls}" -eq 1 ]]
     [[ "${pusher_calls}" -eq 1 ]]
     [[ "${install_calls}" -eq 1 ]]
