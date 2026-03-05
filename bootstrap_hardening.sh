@@ -6,7 +6,7 @@ if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
 fi
 set -Eeuo pipefail
 
-SCRIPT_VERSION="1.2.5"
+SCRIPT_VERSION="1.2.6"
 SCRIPT_NAME="$(basename "$0")"
 
 LOG_FILE="/var/log/bootstrap-hardening.log"
@@ -33,6 +33,7 @@ COOLIFY_BINDING_GUARD_TIMER="/etc/systemd/system/coolify-binding-guard.timer"
 DOCKER_SSH_CIDR_SYNC_SCRIPT="/usr/local/sbin/docker-ssh-cidr-sync.sh"
 DOCKER_SSH_CIDR_SYNC_SERVICE="/etc/systemd/system/docker-ssh-cidr-sync.service"
 DOCKER_SSH_CIDR_SYNC_TIMER="/etc/systemd/system/docker-ssh-cidr-sync.timer"
+CRON_EXTRA_OPTS_DROPIN="/etc/systemd/system/cron.service.d/10-extra-opts.conf"
 
 TAILSCALE_IFACE="tailscale0"
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
@@ -1294,6 +1295,22 @@ configure_apport() {
   fi
 }
 
+configure_cron_extra_opts() {
+  if ! unit_available "cron.service"; then
+    log "cron.service not installed; skipping EXTRA_OPTS normalization."
+    return 0
+  fi
+
+  write_file "${CRON_EXTRA_OPTS_DROPIN}" "0644" "root" "root" <<'EOF'
+[Service]
+Environment="EXTRA_OPTS="
+EOF
+
+  run systemctl daemon-reload
+  run systemctl restart cron
+  log "cron.service EXTRA_OPTS environment normalized."
+}
+
 configure_banner() {
   write_file "/etc/issue.net" "0644" "root" "root" <<'EOF'
 ***************************************************************************
@@ -1508,7 +1525,11 @@ discover_docker_ssh_cidrs() {
 
   if is_true "${STRICT_DOCKER_SSH_CIDRS}"; then
     if [[ ${#DOCKER_SSH_CIDRS[@]} -eq 0 ]]; then
-      warn "STRICT_DOCKER_SSH_CIDRS enabled but no Docker bridge CIDRs discovered; falling back to compatibility ranges."
+      if [[ "${DOCKER_PRESENT}" == "true" ]]; then
+        warn "STRICT_DOCKER_SSH_CIDRS enabled but no Docker bridge CIDRs discovered; falling back to compatibility ranges."
+      else
+        log "STRICT_DOCKER_SSH_CIDRS enabled while Docker is not installed yet; using compatibility ranges until docker-ssh-cidr-sync discovers bridges."
+      fi
       DOCKER_SSH_CIDRS=(10.0.0.0/8 172.16.0.0/12)
     fi
   else
@@ -1916,7 +1937,7 @@ configure_docker_user() {
       warn "Docker CLI detected but docker.service is not present; DOCKER-USER enable/start deferred."
     fi
   else
-    warn "Docker not detected; DOCKER-USER unit installed, enable/start deferred."
+    log "Docker not detected; DOCKER-USER unit installed with deferred enable/start until Docker is installed."
   fi
 }
 
@@ -3014,6 +3035,9 @@ main() {
 
   log "Disabling apport crash reporting service."
   configure_apport
+
+  log "Normalizing cron service environment."
+  configure_cron_extra_opts
 
   log "Applying sysctl kernel hardening."
   configure_sysctl
