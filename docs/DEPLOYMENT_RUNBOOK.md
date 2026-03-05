@@ -52,7 +52,7 @@ Treat this runbook as a gated procedure. Do not proceed to the next phase until 
 - **Gate B (immediately after hardening):** Admin SSH over Tailscale works from a new terminal before closing the root session.
 - **Gate C (before Docker/Coolify):** `validate_hardening.sh` exits `0` with no FAIL checks.
 - **Gate D (after Docker install):** `docker-user-hardening.service` is active and managed DOCKER-USER rules exist.
-- **Gate E (after split-horizon binding):** Coolify dashboard is reachable on Tailscale IP and not reachable on public IP.
+- **Gate E (after management-port enforcement):** Coolify dashboard (`:8000`) and websocket (`:6001`) are reachable on Tailscale IP and not reachable on public IP.
 
 If any gate fails: stop, fix the issue, and re-run the same gate.
 
@@ -229,10 +229,19 @@ SSH in as your admin user via Tailscale:
 ssh coolifyadmin@<tailscale-ip>
 ```
 
-Install Docker using the official script:
+Install Docker from Docker's apt repository (matches script behavior):
 
 ```bash
-curl -fsSL https://get.docker.com | sudo sh
+source /etc/os-release
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc >/dev/null
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 sudo systemctl enable --now docker
 
 # Verify
@@ -242,7 +251,7 @@ sudo docker run hello-world
 If Docker was absent during Phase 1, `bootstrap_hardening.sh` installs the policy but does not create `/etc/docker/daemon.json` yet. Coolify's installer may then create/update `daemon.json` (for Docker address pools). The automated `deploy.sh`/`setup.sh` workflows reconcile this file immediately after Coolify install to enforce hardening keys while preserving Coolify's settings.
 
 **daemon.json Ownership:**
-- **Hardening owns:** `log-driver` (set to `json-file` to match Coolify's expectation), `log-opts`, `live-restore`
+- **Hardening owns:** `log-driver`, `log-opts`, `live-restore`, `default-ipc-mode`, `storage-driver`, `default-ulimits`
 - **Coolify may add:** `default-address-pools` and other settings
 - **Drift detection:** The reconcile functions warn if hardening keys were changed (e.g., by a Coolify update)
 
@@ -273,9 +282,9 @@ Coolify will be available at `http://<tailscale-ip>:8000` by default.
 
 ## Phase 4: Post-Hardening Configuration
 
-### 4.1 Split-Horizon Dashboard Binding (Recommended)
+### 4.1 Tailscale-Only Management Port Enforcement (Recommended)
 
-By default, Coolify binds to `0.0.0.0:8000`, making it accessible on all interfaces. To restrict the dashboard to Tailscale only, use the companion script:
+`configure_coolify_binding.sh` enforces UFW allow rules for management ports on `tailscale0` only (`8000`, `6001`, `6002`) and verifies exposure boundaries:
 
 ```bash
 scp configure_coolify_binding.sh coolifyadmin@<tailscale-ip>:/root/
@@ -284,24 +293,34 @@ ssh coolifyadmin@<tailscale-ip>
 sudo ./configure_coolify_binding.sh
 ```
 
-This binds Coolify's management ports to your Tailscale IP only. Verify:
+Verify UFW scope and connectivity boundaries:
 
 ```bash
-sudo ss -tlnp | grep 8000
-# Should show 100.x.x.x:8000 instead of 0.0.0.0:8000
+sudo ufw status verbose | grep -E '8000|6001|6002'
+# Should show ALLOW rules for these ports on tailscale0 only
+
+curl -s -o /dev/null -w '%{http_code}' http://<tailscale-ip>:8000
+curl -s -o /dev/null -w '%{http_code}' http://<public-ip>:8000
+# First should be non-000, second should be 000/timeout
 ```
 
 ### 4.2 Gate E: Confirm Dashboard Exposure Boundaries
 
 ```bash
-# Should succeed
+# Dashboard should succeed on Tailscale only
 curl -s -o /dev/null -w '%{http_code}' http://<tailscale-ip>:8000
 
-# Should fail when split-horizon binding is enabled
+# Dashboard should fail on public IP
 curl -s -o /dev/null -w '%{http_code}' http://<public-ip>:8000
+
+# Realtime websocket endpoint should succeed on Tailscale only
+curl -s -o /dev/null -w '%{http_code}' http://<tailscale-ip>:6001
+
+# Realtime websocket endpoint should fail on public IP
+curl -s -o /dev/null -w '%{http_code}' http://<public-ip>:6001
 ```
 
-Gate E passes when the dashboard is reachable over Tailscale and not reachable over public IP.
+Gate E passes when dashboard and websocket are reachable over Tailscale and blocked on public IP.
 
 ### 4.3 DNS Configuration
 
@@ -433,7 +452,7 @@ sudo ./validate_hardening.sh --json | python3 -m json.tool
 ssh coolifyadmin@<tailscale-ip>           # Should work
 ssh coolifyadmin@<public-ip> 2>&1 || true # Should fail/timeout
 
-# Coolify dashboard (after split-horizon binding):
+# Coolify management endpoints (after tailscale0-only UFW enforcement):
 curl -s -o /dev/null -w '%{http_code}' http://<tailscale-ip>:8000  # Should return 2xx/3xx
 curl -s -o /dev/null -w '%{http_code}' http://<public-ip>:8000     # Should fail
 
@@ -449,8 +468,8 @@ curl -s -o /dev/null -w '%{http_code}' http://ws.<your-domain>     # Should be n
 curl -s -o /dev/null -w '%{http_code}' http://<public-ip>          # Should fail/timeout
 curl -k -s -o /dev/null -w '%{http_code}' https://<public-ip>      # Should fail/timeout
 
-# Standard mode: verify public web access
-curl -s -o /dev/null -w '%{http_code}' http://<public-ip>     # Should return 200 (or redirect)
+# Standard mode: verify public web access through domain
+curl -s -o /dev/null -w '%{http_code}' -L https://<your-domain>  # Should return 2xx/3xx
 
 # Firewall state
 sudo ufw status verbose

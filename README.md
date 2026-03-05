@@ -17,9 +17,9 @@ Turn a fresh Ubuntu VPS into a **production-hardened Coolify server** in ~15 min
 **What you start with:** A fresh Ubuntu 24.04 VPS with root access.
 
 **What you end with:**
-- ✅ Coolify running and accessible at `https://your-domain.com`
+- ✅ Coolify running with private management access (`http://<tailscale-ip>:8000`)
 - ✅ SSH + dashboard only accessible via Tailscale VPN (no public attack surface)
-- ✅ Automatic SSL for all apps via Cloudflare
+- ✅ Automatic Cloudflare routing for app subdomains (mode-specific DNS/tunnel behavior)
 - ✅ Hardened kernel, firewall, audit logging, and auto-updates
 
 ---
@@ -32,7 +32,7 @@ Deploying Coolify on a fresh VPS leaves significant security gaps: root SSH enab
 |---------|----------|
 | Root SSH + password auth | Key-only SSH, admin user, root login disabled |
 | No firewall policy | UFW default-deny, DOCKER-USER chain rules |
-| Dashboard publicly accessible | Bind to Tailscale VPN IP only |
+| Dashboard publicly accessible | Restrict management ports to `tailscale0` via UFW + private routes |
 | No intrusion detection | Auditd rules for privileged operations, fail2ban |
 | Kernel defaults | SYN cookies, ASLR, ptrace restrictions, BBR |
 | Manual security patches | Unattended-upgrades with scheduled reboots |
@@ -87,9 +87,9 @@ Phase 2: Gate checks (verify hardening passed, get Tailscale IP)
           ↓
 Phase 3: Install Docker & Coolify
           ↓
-Phase 4: Configure Cloudflare DNS/Tunnel + wildcard subdomain
+Phase 4: Configure binding + Cloudflare DNS/Tunnel
           ↓
-Phase 5: Bind dashboard to Tailscale IP + final verification
+Phase 5: Final reachability + security verification
 ```
 
 **Which script should I use?**
@@ -189,7 +189,7 @@ After this, every new app gets: auto-assigned subdomain → wildcard DNS → Clo
 
 | | Tunnel (default) | Standard |
 |---|---|---|
-| **Flag** | `--tunnel-mode` / `--mode tunnel` | `--mode standard` |
+| **Flag** | `--mode tunnel` (default) | `--mode standard` |
 | **Inbound ports** | None | 80, 443 |
 | **Traffic path** | Outbound tunnel to Cloudflare edge | Direct to origin (Cloudflare-proxied) |
 | **Attack surface** | Zero public HTTP/S | Origin IP exposed behind Cloudflare |
@@ -236,7 +236,7 @@ Wildcard DNS (`*.example.com`) and tunnel ingress rules are created automaticall
 | 7 | **Auditd** | Tracks identity changes, sudoers, Docker socket |
 | 8 | **Kernel hardening** | SYN cookies, BBR, ASLR, ICMP hardening, ptrace restricted |
 | 9 | **UFW firewall** | Default deny, Tailscale CIDR, tunnel-mode aware |
-| 10 | **Docker daemon** | `json-file` log driver with rotation, `live-restore` |
+| 10 | **Docker daemon** | `json-file` logs, `live-restore`, `default-ipc-mode=private`, `storage-driver=overlay2`, hardened `default-ulimits` |
 | 11 | **DOCKER-USER rules** | IPv4/IPv6 chain hardening, bridge rules |
 | 12 | **Fail2ban** | SSH jail with UFW ban action |
 | 13 | **Journald** | Persistent logging with configurable retention |
@@ -258,7 +258,7 @@ ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host"
 TUNNEL_MODE=true
 SWAP_SIZE=4G
 TIMEZONE=Australia/Melbourne
-ENABLE_AUTO_REBOOT=true
+ENABLE_AUTO_REBOOT=false
 AUTO_REBOOT_TIME=04:00
 JOURNAL_RETENTION=3month
 EOF
@@ -266,6 +266,9 @@ chmod 0600 /etc/bootstrap-hardening.env
 
 sudo ./bootstrap_hardening.sh --env-file /etc/bootstrap-hardening.env
 ```
+
+`--env-file` is parsed as strict `KEY=VALUE` data (not shell-evaluated code).  
+Accepted permissions are `0600` or `0400` by default (`--insecure-env` bypasses this check).
 
 ### Tailscale + Dashboard Binding
 
@@ -315,7 +318,7 @@ make test-all            # Full suite with Docker
 
 | Make Target | Purpose |
 |-------------|---------|
-| `test-ci-pr` | PR gate: unit + dry-run + validate + consistency |
+| `test-ci-pr` | Alias of `test-ci-max` (full lint + unit + contracts + integration matrix) |
 | `test-ci-main` | Main branch: full suite |
 | `test-dry-run` | Dry-run integration |
 | `test-full-standard` | Full hardening, standard mode |
@@ -341,6 +344,7 @@ make test-all            # Full suite with Docker
 | `--admin-user <name>` | `coolifyadmin` | Admin username |
 | `--pubkey-file <path>` | `~/.ssh/id_ed25519.pub` | SSH public key file |
 | `--mode <tunnel\|standard>` | `tunnel` | Deployment mode |
+| `--app-domain-mode <vps\|apex>` | `apex` | App URL scope: `apex`=`appname.<zone>`, `vps`=`appname.<domain>` |
 | `--cf-zone <zone>` | derived from domain | Cloudflare zone |
 | `--cf-zone-id <id>` | none | Cloudflare zone ID override (32-char hex) |
 | `--cf-account-id <id>` | none | Cloudflare account ID override (32-char hex) |
@@ -349,6 +353,7 @@ make test-all            # Full suite with Docker
 | `--tailscale-direct-wan` | `false` | Open WAN UDP 41641 for direct Tailscale paths (optional optimization) |
 | `--no-tailscale-direct-wan` | `true` | Keep WAN UDP 41641 closed (default behavior) |
 | `--preflight-only` | `false` | Run local + Cloudflare checks only (no server changes) |
+| `--ts-ip <ip>` | none | Skip phase 1 hardening and resume deployment using known server Tailscale IP |
 | `--yes` | `false` | Skip confirmation prompts |
 
 Legacy flags removed (breaking change): `--cf-api-token`, `--cf-tunnel-api-token`.
@@ -372,12 +377,18 @@ Legacy flags removed (breaking change): `--cf-api-token`, `--cf-tunnel-api-token
 | `--no-tailscale-direct-wan` | `true` | Keep WAN UDP 41641 closed (default behavior) |
 | `--install-tailscale` | `false` | Install Tailscale |
 | `--tailscale-auth-key <key>` | — | Tailscale auth key (with `--install-tailscale`) |
-| `--bind-dashboard-to-tailscale` | `false` | Bind Coolify dashboard to Tailscale IP |
-| `--enable-auto-reboot <bool>` | `true` | Auto-reboot after security updates |
+| `--bind-dashboard-to-tailscale` | `false` | Enable watchdog re-enforcement of Tailscale-only UFW rules for 8000/6001/6002 |
+| `--enable-auto-reboot <bool>` | `false` | Auto-reboot after security updates |
 | `--auto-reboot-time <HH:MM>` | `03:30` | Reboot schedule |
+| `--update-profile <name>` | `security-only` | Unattended-upgrades profile: `security-only` or `balanced` |
 | `--journal-retention <span>` | `3month` | Journald retention period |
+| `--strict-docker-ssh-cidrs` | `true` | Limit SSH/UFW bridge allowlists to discovered Docker bridge CIDRs |
+| `--compat-docker-ssh-cidrs` | `false` | Use broad Docker bridge CIDR compatibility ranges |
+| `--docker-nproc-hard <num>` | `8192` | Docker default `nproc` hard limit |
+| `--docker-nproc-soft <num>` | `4096` | Docker default `nproc` soft limit |
 | `--upgrade-mail <address>` | — | Email for upgrade failure reports |
 | `--env-file <path>` | — | Load options from file |
+| `--insecure-env` | `false` | Allow env files with looser permissions (dangerous) |
 | `--dry-run` | `false` | Preview without changes |
 | `--force` | `false` | Override safety gates |
 
@@ -395,7 +406,7 @@ secure_coolify_ubuntu/
 ├── setup.sh                     # Server-side deployment orchestrator
 ├── bootstrap_hardening.sh       # Security hardening script (15 controls)
 ├── validate_hardening.sh        # Post-hardening verification
-├── configure_coolify_binding.sh # Split-horizon dashboard binding
+├── configure_coolify_binding.sh # Enforces tailscale0-only UFW rules for 8000/6001/6002
 ├── lib/
 │   └── coolify-common.sh        # Shared utilities (Cloudflare API, validation)
 ├── HARDENING_PROCEDURE.md       # Detailed hardening technical reference
@@ -428,7 +439,7 @@ ssh admin@100.x.x.x  # Use the Tailscale IP output by the script
 
 ### Dashboard Not Accessible
 
-**Cause:** Dashboard is bound to Tailscale IP only.
+**Cause:** Management ports are restricted to the `tailscale0` interface by UFW.
 
 **Solution:**
 1. Ensure Tailscale is running on your laptop: `tailscale status`
