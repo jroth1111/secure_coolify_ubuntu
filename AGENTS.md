@@ -20,7 +20,7 @@ Decompose user requests into tasks.
 Work follows claim → execute → verify → close. Project-specific additions:
 
 - **Never start a deployment task** without first verifying operator machine prerequisites
-- **Never start phase 3** (Docker+Coolify) unless Gate C JSON shows `"fail":0`.
+- **Never start phase 3** (Docker+Coolify) unless Gate C (`validate_hardening.sh --json --gate-c`) shows `"fail":0`.
 - **Never close a deployment task** without recording the gate output in the task notes.
 - **Never close a script-change task** without `bash -n <script>` passing and the result recorded.
 
@@ -46,7 +46,7 @@ until the cause is understood.
 | Task type | Required evidence |
 |-----------|------------------|
 | Script edited | `bash -n <script>` → zero errors; recorded in task notes |
-| Gate C ran | `validate_hardening.sh --json` output with `"fail":0`; recorded in task notes |
+| Gate C ran | `validate_hardening.sh --json --gate-c` output with `"fail":0`; recorded in task notes |
 | DNS/tunnel changed | CF API GET confirms record exists with correct value; recorded in task notes |
 | Full deploy completed | Final `validate_hardening.sh --json` with `"fail":0`; summary box captured in task notes |
 
@@ -72,11 +72,14 @@ Changes to the sentinel name require matching changes in `deploy.sh` phase 1.
 
 ### Security Invariants — Must Not Weaken
 
-- **UFW**: default-deny incoming; SSH only on `tailscale0`; dashboard ports (8000/6001/6002)
-  only on `tailscale0`; WAN 80/443 absent in tunnel mode.
+- **UFW**: default-deny incoming; SSH allowed only on `tailscale0` plus managed Docker bridge
+  CIDRs (`docker_ssh_cidrs` from state); dashboard ports (8000/6001/6002) only on `tailscale0`;
+  WAN 80/443 absent in tunnel mode.
 - **DOCKER-USER**: WAN ingress dropped in tunnel mode; bridge traffic returned; no WAN bypass.
-- **SSH**: global `PermitRootLogin no`; key-only root login only from localhost + Docker bridge
-  (127.0.0.1, 172.16.0.0/12, 10.0.0.0/8) via the `Match Address` block.
+- **SSH**: global `PermitRootLogin no`; key-only root login only from localhost
+  (`127.0.0.1`, `::1`) plus Docker bridge CIDRs via the `Match Address` block. CIDRs come from
+  strict discovery (`STRICT_DOCKER_SSH_CIDRS=true`) with compatibility fallback to
+  `10.0.0.0/8,172.16.0.0/12`.
 - **fail2ban**: ignores Tailscale CIDR (100.64.0.0/10); bans WAN brute-force.
 
 ### Idempotency Contract
@@ -153,7 +156,7 @@ install produce no output while running. Wait for `PASS Hardening completed` fol
 
 ### Wrong root password (`sshpass` exit code 5)
 VPS providers auto-generate a new root password after a rebuild. Verify the current password
-in the VPS control panel. Re-run with the correct `--root-pass`.
+in the VPS control panel. Re-run with the correct `--root-pass-file` (or interactive prompt).
 
 ### Gate A/B fails (SSH timeout)
 Check `tailscale status` on operator machine. If the server appears in the Tailscale admin
@@ -163,7 +166,7 @@ panel with a `100.x.x.x` IP, resume with `--ts-ip <ip>`.
 Distinguish cause before touching anything:
 
 1. **Real server failure**: read `/var/log/bootstrap-hardening.log` on server; run
-   `sudo /root/validate_hardening.sh --json` and inspect `"checks"` array for failing items.
+   `sudo /root/validate_hardening.sh --json --gate-c` and inspect `"checks"` array for failing items.
    Fix the server condition, then resume with `--ts-ip`.
 2. **Script false positive**: verify the expected state directly on the server. If correct,
    fix `validate_hardening.sh` locally (see Script Edit Policy exception above).
