@@ -6,7 +6,7 @@ if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
 fi
 set -Eeuo pipefail
 
-SCRIPT_VERSION="1.2.7"
+SCRIPT_VERSION="1.2.8"
 SCRIPT_NAME="$(basename "$0")"
 
 LOG_FILE="/var/log/bootstrap-hardening.log"
@@ -35,6 +35,7 @@ DOCKER_SSH_CIDR_SYNC_SERVICE="/etc/systemd/system/docker-ssh-cidr-sync.service"
 DOCKER_SSH_CIDR_SYNC_TIMER="/etc/systemd/system/docker-ssh-cidr-sync.timer"
 CRON_EXTRA_OPTS_DROPIN="/etc/systemd/system/cron.service.d/10-extra-opts.conf"
 TAILSCALED_NOTIFY_DROPIN="/etc/systemd/system/tailscaled.service.d/10-notify-access.conf"
+NETWORKD_WAIT_ONLINE_DROPIN="/etc/systemd/system/systemd-networkd-wait-online.service.d/10-any-timeout.conf"
 
 TAILSCALE_IFACE="tailscale0"
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
@@ -1357,6 +1358,22 @@ EOF
   run systemctl daemon-reload
   run systemctl restart cron
   log "cron.service EXTRA_OPTS environment normalized."
+}
+
+configure_networkd_wait_online() {
+  if ! unit_available "systemd-networkd-wait-online.service"; then
+    log "systemd-networkd-wait-online.service not installed; skipping wait-online tuning."
+    return 0
+  fi
+
+  write_file "${NETWORKD_WAIT_ONLINE_DROPIN}" "0644" "root" "root" <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/lib/systemd/systemd-networkd-wait-online --any --timeout=15
+EOF
+
+  run systemctl daemon-reload
+  log "systemd-networkd-wait-online tuned for --any with 15s timeout."
 }
 
 configure_banner() {
@@ -3050,6 +3067,8 @@ main() {
   detect_wan_iface
   ssh_session_safety_gate
   ensure_packages
+  configure_networkd_wait_online
+  configure_cron_extra_opts
   ensure_power_group
   apply_system_package_updates
 
@@ -3084,9 +3103,6 @@ main() {
 
   log "Disabling apport crash reporting service."
   configure_apport
-
-  log "Normalizing cron service environment."
-  configure_cron_extra_opts
 
   log "Applying sysctl kernel hardening."
   configure_sysctl
