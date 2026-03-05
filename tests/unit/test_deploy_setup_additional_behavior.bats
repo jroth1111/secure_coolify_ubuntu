@@ -17,6 +17,48 @@ load '../helpers'
   assert_success
 }
 
+@test "deploy_exit_trap: best-effort cleans remote deploy env then local temp files" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    DEPLOY_ENV_REMOTE_PENDING="true"
+    REMOTE_DEPLOY_ENV_PATH="/root/deploy.env"
+    TS_IP="100.64.0.10"
+    ADMIN_USER="alice"
+    PRIVATE_KEY="/tmp/id_ed25519"
+    SSH_OPTS=(-o StrictHostKeyChecking=accept-new)
+    DEPLOY_KNOWN_HOSTS="$(mktemp)"
+    ADMIN_KNOWN_HOSTS="$(mktemp)"
+    ROOT_PASS_RUNTIME_FILE="$(mktemp)"
+    remote_rm=0
+    ssh_admin_sudo() { [[ "$1" == "rm -f /root/deploy.env" ]] && remote_rm=1; return 0; }
+    run_report_finalize() { :; }
+    set +e
+    false
+    deploy_exit_trap
+    [[ "${remote_rm}" -eq 1 ]]
+    [[ "${DEPLOY_ENV_REMOTE_PENDING}" == "false" ]]
+    [[ ! -e "${DEPLOY_KNOWN_HOSTS}" ]]
+    [[ ! -e "${ADMIN_KNOWN_HOSTS}" ]]
+    [[ ! -e "${ROOT_PASS_RUNTIME_FILE}" ]]
+  '
+  assert_success
+}
+
+@test "setup_exit_trap: removes pending deploy env file" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    pending="$(mktemp)"
+    PENDING_DEPLOY_ENV_FILE="${pending}"
+    run_report_finalize() { :; }
+    set +e
+    false
+    setup_exit_trap
+    [[ ! -e "${pending}" ]]
+    [[ -z "${PENDING_DEPLOY_ENV_FILE}" ]]
+  '
+  assert_success
+}
+
 @test "init_ssh_options: initializes SSH and root SSH options as arrays" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"

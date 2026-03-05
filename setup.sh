@@ -49,9 +49,14 @@ CF_ZONE_NAME=""
 APP_DOMAIN=""
 TUNNEL_ID=""
 TUNNEL_SECRET=""
+PENDING_DEPLOY_ENV_FILE=""
 
 setup_exit_trap() {
   local exit_code=$?
+  if [[ -n "${PENDING_DEPLOY_ENV_FILE}" ]]; then
+    rm -f "${PENDING_DEPLOY_ENV_FILE}" 2>/dev/null || true
+    PENDING_DEPLOY_ENV_FILE=""
+  fi
   run_report_finalize "${exit_code}"
 }
 
@@ -256,6 +261,7 @@ preflight() {
 phase1_harden() {
   step "1/5" "Harden server"
   local deploy_env_file="${DEPLOY_ENV_FILE:-/root/deploy.env}"
+  PENDING_DEPLOY_ENV_FILE="${deploy_env_file}"
 
   local tunnel_flag="false"
   [[ "${DEPLOY_MODE}" == "tunnel" ]] && tunnel_flag="true"
@@ -290,6 +296,7 @@ EOF
 
   # Clean up sensitive env file
   rm -f "${deploy_env_file}"
+  PENDING_DEPLOY_ENV_FILE=""
 }
 
 # ── Phase 2: Gate checks ───────────────────────────────────────────────────

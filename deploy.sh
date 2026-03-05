@@ -54,6 +54,8 @@ CF_ZONE_NAME=""
 APP_DOMAIN=""
 TUNNEL_ID=""
 TUNNEL_SECRET=""
+REMOTE_DEPLOY_ENV_PATH="/root/deploy.env"
+DEPLOY_ENV_REMOTE_PENDING="false"
 
 # ── SSH options ─────────────────────────────────────────────────────────────
 
@@ -68,8 +70,30 @@ cleanup_temp_files() {
   rm -f "${DEPLOY_KNOWN_HOSTS:-}" "${ADMIN_KNOWN_HOSTS:-}" "${ROOT_PASS_RUNTIME_FILE:-}"
 }
 
+cleanup_remote_deploy_env() {
+  [[ "${DEPLOY_ENV_REMOTE_PENDING}" == "true" ]] || return 0
+
+  local cleaned="false"
+  if [[ -n "${TS_IP:-}" && -n "${ADMIN_USER:-}" && -n "${PRIVATE_KEY:-}" && ${#SSH_OPTS[@]} -gt 0 ]]; then
+    if ssh_admin_sudo "rm -f ${REMOTE_DEPLOY_ENV_PATH}" >/dev/null 2>&1; then
+      cleaned="true"
+    fi
+  fi
+
+  if [[ "${cleaned}" != "true" && -n "${SERVER_IP:-}" && -n "${ROOT_PASS_RUNTIME_FILE:-}" && -f "${ROOT_PASS_RUNTIME_FILE}" && ${#ROOT_SSH_OPTS[@]} -gt 0 ]]; then
+    if ssh_root "rm -f ${REMOTE_DEPLOY_ENV_PATH}" >/dev/null 2>&1; then
+      cleaned="true"
+    fi
+  fi
+
+  if [[ "${cleaned}" == "true" ]]; then
+    DEPLOY_ENV_REMOTE_PENDING="false"
+  fi
+}
+
 deploy_exit_trap() {
   local exit_code=$?
+  cleanup_remote_deploy_env
   cleanup_temp_files
   run_report_finalize "${exit_code}"
 }
@@ -413,22 +437,28 @@ phase1_upload_harden() {
   local deploy_env_tmp
   deploy_env_tmp="$(mktemp)" || die "Failed to create temp file for deploy env"
   {
-    printf 'ADMIN_USER=%q\n' "${ADMIN_USER}"
-    printf 'ADMIN_PUBKEY=%q\n' "${ADMIN_PUBKEY}"
-    printf 'TAILSCALE_CIDR=%q\n' "100.64.0.0/10"
-    printf 'SSH_PORT=%q\n' "22"
-    printf 'TUNNEL_MODE=%q\n' "${tunnel_flag}"
-    printf 'SWAP_SIZE=%q\n' "${SWAP_SIZE}"
-    printf 'TIMEZONE=%q\n' "${SERVER_TIMEZONE}"
-    printf 'INSTALL_TAILSCALE=%q\n' "true"
-    printf 'TAILSCALE_AUTH_KEY=%q\n' "${TAILSCALE_AUTH_KEY}"
-    printf 'TAILSCALE_DIRECT_WAN=%q\n' "${TAILSCALE_DIRECT_WAN}"
-    printf 'BIND_DASHBOARD_TO_TAILSCALE=%q\n' "false"
+    printf 'ADMIN_USER="%s"\n' "${ADMIN_USER//\"/\\\"}"
+    printf 'ADMIN_PUBKEY="%s"\n' "${ADMIN_PUBKEY//\"/\\\"}"
+    printf 'TAILSCALE_CIDR="100.64.0.0/10"\n'
+    printf 'SSH_PORT="22"\n'
+    printf 'TUNNEL_MODE="%s"\n' "${tunnel_flag//\"/\\\"}"
+    printf 'SWAP_SIZE="%s"\n' "${SWAP_SIZE//\"/\\\"}"
+    printf 'TIMEZONE="%s"\n' "${SERVER_TIMEZONE//\"/\\\"}"
+    printf 'INSTALL_TAILSCALE="true"\n'
+    printf 'TAILSCALE_AUTH_KEY="%s"\n' "${TAILSCALE_AUTH_KEY//\"/\\\"}"
+    printf 'TAILSCALE_DIRECT_WAN="%s"\n' "${TAILSCALE_DIRECT_WAN//\"/\\\"}"
+    printf 'BIND_DASHBOARD_TO_TAILSCALE="false"\n'
   } > "${deploy_env_tmp}"
   chmod 600 "${deploy_env_tmp}"
-  scp_root "${deploy_env_tmp}" "root@${SERVER_IP}:/root/deploy.env"
+  if ! scp_root "${deploy_env_tmp}" "root@${SERVER_IP}:${REMOTE_DEPLOY_ENV_PATH}"; then
+    rm -f "${deploy_env_tmp}"
+    die "Failed to upload deploy env file to ${SERVER_IP}"
+  fi
   rm -f "${deploy_env_tmp}"
-  ssh_root "chmod 600 /root/deploy.env"
+  if ! ssh_root "chmod 600 ${REMOTE_DEPLOY_ENV_PATH}"; then
+    die "Failed to set permissions on ${REMOTE_DEPLOY_ENV_PATH}"
+  fi
+  DEPLOY_ENV_REMOTE_PENDING="true"
   pass "Environment file written"
 
   # Run hardening, streaming output to terminal while capturing it for TS_IP extraction.
@@ -440,7 +470,7 @@ phase1_upload_harden() {
   harden_tmp="$(mktemp)" || die "Failed to create temp file for hardening output"
 
   # Capture stdout/stderr while preserving failure semantics from the SSH command.
-  if ! ssh_root "/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force" \
+  if ! ssh_root "/root/bootstrap_hardening.sh --env-file ${REMOTE_DEPLOY_ENV_PATH} --install-tailscale --force" \
     2>&1 | tee "${harden_tmp}"; then
     rm -f "${harden_tmp}"
     die "bootstrap_hardening.sh failed. Check server logs: /var/log/bootstrap-hardening.log"
@@ -496,7 +526,9 @@ phase2_gates() {
 
   # Clean up sensitive deploy.env left on server by phase 1.
   # Done here (not in phase 1) because post-hardening UFW blocks root SSH on the public IP.
-  ssh_admin_sudo "rm -f /root/deploy.env" 2>/dev/null || true
+  if ssh_admin_sudo "rm -f ${REMOTE_DEPLOY_ENV_PATH}" 2>/dev/null; then
+    DEPLOY_ENV_REMOTE_PENDING="false"
+  fi
 
   # Always re-sync companion scripts via admin SCP after Gate A/B confirm SSH works.
   # This ensures the latest versions are used even when phase 1 (root upload) was skipped.
