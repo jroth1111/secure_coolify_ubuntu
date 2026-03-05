@@ -113,6 +113,7 @@ DOCKER_SSH_CIDR_SYNC_TIMER="docker-ssh-cidr-sync.timer"
 FAIL2BAN_LOCAL_FILE="/etc/fail2ban/fail2ban.local"
 APPORT_DEFAULT_FILE="/etc/default/apport"
 CRON_EXTRA_OPTS_DROPIN="/etc/systemd/system/cron.service.d/10-extra-opts.conf"
+TAILSCALED_NOTIFY_DROPIN="/etc/systemd/system/tailscaled.service.d/10-notify-access.conf"
 
 load_state_context() {
   [[ -f "${STATE_FILE}" ]] || return 0
@@ -1449,6 +1450,24 @@ tailscale_check() {
     return
   fi
 
+  if unit_available "tailscaled.service"; then
+    local notify_access
+    notify_access="$(systemctl show tailscaled.service -p NotifyAccess --value 2>/dev/null || true)"
+    if [[ "${notify_access}" == "all" ]]; then
+      record "PASS" "tailscale: tailscaled NotifyAccess=all"
+    else
+      record "FAIL" "tailscale: tailscaled NotifyAccess" "expected all, got ${notify_access:-unknown}"
+    fi
+
+    if [[ -f "${TAILSCALED_NOTIFY_DROPIN}" ]] && grep -Eq '^[[:space:]]*NotifyAccess[[:space:]]*=[[:space:]]*all[[:space:]]*$' "${TAILSCALED_NOTIFY_DROPIN}"; then
+      record "PASS" "tailscale: NotifyAccess drop-in present"
+    else
+      record "FAIL" "tailscale: NotifyAccess drop-in" "missing/invalid ${TAILSCALED_NOTIFY_DROPIN}"
+    fi
+  else
+    record "INFO" "tailscale: tailscaled service" "unit not installed"
+  fi
+
   # Check actual connection state via tailscale CLI (not just interface presence).
   # Interface can exist while the daemon is in a broken/logged-out state.
   if command -v tailscale >/dev/null 2>&1; then
@@ -1486,6 +1505,18 @@ tailscale_check() {
       record "INFO" "tailscale: peer path summary" "direct=${direct_count}, relay=${relay_count}"
     else
       record "INFO" "tailscale: peer path summary" "unable to parse direct/relay counts"
+    fi
+
+    if command -v journalctl >/dev/null 2>&1 && unit_available "tailscaled.service"; then
+      local ts_active_since ts_notify_warn_count
+      ts_active_since="$(systemctl show tailscaled.service -p ActiveEnterTimestamp --value 2>/dev/null || true)"
+      ts_notify_warn_count="$(journalctl -u tailscaled --since "${ts_active_since:-now}" --no-pager 2>/dev/null \
+        | grep -c 'Got notification message from PID .*reception only permitted for main PID' || true)"
+      if [[ "${ts_notify_warn_count}" =~ ^[0-9]+$ && "${ts_notify_warn_count}" -eq 0 ]]; then
+        record "PASS" "tailscale: no systemd notify warnings after last start"
+      else
+        record "FAIL" "tailscale: no systemd notify warnings after last start" "found ${ts_notify_warn_count:-unknown} warning(s)"
+      fi
     fi
   else
     record "INFO" "tailscale: CLI" "tailscale binary not found; skipping state/IP checks"
