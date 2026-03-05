@@ -521,10 +521,10 @@ curl -s -o /dev/null -w '%{http_code}' http://<public-ip>:6001     # Should fail
 # Tunnel mode: verify cloudflared is running, private domain routes work, and public origin stays blocked
 sudo systemctl status cloudflared        # Should be active
 sudo ufw status verbose                  # Should NOT show 80/443 ALLOW on WAN
-curl -s -o /dev/null -w '%{http_code}' http://<your-domain>        # Should be 2xx/3xx on Tailscale clients
-curl -s -o /dev/null -w '%{http_code}' http://ws.<your-domain>     # Should be non-000 on Tailscale clients
-curl -s -o /dev/null -w '%{http_code}' https://<your-domain>    # Should be 2xx/3xx on Tailscale clients with trusted cert
-curl -s -o /dev/null -w '%{http_code}' https://ws.<your-domain> # Should be non-000 on Tailscale clients with trusted cert
+curl -s -o /dev/null -w '%{http_code}' http://<your-domain>        # Should be 301/302/307/308 redirect on Tailscale clients
+curl -s -o /dev/null -w '%{http_code}' http://ws.<your-domain>     # Should be 301/302/307/308 redirect on Tailscale clients
+curl -s -o /dev/null -w '%{http_code}' https://<your-domain>       # Should be 2xx/3xx on Tailscale clients with trusted cert
+curl -s -o /dev/null -w '%{http_code}' https://ws.<your-domain>    # Should be non-000 on Tailscale clients with trusted cert
 curl -s -o /dev/null -w '%{http_code}' http://<public-ip>          # Should fail/timeout
 curl -k -s -o /dev/null -w '%{http_code}' https://<public-ip>      # Should fail/timeout
 
