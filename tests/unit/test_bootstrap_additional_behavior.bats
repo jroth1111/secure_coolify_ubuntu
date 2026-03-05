@@ -436,6 +436,34 @@ EOF
   [ ! -f "${marker}" ]
 }
 
+@test "configure_rsyslog_targets: does not reset /var/log mode while ensuring target directories" {
+  DRY_RUN="false"
+  rsyslog_collect_log_targets() {
+    printf '%s\n' "/var/log/ufw.log" "/var/log/mail.log"
+  }
+  ensure_logrotate_create_directive() { :; }
+  getent() { return 0; }
+
+  local install_log
+  install_log="$(mktemp)"
+
+  install() { printf '%s\n' "$*" >> "${install_log}"; return 0; }
+  touch() { :; }
+  chown() { :; }
+  chmod() { :; }
+  systemctl() { return 1; }
+
+  run configure_rsyslog_targets
+  assert_success
+
+  run grep -F -- "-d -m 0770 -o root -g syslog /var/log" "${install_log}"
+  assert_success
+  run grep -F -- "-d -m 0755 /var/log" "${install_log}"
+  assert_failure
+
+  rm -f "${install_log}"
+}
+
 @test "configure_docker_daemon: skips when Docker absent" {
   DRY_RUN="true"
   DOCKER_PRESENT="false"

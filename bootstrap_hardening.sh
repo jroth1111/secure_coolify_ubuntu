@@ -1603,7 +1603,11 @@ configure_rsyslog_targets() {
       log "DRY-RUN: ensure ${target} exists (0640 syslog:${log_group})"
       continue
     fi
-    install -d -m 0755 "$(dirname "${target}")"
+    local target_dir
+    target_dir="$(dirname "${target}")"
+    if [[ ! -d "${target_dir}" ]]; then
+      install -d -m 0755 "${target_dir}"
+    fi
     touch "${target}"
     chown "syslog:${log_group}" "${target}"
     chmod 0640 "${target}"
