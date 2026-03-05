@@ -4,6 +4,7 @@ tests/lib/bats-support/.git.embedded/
 
 # Test/build artifacts (ephemeral by default)
 artifacts/
+logs/
 
 # Local agent/tool scratch output
 workspace/

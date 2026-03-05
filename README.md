@@ -195,6 +195,8 @@ After this, every new app gets: auto-assigned subdomain → wildcard DNS → Clo
 | **Attack surface** | Zero public HTTP/S | Origin IP exposed behind Cloudflare |
 | **Per-subdomain bypass** | Not possible | DNS-only ("grey cloud") available |
 
+`--tunnel-mode` / `--mode tunnel` select the same private-only exposure model (`bootstrap_hardening.sh` vs `deploy.sh`/`setup.sh`).
+
 **Tunnel is the default** because it eliminates direct-to-origin bypass entirely.
 
 ### Tunnel Mode Limitations

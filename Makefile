@@ -40,36 +40,10 @@ BATS_LIB_DIR ?= tests/lib
 ARTIFACTS_DIR ?= artifacts
 CONTAINER_PREFIX ?= ht
 WORKSPACE ?= /workspace
-
-# Run BATS in tier1 container (lightweight, no systemd)
-define run_bats_tier1
-mkdir -p $(ARTIFACTS_DIR); \
-docker run --rm $(1) -v "$$(pwd)":$(WORKSPACE) $(IMAGE_TIER1) \
-  bats $(2) > $(ARTIFACTS_DIR)/$(3).log 2>&1; \
-rc=$$?; \
-cat $(ARTIFACTS_DIR)/$(3).log; \
-exit $$rc
-endef
-
-# Run BATS in tier2 container (privileged systemd)
-define run_bats_tier2
-name="$(CONTAINER_PREFIX)-$(1)-$$RANDOM"; \
-mkdir -p $(ARTIFACTS_DIR); \
-docker run -d --name "$$name" --privileged \
-  --tmpfs /tmp --tmpfs /run \
-  -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
-  -v "$$(pwd)":$(WORKSPACE) $(IMAGE_TIER2) >/dev/null; \
-sleep 3; \
-docker exec "$$name" bats $(2) > $(ARTIFACTS_DIR)/$(1).log 2>&1; \
-rc=$$?; \
-docker exec "$$name" test -f /var/log/bootstrap-hardening-report.json \
-  && docker exec "$$name" cat /var/log/bootstrap-hardening-report.json > $(ARTIFACTS_DIR)/$(1)-bootstrap-report.json || true; \
-docker exec "$$name" bash -lc '/workspace/validate_hardening.sh --json' \
-  > $(ARTIFACTS_DIR)/$(1)-validate.json 2>/dev/null || true; \
-docker rm -f "$$name" >/dev/null 2>&1 || true; \
-cat $(ARTIFACTS_DIR)/$(1).log; \
-exit $$rc
-endef
+RUNNER_DOCKER_CMD ?= scripts/run_docker_lane_cmd.sh
+RUNNER_BATS_TIER1 ?= scripts/run_bats_tier1_lane.sh
+RUNNER_BATS_TIER2 ?= scripts/run_bats_tier2_lane.sh
+RUNNER_MATRIX_TIER2 ?= scripts/run_tier2_scenario_matrix.sh
 
 # ==============================================================================
 # Docker Build Targets
@@ -108,15 +82,12 @@ setup-bats:
 
 # Tier 1: Lint and syntax checks inside Docker (container-first execution)
 test-lint-docker: docker-build-tier1
-	mkdir -p $(ARTIFACTS_DIR); \
-	docker run --rm -v "$$(pwd)":$(WORKSPACE) $(IMAGE_TIER1) \
-	  bash -lc 'cd $(WORKSPACE) && \
-	    bash -n bootstrap_hardening.sh setup.sh deploy.sh validate_hardening.sh configure_coolify_binding.sh lib/coolify-common.sh && \
-	    shellcheck -S error bootstrap_hardening.sh setup.sh deploy.sh validate_hardening.sh configure_coolify_binding.sh lib/coolify-common.sh scripts/*.sh' \
-	  > $(ARTIFACTS_DIR)/lint-docker.log 2>&1; \
-	rc=$$?; \
-	cat $(ARTIFACTS_DIR)/lint-docker.log; \
-	exit $$rc
+	$(RUNNER_DOCKER_CMD) \
+	  --image $(IMAGE_TIER1) \
+	  --lane lint-docker \
+	  --workspace $(WORKSPACE) \
+	  --artifacts-dir $(ARTIFACTS_DIR) \
+	  --cmd 'bash -n bootstrap_hardening.sh setup.sh deploy.sh validate_hardening.sh configure_coolify_binding.sh lib/coolify-common.sh && shellcheck -S error bootstrap_hardening.sh setup.sh deploy.sh validate_hardening.sh configure_coolify_binding.sh lib/coolify-common.sh scripts/*.sh'
 
 # Tier 0: Unit tests - local (fastest, no Docker)
 test-unit-local: setup-bats
@@ -124,38 +95,91 @@ test-unit-local: setup-bats
 
 # Tier 1: Unit tests in Docker (for CI consistency)
 test-unit-docker: docker-build-tier1
-	$(call run_bats_tier1,,/workspace/tests/unit/,unit)
+	$(RUNNER_BATS_TIER1) \
+	  --image $(IMAGE_TIER1) \
+	  --lane unit \
+	  --target /workspace/tests/unit/ \
+	  --workspace $(WORKSPACE) \
+	  --artifacts-dir $(ARTIFACTS_DIR)
 
 # Backwards-compatible alias
 test-unit: test-unit-docker
 
 # Tier 1: Deploy/setup orchestrator smoke tests (mocked behavior)
 test-orchestrator-smoke: docker-build-tier1
-	$(call run_bats_tier1,,/workspace/tests/integration/test_deploy.bats,orchestrator-smoke)
+	$(RUNNER_BATS_TIER1) \
+	  --image $(IMAGE_TIER1) \
+	  --lane orchestrator-smoke \
+	  --target /workspace/tests/integration/test_deploy.bats \
+	  --workspace $(WORKSPACE) \
+	  --artifacts-dir $(ARTIFACTS_DIR)
 
 # Tier 1: Dry-run integration tests (lightweight container)
 test-dry-run: docker-build-tier1
-	$(call run_bats_tier1,--cap-add NET_ADMIN,/workspace/tests/integration/test_dry_run.bats,dry-run)
+	$(RUNNER_BATS_TIER1) \
+	  --image $(IMAGE_TIER1) \
+	  --lane dry-run \
+	  --target /workspace/tests/integration/test_dry_run.bats \
+	  --workspace $(WORKSPACE) \
+	  --artifacts-dir $(ARTIFACTS_DIR) \
+	  --docker-arg --cap-add \
+	  --docker-arg NET_ADMIN
 
 # Tier 2: Full integration tests (privileged systemd container)
 test-full-standard: docker-build-tier2
-	$(call run_bats_tier2,full-standard,/workspace/tests/integration/test_full_run.bats)
+	$(RUNNER_BATS_TIER2) \
+	  --image $(IMAGE_TIER2) \
+	  --lane full-standard \
+	  --target /workspace/tests/integration/test_full_run.bats \
+	  --workspace $(WORKSPACE) \
+	  --artifacts-dir $(ARTIFACTS_DIR) \
+	  --container-prefix $(CONTAINER_PREFIX)
 
 test-full-tunnel: docker-build-tier2
-	$(call run_bats_tier2,full-tunnel,/workspace/tests/integration/test_full_tunnel.bats)
+	$(RUNNER_BATS_TIER2) \
+	  --image $(IMAGE_TIER2) \
+	  --lane full-tunnel \
+	  --target /workspace/tests/integration/test_full_tunnel.bats \
+	  --workspace $(WORKSPACE) \
+	  --artifacts-dir $(ARTIFACTS_DIR) \
+	  --container-prefix $(CONTAINER_PREFIX)
 
 test-validate: docker-build-tier2
-	$(call run_bats_tier2,validate,/workspace/tests/integration/test_validate_script.bats)
+	$(RUNNER_BATS_TIER2) \
+	  --image $(IMAGE_TIER2) \
+	  --lane validate \
+	  --target /workspace/tests/integration/test_validate_script.bats \
+	  --workspace $(WORKSPACE) \
+	  --artifacts-dir $(ARTIFACTS_DIR) \
+	  --container-prefix $(CONTAINER_PREFIX)
 
 test-idempotency: docker-build-tier2
-	$(call run_bats_tier2,idempotency,/workspace/tests/integration/test_idempotency.bats)
+	$(RUNNER_BATS_TIER2) \
+	  --image $(IMAGE_TIER2) \
+	  --lane idempotency \
+	  --target /workspace/tests/integration/test_idempotency.bats \
+	  --workspace $(WORKSPACE) \
+	  --artifacts-dir $(ARTIFACTS_DIR) \
+	  --container-prefix $(CONTAINER_PREFIX)
 
 # Tier 2: Scenario-matrix integration tests
 test-bootstrap-matrix: docker-build-tier2
-	$(call run_bats_tier2,bootstrap-matrix,/workspace/tests/integration/test_bootstrap_matrix.bats)
+	$(RUNNER_MATRIX_TIER2) \
+	  --image $(IMAGE_TIER2) \
+	  --lane bootstrap-matrix \
+	  --file /workspace/tests/integration/test_bootstrap_matrix.bats \
+	  --workspace $(WORKSPACE) \
+	  --artifacts-dir $(ARTIFACTS_DIR) \
+	  --container-prefix $(CONTAINER_PREFIX)
 
 test-validate-negative-matrix: docker-build-tier2
-	$(call run_bats_tier2,validate-negative-matrix,/workspace/tests/integration/test_validate_negative_matrix.bats)
+	$(RUNNER_MATRIX_TIER2) \
+	  --image $(IMAGE_TIER2) \
+	  --lane validate-negative-matrix \
+	  --file /workspace/tests/integration/test_validate_negative_matrix.bats \
+	  --workspace $(WORKSPACE) \
+	  --artifacts-dir $(ARTIFACTS_DIR) \
+	  --container-prefix $(CONTAINER_PREFIX)
 
 # Workflow contract and documentation consistency checks
 test-workflow-consistency:
@@ -171,7 +195,13 @@ test-bats-target-coverage:
 test-logic-step-coverage:
 	bash scripts/check_logic_step_coverage.sh
 
-test-contracts: test-workflow-consistency test-function-coverage test-bats-target-coverage test-logic-step-coverage
+test-contracts: docker-build-tier1
+	$(RUNNER_DOCKER_CMD) \
+	  --image $(IMAGE_TIER1) \
+	  --lane contracts \
+	  --workspace $(WORKSPACE) \
+	  --artifacts-dir $(ARTIFACTS_DIR) \
+	  --cmd 'bash scripts/check_workflow_consistency.sh && bash scripts/check_function_behavior_coverage.sh && bash scripts/check_bats_target_coverage.sh && bash scripts/check_logic_step_coverage.sh'
 
 # ==============================================================================
 # Combined Targets
@@ -191,7 +221,7 @@ aggregate-artifacts:
 	bash scripts/aggregate_test_artifacts.sh
 
 # CI targets: max coverage always in Docker
-test-ci-max: test-all aggregate-artifacts
+test-ci-max: clean-artifacts test-all aggregate-artifacts
 
 # Backwards-compatible aliases
 test-ci-pr: test-ci-max

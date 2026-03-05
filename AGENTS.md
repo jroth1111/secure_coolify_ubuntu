@@ -74,8 +74,8 @@ Collect:
 
 Collect:
 
-- root password (or root password file path for automation)
-- Tailscale auth key (`tskey-auth-*`) unless resuming with `--ts-ip`
+- root password (or root password file path for automation) for `deploy.sh` fresh runs (not required for `--ts-ip` resume or `--preflight-only`)
+- Tailscale auth key (`tskey-auth-*`) unless resuming with `--ts-ip` or running `--preflight-only`
 - Cloudflare API token (or `--cf-api-token-file`)
 - Cloudflare tunnel token if split-token model is used (`--cf-tunnel-api-token-file`)
 
@@ -102,8 +102,10 @@ Use this checklist to avoid over-asking or missing required inputs.
 | Workflow | Must be user-provided/decided | Optional overrides (safe defaults exist) | Not required in this workflow |
 |----------|-------------------------------|------------------------------------------|-------------------------------|
 | `deploy.sh` fresh run | `--server-ip`, `--domain`, root password (prompt or `--root-pass-file`), `--tailscale-auth-key`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), server timezone choice (`--server-timezone`; mandatory with `--yes`) | `--admin-user` (`coolifyadmin`), `--pubkey-file` (`~/.ssh/id_ed25519.pub`), `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--tailscale-direct-wan` (disabled by default), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, split tunnel token file (`--cf-tunnel-api-token-file`) | `--ts-ip` |
+| `deploy.sh --preflight-only` | `--server-ip`, `--domain`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), server timezone choice (`--server-timezone`; mandatory with `--yes`) | `--admin-user` (`coolifyadmin`), `--pubkey-file` (`~/.ssh/id_ed25519.pub`), `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--tailscale-direct-wan` (disabled by default), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, split tunnel token file (`--cf-tunnel-api-token-file`) | root password / `--root-pass-file`, `--tailscale-auth-key`, `--ts-ip` |
 | `deploy.sh --ts-ip <ip>` resume | `--server-ip`, `--domain`, `--ts-ip`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), server timezone choice (`--server-timezone`; mandatory with `--yes`) | Same overrides/defaults as fresh run | root password, `--root-pass-file`, `--tailscale-auth-key` |
 | `setup.sh` server-local run | `--server-ip`, `--admin-user`, `--pubkey-file`, `--domain`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), `--tailscale-auth-key` unless `--preflight-only`, server timezone choice (`--server-timezone`; mandatory with `--yes`) | `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--tailscale-direct-wan` (disabled by default), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, split tunnel token file (`--cf-tunnel-api-token-file`) | root password / `--root-pass-file`, `--ts-ip` |
+| `setup.sh --preflight-only` | `--server-ip`, `--admin-user`, `--pubkey-file`, `--domain`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), server timezone choice (`--server-timezone`; mandatory with `--yes`) | `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--tailscale-direct-wan` (disabled by default), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, split tunnel token file (`--cf-tunnel-api-token-file`) | `--tailscale-auth-key`, root password / `--root-pass-file`, `--ts-ip` |
 
 Recommended defaults (when user is undecided):
 - `--mode tunnel`
@@ -125,10 +127,19 @@ bash deploy.sh --server-ip <ip> --domain <fqdn> --root-pass-file <path> \
 bash deploy.sh --server-ip <ip> --domain <fqdn> --ts-ip <100.x.x.x> \
   --server-timezone <IANA> --cf-api-token-file <path> --yes
 
+# deploy.sh preflight-only
+bash deploy.sh --server-ip <ip> --domain <fqdn> --server-timezone <IANA> \
+  --cf-api-token-file <path> --preflight-only --yes
+
 # setup.sh server-local
 sudo bash setup.sh --server-ip <ip> --admin-user <name> --pubkey-file <path> \
   --domain <fqdn> --tailscale-auth-key <tskey-auth-...> --server-timezone <IANA> \
   --cf-api-token-file <path> --yes
+
+# setup.sh preflight-only
+sudo bash setup.sh --server-ip <ip> --admin-user <name> --pubkey-file <path> \
+  --domain <fqdn> --server-timezone <IANA> --cf-api-token-file <path> \
+  --preflight-only --yes
 ```
 
 Decision tree:

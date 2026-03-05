@@ -1926,3 +1926,45 @@ entries:
   checks:
   - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
+- id: LS-BOOT-072
+  script_path: bootstrap_hardening.sh
+  function: unit_available
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::unit_available: returns success when
+    systemctl reports loaded unit'
+  checks:
+  - 'tests/unit/test_functions.bats::unit_available: returns success when systemctl
+    reports loaded unit'
+  - 'tests/unit/test_functions.bats::unit_available: returns failure when systemctl
+    reports not-found'
+- id: LS-VAL-040
+  script_path: validate_hardening.sh
+  function: unit_available
+  criticality: utility
+  behavior_test: 'tests/unit/test_validate_functions.bats::unit_available (validate):
+    returns success for loaded unit'
+  checks:
+  - 'tests/unit/test_validate_functions.bats::unit_available (validate): returns success
+    for loaded unit'
+  - 'tests/unit/test_validate_functions.bats::unit_available (validate): returns failure
+    for missing unit'
+- id: LS-COM-055
+  script_path: lib/coolify-common.sh
+  function: run_with_heartbeat
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run_with_heartbeat:
+    emits begin/end markers and preserves command output'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::run_with_heartbeat: emits begin/end
+    markers and preserves command output'
+  - 'tests/unit/test_common_additional_behavior.bats::run_with_heartbeat: propagates
+    command failure with failed marker'
+- id: LS-COM-056
+  script_path: lib/coolify-common.sh
+  function: stream_command_output
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::stream_command_output:
+    writes capture file and streams output'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::stream_command_output: writes
+    capture file and streams output'

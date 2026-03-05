@@ -30,6 +30,46 @@ setup() {
   assert_failure
 }
 
+@test "unit_available (validate): returns success for loaded unit" {
+  local stubbin
+  stubbin="$(mktemp -d)"
+  cat > "${stubbin}/systemctl" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "show" ]]; then
+  printf 'loaded\n'
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "${stubbin}/systemctl"
+
+  PATH="${stubbin}:${PATH}"
+  run unit_available "docker-user-hardening.service"
+  assert_success
+
+  rm -rf "${stubbin}"
+}
+
+@test "unit_available (validate): returns failure for missing unit" {
+  local stubbin
+  stubbin="$(mktemp -d)"
+  cat > "${stubbin}/systemctl" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "show" ]]; then
+  printf 'not-found\n'
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "${stubbin}/systemctl"
+
+  PATH="${stubbin}:${PATH}"
+  run unit_available "missing.service"
+  assert_failure
+
+  rm -rf "${stubbin}"
+}
+
 @test "record: PASS status increments pass counter and stores check in JSON payload" {
   record "PASS" "record-pass" "ok"
 

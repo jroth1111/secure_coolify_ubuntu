@@ -156,7 +156,7 @@ def file_sources_target(file_text: str, script_path: str) -> bool:
 
 
 def has_assertion(body: str) -> bool:
-    if re.search(r"\bassert_(success|failure|output|line|regex|equal|not_equal)\b", body):
+    if re.search(r"\bassert_[A-Za-z0-9_]+\b", body):
         return True
     if re.search(r"(^|\n)\s*\[\[?\s*[^\n]+\s*\]\]?\s*$", body, re.M):
         return True

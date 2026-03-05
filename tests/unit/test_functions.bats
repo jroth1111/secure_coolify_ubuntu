@@ -73,6 +73,48 @@ setup() {
   assert_output --partial "requires a value"
 }
 
+# ── unit_available() ─────────────────────────────────────────────────────────
+
+@test "unit_available: returns success when systemctl reports loaded unit" {
+  local stubbin
+  stubbin="$(mktemp -d)"
+  cat > "${stubbin}/systemctl" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "show" ]]; then
+  printf 'loaded\n'
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "${stubbin}/systemctl"
+
+  PATH="${stubbin}:${PATH}"
+  run unit_available "docker-user-hardening.service"
+  assert_success
+
+  rm -rf "${stubbin}"
+}
+
+@test "unit_available: returns failure when systemctl reports not-found" {
+  local stubbin
+  stubbin="$(mktemp -d)"
+  cat > "${stubbin}/systemctl" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "show" ]]; then
+  printf 'not-found\n'
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "${stubbin}/systemctl"
+
+  PATH="${stubbin}:${PATH}"
+  run unit_available "missing.service"
+  assert_failure
+
+  rm -rf "${stubbin}"
+}
+
 # ── usage() ──────────────────────────────────────────────────────────────────
 
 @test "usage: prints required and optional flag sections" {
