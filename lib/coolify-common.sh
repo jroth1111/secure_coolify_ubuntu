@@ -1246,10 +1246,26 @@ coolify_phase5_verify_shared() {
     done
 
     if [[ "${gate_f_private_routes_passed}" != "true" ]]; then
-      fail "Gate F: private dashboard HTTP did not redirect to HTTPS (http://${DOMAIN} → HTTP ${dashboard_private_code})"
-      fail "Gate F: private websocket HTTP did not redirect to HTTPS (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
-      fail "Gate F: private dashboard HTTPS route failed (https://${DOMAIN} → HTTP ${dashboard_private_https_code})"
-      fail "Gate F: private websocket WSS handshake failed (wss://ws.${DOMAIN} → HTTP ${ws_private_wss_code})"
+      if [[ "${dashboard_private_code}" =~ ^30[1278]$ ]]; then
+        pass "Gate F: private dashboard HTTP redirects to HTTPS (http://${DOMAIN} → HTTP ${dashboard_private_code})"
+      else
+        fail "Gate F: private dashboard HTTP did not redirect to HTTPS (http://${DOMAIN} → HTTP ${dashboard_private_code})"
+      fi
+      if [[ "${ws_private_code}" =~ ^30[1278]$ ]]; then
+        pass "Gate F: private websocket HTTP redirects to HTTPS (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
+      else
+        fail "Gate F: private websocket HTTP did not redirect to HTTPS (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
+      fi
+      if [[ "${dashboard_private_https_code}" =~ ^2[0-9][0-9]$ ]]; then
+        pass "Gate F: private dashboard HTTPS route works (https://${DOMAIN} → HTTP ${dashboard_private_https_code})"
+      else
+        fail "Gate F: private dashboard HTTPS route failed (https://${DOMAIN} → HTTP ${dashboard_private_https_code})"
+      fi
+      if [[ "${ws_private_wss_code}" == "101" ]]; then
+        pass "Gate F: private websocket WSS handshake works (wss://ws.${DOMAIN} → HTTP ${ws_private_wss_code})"
+      else
+        fail "Gate F: private websocket WSS handshake failed (wss://ws.${DOMAIN} → HTTP ${ws_private_wss_code})"
+      fi
       die "Gate F failed: private host routes are not functional on Tailscale."
     fi
     pass "Gate F: private dashboard HTTP redirects to HTTPS (http://${DOMAIN} → HTTP ${dashboard_private_code})"
@@ -1644,6 +1660,10 @@ http:
         - coolify-private-gzip
       tls:
         certResolver: ${PRIVATE_TLS_RESOLVER}
+        domains:
+          - main: ${DOMAIN}
+            sans:
+              - ws.${DOMAIN}
     coolify-private-realtime-http:
       entryPoints:
         - http
@@ -1656,8 +1676,7 @@ http:
         - https
       rule: "Host(\`ws.${DOMAIN}\`)"
       service: coolify-private-realtime
-      tls:
-        certResolver: ${PRIVATE_TLS_RESOLVER}
+      tls: {}
     coolify-private-terminal-http:
       entryPoints:
         - http
@@ -1672,8 +1691,7 @@ http:
       rule: "Host(\`ws.${DOMAIN}\`) && PathPrefix(\`/terminal/ws\`)"
       service: coolify-private-terminal
       priority: 100
-      tls:
-        certResolver: ${PRIVATE_TLS_RESOLVER}
+      tls: {}
   services:
     coolify-private-dashboard:
       loadBalancer:

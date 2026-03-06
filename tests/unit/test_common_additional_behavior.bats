@@ -243,6 +243,8 @@ setup() {
   assert_output --partial "coolify-private-dashboard.yaml"
   assert_output --partial "coolify-private-dashboard-http:"
   assert_output --partial "coolify-private-dashboard-https:"
+  assert_output --partial "main: \${DOMAIN}"
+  assert_output --partial "- ws.\${DOMAIN}"
   assert_output --partial "coolify-private-realtime-http:"
   assert_output --partial "coolify-private-realtime-https:"
   assert_output --partial "coolify-private-terminal-http:"
@@ -252,6 +254,7 @@ setup() {
   assert_output --partial "http://coolify:8080"
   assert_output --partial "http://coolify-realtime:6001"
   assert_output --partial "http://coolify-realtime:6002"
+  [[ "$(grep -Fc 'certResolver: ${PRIVATE_TLS_RESOLVER}' <<< "${output}")" -eq 1 ]]
 }
 
 @test "coolify_remove_private_dashboard_routes_script: emits managed route cleanup logic" {
@@ -686,6 +689,10 @@ setup() {
     coolify_phase5_verify_shared fetch_validate_json external :
   '
   assert_failure
+  assert_output --partial "Gate F: private dashboard HTTP redirects to HTTPS"
+  assert_output --partial "Gate F: private websocket HTTP redirects to HTTPS"
+  refute_output --partial "Gate F: private dashboard HTTP did not redirect to HTTPS"
+  refute_output --partial "Gate F: private websocket HTTP did not redirect to HTTPS"
   assert_output --partial "Gate F: private websocket WSS handshake failed"
 }
 
