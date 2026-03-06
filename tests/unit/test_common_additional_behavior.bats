@@ -668,6 +668,34 @@ setup() {
   assert_success
 }
 
+@test "coolify_phase5_verify_shared: rejects unhealthy dashboard HTTP codes on Tailscale" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    DEPLOY_MODE="standard"
+    TS_IP="100.64.0.10"
+    SERVER_IP="203.0.113.10"
+    DOMAIN="vps.example.com"
+    sleep() { :; }
+    curl() {
+      local url="${@: -1}"
+      if [[ "${url}" == "http://${TS_IP}:8000" ]]; then
+        echo "404"
+      else
+        echo "000"
+      fi
+    }
+    coolify_phase5_fetch_pusher_app_key() { echo "pusher-key"; }
+    coolify_phase5_probe_websocket_code() { echo "101"; }
+    fetch_validate_json() { echo "{\"fail\":0,\"checks\":[]}"; }
+    operator_confirm() { :; }
+    print_deployment_summary() { :; }
+
+    coolify_phase5_verify_shared fetch_validate_json operator operator_confirm
+  '
+  assert_failure
+  assert_output --partial "Gate E failed: dashboard not reachable via Tailscale."
+}
+
 @test "coolify_phase5_verify_shared: tunnel mode fails when private WSS handshake is not 101" {
   run bash -c '
     source "'"${COMMON_LIB}"'"
@@ -718,6 +746,48 @@ setup() {
   refute_output --partial "Gate F: private dashboard HTTP did not redirect to HTTPS"
   refute_output --partial "Gate F: private websocket HTTP did not redirect to HTTPS"
   assert_output --partial "Gate F: private websocket WSS handshake failed"
+}
+
+@test "coolify_phase5_verify_shared: tunnel mode accepts 303 private redirects" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    DEPLOY_MODE="tunnel"
+    TS_IP="100.64.0.10"
+    SERVER_IP="203.0.113.10"
+    DOMAIN="vps.example.com"
+
+    sleep() { :; }
+    curl() {
+      local url="${@: -1}"
+      case "${url}" in
+        "http://${TS_IP}:8000") echo "200" ;;
+        "http://${SERVER_IP}:8000") echo "000" ;;
+        "http://${DOMAIN}") echo "303" ;;
+        "http://ws.${DOMAIN}") echo "303" ;;
+        "https://${DOMAIN}") echo "200" ;;
+        "http://${SERVER_IP}") echo "000" ;;
+        "https://${SERVER_IP}") echo "000" ;;
+        *) echo "404" ;;
+      esac
+    }
+    coolify_phase5_fetch_pusher_app_key() { echo "pusher-key"; }
+    coolify_phase5_probe_websocket_code() {
+      case "$1" in
+        "ws://${TS_IP}:6001/"*) echo "101" ;;
+        "ws://${SERVER_IP}:6001/"*) echo "000" ;;
+        "wss://ws.${DOMAIN}/"*) echo "101" ;;
+        *) echo "000" ;;
+      esac
+    }
+    cf_assert_private_tailscale_a_record() { :; }
+    fetch_validate_json() { echo "{\"fail\":0,\"checks\":[]}"; }
+    print_deployment_summary() { :; }
+
+    coolify_phase5_verify_shared fetch_validate_json external :
+  '
+  assert_success
+  assert_output --partial "Gate F: private dashboard HTTP redirects to HTTPS (http://vps.example.com → HTTP 303)"
+  assert_output --partial "Gate F: private websocket HTTP redirects to HTTPS (http://ws.vps.example.com → HTTP 303)"
 }
 
 @test "print_deployment_summary: tunnel mode prefers private HTTPS guidance" {

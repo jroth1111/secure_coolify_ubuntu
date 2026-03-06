@@ -983,7 +983,7 @@ coolify_phase5_fetch_pusher_app_key() {
   if declare -F ssh_admin_sudo >/dev/null 2>&1; then
     output="$(ssh_admin_sudo "${fetch_cmd}" 2>/dev/null || true)"
   else
-    output="$(eval "${fetch_cmd}" 2>/dev/null || true)"
+    output="$(bash -o pipefail -c "${fetch_cmd}" 2>/dev/null || true)"
   fi
 
   printf '%s\n' "${output}" | awk 'NF { last=$0 } END { if (last != "") print last }'
@@ -1071,6 +1071,16 @@ except Exception:
 PY
 }
 
+coolify_http_code_is_success_or_redirect() {
+  local code="${1:-000}"
+  [[ "${code}" =~ ^2[0-9][0-9]$ || "${code}" =~ ^30[12378]$ ]]
+}
+
+coolify_dashboard_http_code_is_healthy() {
+  local code="${1:-000}"
+  coolify_http_code_is_success_or_redirect "${code}" || [[ "${code}" == "401" || "${code}" == "403" ]]
+}
+
 coolify_phase5_verify_shared() {
   local fetch_validate_json_fn="${1:-}"
   local public_probe_mode="${2:-external}"
@@ -1103,7 +1113,7 @@ coolify_phase5_verify_shared() {
       pub_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 "http://${SERVER_IP}:8000" 2>/dev/null)" || pub_code=""
       pub_code="${pub_code:-000}"
       pub_code="${pub_code:0:3}"
-      if [[ "${ts_code}" != "000" && "${pub_code}" == "000" ]]; then
+      if coolify_dashboard_http_code_is_healthy "${ts_code}" && [[ "${pub_code}" == "000" ]]; then
         gate_e_passed=true
         break
       fi
@@ -1112,7 +1122,7 @@ coolify_phase5_verify_shared() {
         sleep "${delay}"
       fi
     else
-      if [[ "${ts_code}" != "000" ]]; then
+      if coolify_dashboard_http_code_is_healthy "${ts_code}"; then
         gate_e_passed=true
         break
       fi
@@ -1188,7 +1198,8 @@ coolify_phase5_verify_shared() {
     fi
     pass "Gate E: Websocket NOT reachable on public IP (good)"
   elif [[ -n "${operator_confirm_fn}" ]]; then
-    "${operator_confirm_fn}" "From your LAPTOP, verify: curl http://${SERVER_IP}:8000 fails and curl http://${SERVER_IP}:6001 fails"
+    "${operator_confirm_fn}" "From your LAPTOP, verify: curl http://${SERVER_IP}:8000 fails and curl http://${SERVER_IP}:6001 fails" \
+      || die "Gate E failed: operator could not confirm public dashboard/websocket blocking."
     pass "Gate E: Operator-confirmed dashboard/websocket blocked on public IP"
   fi
 
@@ -1241,8 +1252,8 @@ coolify_phase5_verify_shared() {
       dashboard_private_https_code="${dashboard_private_https_code:0:3}"
       ws_private_wss_code="${ws_private_wss_code:0:3}"
 
-      if [[ "${dashboard_private_code}" =~ ^30[1278]$ && \
-            "${ws_private_code}" =~ ^30[1278]$ && \
+      if [[ "${dashboard_private_code}" =~ ^30[12378]$ && \
+            "${ws_private_code}" =~ ^30[12378]$ && \
             "${dashboard_private_https_code}" =~ ^2[0-9][0-9]$ && \
             "${ws_private_wss_code}" == "101" ]]; then
         gate_f_private_routes_passed=true
@@ -1255,12 +1266,12 @@ coolify_phase5_verify_shared() {
     done
 
     if [[ "${gate_f_private_routes_passed}" != "true" ]]; then
-      if [[ "${dashboard_private_code}" =~ ^30[1278]$ ]]; then
+      if [[ "${dashboard_private_code}" =~ ^30[12378]$ ]]; then
         pass "Gate F: private dashboard HTTP redirects to HTTPS (http://${DOMAIN} → HTTP ${dashboard_private_code})"
       else
         fail "Gate F: private dashboard HTTP did not redirect to HTTPS (http://${DOMAIN} → HTTP ${dashboard_private_code})"
       fi
-      if [[ "${ws_private_code}" =~ ^30[1278]$ ]]; then
+      if [[ "${ws_private_code}" =~ ^30[12378]$ ]]; then
         pass "Gate F: private websocket HTTP redirects to HTTPS (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
       else
         fail "Gate F: private websocket HTTP did not redirect to HTTPS (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
@@ -1297,7 +1308,8 @@ coolify_phase5_verify_shared() {
       fi
       pass "Gate F: public origin blocked on ${SERVER_IP}:80 and :443"
     elif [[ -n "${operator_confirm_fn}" ]]; then
-      "${operator_confirm_fn}" "From your LAPTOP, verify: curl http://${SERVER_IP} fails and curl -k https://${SERVER_IP} fails"
+      "${operator_confirm_fn}" "From your LAPTOP, verify: curl http://${SERVER_IP} fails and curl -k https://${SERVER_IP} fails" \
+        || die "Gate F failed: operator could not confirm public origin blocking."
       pass "Gate F: Operator-confirmed public origin blocked on ${SERVER_IP}:80 and :443"
     fi
 
