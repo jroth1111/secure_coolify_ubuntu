@@ -970,6 +970,101 @@ coolify_phase4_binding_dns_shared() {
 #   1) fetch_validate_json_fn : callback that prints validate_hardening JSON
 #   2) public_probe_mode      : external|operator
 #   3) operator_confirm_fn    : callback used only when mode=operator
+coolify_phase5_fetch_pusher_app_key() {
+  local fetch_cmd output
+  fetch_cmd="docker inspect coolify --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^PUSHER_APP_KEY=//p' | tail -n 1"
+
+  if declare -F ssh_admin_sudo >/dev/null 2>&1; then
+    output="$(ssh_admin_sudo "${fetch_cmd}" 2>/dev/null || true)"
+  else
+    output="$(eval "${fetch_cmd}" 2>/dev/null || true)"
+  fi
+
+  printf '%s\n' "${output}" | awk 'NF { last=$0 } END { if (last != "") print last }'
+}
+
+coolify_phase5_websocket_url() {
+  local base_url="${1:?coolify_phase5_websocket_url requires base_url}"
+  local pusher_app_key="${2:?coolify_phase5_websocket_url requires pusher_app_key}"
+
+  printf '%s/app/%s?protocol=7&client=js&version=8.4.0&flash=false' "${base_url%/}" "${pusher_app_key}"
+}
+
+coolify_phase5_probe_websocket_code() {
+  local websocket_url="${1:?coolify_phase5_probe_websocket_code requires websocket_url}"
+  local timeout_seconds="${2:-10}"
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    printf '000\n'
+    return 0
+  fi
+
+  python3 - "${websocket_url}" "${timeout_seconds}" <<'PY'
+import base64
+import os
+import socket
+import ssl
+import sys
+from urllib.parse import urlparse
+
+
+def emit(code: str) -> None:
+    print(code if code else "000")
+
+
+try:
+    raw_url = sys.argv[1]
+    timeout = float(sys.argv[2])
+    parsed = urlparse(raw_url)
+    if parsed.scheme not in ("ws", "wss") or not parsed.hostname:
+        emit("000")
+        raise SystemExit(0)
+
+    host = parsed.hostname
+    port = parsed.port or (443 if parsed.scheme == "wss" else 80)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+
+    host_header = parsed.netloc or host
+    origin_scheme = "https" if parsed.scheme == "wss" else "http"
+    sec_key = base64.b64encode(os.urandom(16)).decode("ascii")
+    request = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {host_header}\r\n"
+        f"Origin: {origin_scheme}://{host}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {sec_key}\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n"
+    ).encode("ascii")
+
+    with socket.create_connection((host, port), timeout=timeout) as sock:
+        sock.settimeout(timeout)
+        if parsed.scheme == "wss":
+            context = ssl.create_default_context()
+            stream = context.wrap_socket(sock, server_hostname=host)
+        else:
+            stream = sock
+
+        with stream:
+            stream.sendall(request)
+            response = b""
+            while b"\r\n\r\n" not in response and len(response) < 16384:
+                chunk = stream.recv(4096)
+                if not chunk:
+                    break
+                response += chunk
+
+    status_line = response.split(b"\r\n", 1)[0].decode("ascii", "replace")
+    parts = status_line.split()
+    emit(parts[1] if len(parts) >= 2 else "000")
+except Exception:
+    emit("000")
+PY
+}
+
 coolify_phase5_verify_shared() {
   local fetch_validate_json_fn="${1:-}"
   local public_probe_mode="${2:-external}"
@@ -1036,21 +1131,25 @@ coolify_phase5_verify_shared() {
     pass "Gate E: Dashboard NOT reachable on public IP (good)"
   fi
 
-  # Gate E (realtime): Soketi websocket endpoint reachable on Tailscale.
-  # External mode additionally enforces public-IP block.
+  # Gate E (realtime): actual websocket handshake must work on the Tailscale
+  # IP, and raw port 6001 must stay blocked from the public internet.
   log "Gate E: Checking websocket accessibility..."
-  local ws_ts_code ws_pub_code
+  local pusher_app_key ws_ts_url ws_pub_url ws_ts_code ws_pub_code
+  pusher_app_key="$(coolify_phase5_fetch_pusher_app_key | tr -d '\r' | tail -n 1)"
+  [[ -n "${pusher_app_key}" ]] || die "Gate E failed: unable to determine PUSHER_APP_KEY from Coolify."
+  ws_ts_url="$(coolify_phase5_websocket_url "ws://${TS_IP}:6001" "${pusher_app_key}")"
+  ws_pub_url="$(coolify_phase5_websocket_url "ws://${SERVER_IP}:6001" "${pusher_app_key}")"
   local gate_e_ws_passed=false
   for (( attempt=1; attempt<=attempts; attempt++ )); do
-    ws_ts_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 10 "http://${TS_IP}:6001" 2>/dev/null)" || ws_ts_code=""
+    ws_ts_code="$(coolify_phase5_probe_websocket_code "${ws_ts_url}" 10)"
     ws_ts_code="${ws_ts_code:-000}"
     ws_ts_code="${ws_ts_code:0:3}"
 
     if [[ "${public_probe_mode}" == "external" ]]; then
-      ws_pub_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 "http://${SERVER_IP}:6001" 2>/dev/null)" || ws_pub_code=""
+      ws_pub_code="$(coolify_phase5_probe_websocket_code "${ws_pub_url}" 5)"
       ws_pub_code="${ws_pub_code:-000}"
       ws_pub_code="${ws_pub_code:0:3}"
-      if [[ "${ws_ts_code}" != "000" && "${ws_pub_code}" == "000" ]]; then
+      if [[ "${ws_ts_code}" == "101" && "${ws_pub_code}" == "000" ]]; then
         gate_e_ws_passed=true
         break
       fi
@@ -1059,7 +1158,7 @@ coolify_phase5_verify_shared() {
         sleep "${delay}"
       fi
     else
-      if [[ "${ws_ts_code}" != "000" ]]; then
+      if [[ "${ws_ts_code}" == "101" ]]; then
         gate_e_ws_passed=true
         break
       fi
@@ -1115,31 +1214,33 @@ coolify_phase5_verify_shared() {
   else
     # Gate F (tunnel/private): private host routes must work on Tailscale-only DNS.
     log "Gate F: Checking private host routes and public-origin blocking..."
-    local dashboard_private_code ws_private_code dashboard_private_https_code ws_private_https_code
+    local dashboard_private_code ws_private_code dashboard_private_https_code ws_private_wss_code
+    local ws_private_url
+    ws_private_url="$(coolify_phase5_websocket_url "wss://ws.${DOMAIN}" "${pusher_app_key}")"
     local gate_f_private_routes_passed=false
     for (( attempt=1; attempt<=attempts; attempt++ )); do
       dashboard_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${DOMAIN}" 2>/dev/null)" || dashboard_private_code=""
       ws_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://ws.${DOMAIN}" 2>/dev/null)" || ws_private_code=""
-      dashboard_private_https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://${DOMAIN}" 2>/dev/null)" || dashboard_private_https_code=""
-      ws_private_https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://ws.${DOMAIN}" 2>/dev/null)" || ws_private_https_code=""
+      dashboard_private_https_code="$(curl -s -L -o /dev/null -w '%{http_code}' --max-time 10 "https://${DOMAIN}" 2>/dev/null)" || dashboard_private_https_code=""
+      ws_private_wss_code="$(coolify_phase5_probe_websocket_code "${ws_private_url}" 10)"
       dashboard_private_code="${dashboard_private_code:-000}"
       ws_private_code="${ws_private_code:-000}"
       dashboard_private_https_code="${dashboard_private_https_code:-000}"
-      ws_private_https_code="${ws_private_https_code:-000}"
+      ws_private_wss_code="${ws_private_wss_code:-000}"
       dashboard_private_code="${dashboard_private_code:0:3}"
       ws_private_code="${ws_private_code:0:3}"
       dashboard_private_https_code="${dashboard_private_https_code:0:3}"
-      ws_private_https_code="${ws_private_https_code:0:3}"
+      ws_private_wss_code="${ws_private_wss_code:0:3}"
 
       if [[ "${dashboard_private_code}" =~ ^30[1278]$ && \
             "${ws_private_code}" =~ ^30[1278]$ && \
-            "${dashboard_private_https_code}" =~ ^[23][0-9][0-9]$ && \
-            "${ws_private_https_code}" != "000" ]]; then
+            "${dashboard_private_https_code}" =~ ^2[0-9][0-9]$ && \
+            "${ws_private_wss_code}" == "101" ]]; then
         gate_f_private_routes_passed=true
         break
       fi
       if (( attempt < attempts )); then
-        log "  Gate F private routes not ready (dashboard-http=${dashboard_private_code}, ws-http=${ws_private_code}, dashboard-https=${dashboard_private_https_code}, ws-https=${ws_private_https_code}); retrying in ${delay}s (${attempt}/${attempts})..."
+        log "  Gate F private routes not ready (dashboard-http=${dashboard_private_code}, ws-http=${ws_private_code}, dashboard-https=${dashboard_private_https_code}, ws-wss=${ws_private_wss_code}); retrying in ${delay}s (${attempt}/${attempts})..."
         sleep "${delay}"
       fi
     done
@@ -1148,13 +1249,13 @@ coolify_phase5_verify_shared() {
       fail "Gate F: private dashboard HTTP did not redirect to HTTPS (http://${DOMAIN} → HTTP ${dashboard_private_code})"
       fail "Gate F: private websocket HTTP did not redirect to HTTPS (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
       fail "Gate F: private dashboard HTTPS route failed (https://${DOMAIN} → HTTP ${dashboard_private_https_code})"
-      fail "Gate F: private websocket HTTPS host failed (https://ws.${DOMAIN} → HTTP ${ws_private_https_code})"
+      fail "Gate F: private websocket WSS handshake failed (wss://ws.${DOMAIN} → HTTP ${ws_private_wss_code})"
       die "Gate F failed: private host routes are not functional on Tailscale."
     fi
     pass "Gate F: private dashboard HTTP redirects to HTTPS (http://${DOMAIN} → HTTP ${dashboard_private_code})"
     pass "Gate F: private websocket HTTP redirects to HTTPS (http://ws.${DOMAIN} → HTTP ${ws_private_code})"
     pass "Gate F: private dashboard HTTPS route works (https://${DOMAIN} → HTTP ${dashboard_private_https_code})"
-    pass "Gate F: private websocket HTTPS host responds (https://ws.${DOMAIN} → HTTP ${ws_private_https_code})"
+    pass "Gate F: private websocket WSS handshake works (wss://ws.${DOMAIN} → HTTP ${ws_private_wss_code})"
 
     if [[ "${public_probe_mode}" == "external" ]]; then
       local pub80_code pub443_code

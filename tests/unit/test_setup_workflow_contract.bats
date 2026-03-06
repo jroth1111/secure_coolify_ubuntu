@@ -247,20 +247,24 @@ EOF
       local url="${@: -1}"
       if [[ "${url}" == "http://${TS_IP}:8000" ]]; then
         echo "200"
-      elif [[ "${url}" == "http://${TS_IP}:6001" ]]; then
-        echo "200"
       elif [[ "${url}" == "http://${DOMAIN}" ]]; then
         echo "302"
       elif [[ "${url}" == "http://ws.${DOMAIN}" ]]; then
-        echo "200"
-      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
         echo "302"
-      elif [[ "${url}" == "https://ws.${DOMAIN}" ]]; then
+      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
         echo "200"
       else
         echo "000"
       fi
       return 0
+    }
+    coolify_phase5_fetch_pusher_app_key() { echo "pusher-key"; }
+    coolify_phase5_probe_websocket_code() {
+      case "$1" in
+        "ws://${TS_IP}:6001/"*) echo "101" ;;
+        "wss://ws.${DOMAIN}/"*) echo "101" ;;
+        *) echo "000" ;;
+      esac
     }
     cf_assert_private_tailscale_a_record() { :; }
 
@@ -296,20 +300,24 @@ EOF
       local url="${@: -1}"
       if [[ "${url}" == "http://${TS_IP}:8000" ]]; then
         echo "200"
-      elif [[ "${url}" == "http://${TS_IP}:6001" ]]; then
-        echo "200"
       elif [[ "${url}" == "http://${DOMAIN}" ]]; then
         echo "302"
       elif [[ "${url}" == "http://ws.${DOMAIN}" ]]; then
-        echo "200"
-      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
         echo "302"
-      elif [[ "${url}" == "https://ws.${DOMAIN}" ]]; then
+      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
         echo "200"
       else
         echo "000"
       fi
       return 0
+    }
+    coolify_phase5_fetch_pusher_app_key() { echo "pusher-key"; }
+    coolify_phase5_probe_websocket_code() {
+      case "$1" in
+        "ws://${TS_IP}:6001/"*) echo "101" ;;
+        "wss://ws.${DOMAIN}/"*) echo "101" ;;
+        *) echo "000" ;;
+      esac
     }
     cf_assert_private_tailscale_a_record() { :; }
     pause_for_operator() { :; }

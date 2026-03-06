@@ -123,6 +123,12 @@ EOF
       return 0
     }
     ssh_admin_sudo() {
+      if [[ "$1" == "test -f /run/reboot-required" ]]; then
+        return 1
+      fi
+      if [[ "$1" == "docker version >/dev/null 2>&1" ]]; then
+        return 1
+      fi
       if [[ "$1" == *"validate_hardening.sh --json"* ]]; then
         echo "{\"fail\":0,\"checks\":[]}"
       fi
@@ -137,6 +143,68 @@ EOF
     [[ "${sync_called}" -eq 1 ]]
   '
   assert_success
+}
+
+@test "deploy: gate B.5 reboots before Gate C when reboot-required exists" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    TS_IP="100.64.0.25"
+    ADMIN_USER="coolifyadmin"
+    echo_ok_calls=0
+    reboot_check_calls=0
+    reboot_cmd_seen=0
+
+    sleep() { :; }
+    ssh_admin() {
+      if [[ "$1" == "echo ok" ]]; then
+        echo_ok_calls=$((echo_ok_calls + 1))
+        if (( echo_ok_calls == 2 )); then
+          return 1
+        fi
+        echo ok
+        return 0
+      fi
+      if [[ "$1" == "whoami" ]]; then
+        echo "${ADMIN_USER}"
+        return 0
+      fi
+      return 0
+    }
+    ssh_admin_sudo() {
+      if [[ "$1" == "test -f /run/reboot-required" ]]; then
+        return 0
+      fi
+      if [[ "$1" == "tr '\''\\n'\'' '\'','\'' < /run/reboot-required.pkgs 2>/dev/null | sed '\''s/,$//'\''" ]]; then
+        echo "linux-image"
+        return 0
+      fi
+      if [[ "$1" == "nohup bash -c \"sleep 1; systemctl reboot\" >/dev/null 2>&1 &" ]]; then
+        reboot_cmd_seen=1
+        return 0
+      fi
+      if [[ "$1" == "test ! -f /run/reboot-required" ]]; then
+        reboot_check_calls=$((reboot_check_calls + 1))
+        (( reboot_check_calls >= 1 )) && return 0
+        return 1
+      fi
+      if [[ "$1" == "docker version >/dev/null 2>&1" ]]; then
+        return 1
+      fi
+      if [[ "$1" == *"validate_hardening.sh --json"* ]]; then
+        echo "{\"fail\":0,\"checks\":[]}"
+        return 0
+      fi
+      return 0
+    }
+    sync_companion_scripts() { :; }
+    report_validation_result() { :; }
+
+    phase2_gates
+    [[ "${reboot_cmd_seen}" -eq 1 ]]
+    [[ "${reboot_check_calls}" -eq 1 ]]
+  '
+  assert_success
+  assert_output --partial "Gate B.5: Reboot completed and reboot-required cleared"
 }
 
 @test "deploy: gate B verifies admin identity" {
@@ -282,17 +350,11 @@ EOF
         echo "200"
       elif [[ "${url}" == "http://${SERVER_IP}:8000" ]]; then
         echo "000"
-      elif [[ "${url}" == "http://${TS_IP}:6001" ]]; then
-        echo "200"
-      elif [[ "${url}" == "http://${SERVER_IP}:6001" ]]; then
-        echo "000"
       elif [[ "${url}" == "http://${DOMAIN}" ]]; then
         echo "302"
       elif [[ "${url}" == "http://ws.${DOMAIN}" ]]; then
-        echo "200"
-      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
         echo "302"
-      elif [[ "${url}" == "https://ws.${DOMAIN}" ]]; then
+      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
         echo "200"
       elif [[ "${url}" == "http://${SERVER_IP}" ]]; then
         echo "000"
@@ -302,6 +364,15 @@ EOF
         echo "404"
       fi
       return 0
+    }
+    coolify_phase5_fetch_pusher_app_key() { echo "pusher-key"; }
+    coolify_phase5_probe_websocket_code() {
+      case "$1" in
+        "ws://${TS_IP}:6001/"*) echo "101" ;;
+        "ws://${SERVER_IP}:6001/"*) echo "000" ;;
+        "wss://ws.${DOMAIN}/"*) echo "101" ;;
+        *) echo "000" ;;
+      esac
     }
     cf_assert_private_tailscale_a_record() {
       [[ "$2" == "${TS_IP}" ]]

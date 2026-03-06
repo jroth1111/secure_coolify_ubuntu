@@ -631,10 +631,60 @@ setup() {
     DOMAIN="vps.example.com"
     sleep() { :; }
     curl() { echo "200"; }
+    coolify_phase5_fetch_pusher_app_key() { echo "pusher-key"; }
+    coolify_phase5_probe_websocket_code() { echo "101"; }
     fetch_validate_json() { echo "{\"fail\":0,\"checks\":[]}"; }
     operator_confirm() { :; }
     print_deployment_summary() { :; }
     coolify_phase5_verify_shared fetch_validate_json operator operator_confirm
   '
   assert_success
+}
+
+@test "coolify_phase5_verify_shared: tunnel mode fails when private WSS handshake is not 101" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    DEPLOY_MODE="tunnel"
+    TS_IP="100.64.0.10"
+    SERVER_IP="203.0.113.10"
+    DOMAIN="vps.example.com"
+
+    sleep() { :; }
+    curl() {
+      local url="${@: -1}"
+      if [[ "${url}" == "http://${TS_IP}:8000" ]]; then
+        echo "200"
+      elif [[ "${url}" == "http://${SERVER_IP}:8000" ]]; then
+        echo "000"
+      elif [[ "${url}" == "http://${DOMAIN}" ]]; then
+        echo "302"
+      elif [[ "${url}" == "http://ws.${DOMAIN}" ]]; then
+        echo "302"
+      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
+        echo "200"
+      elif [[ "${url}" == "http://${SERVER_IP}" ]]; then
+        echo "000"
+      elif [[ "${url}" == "https://${SERVER_IP}" ]]; then
+        echo "000"
+      else
+        echo "404"
+      fi
+    }
+    coolify_phase5_fetch_pusher_app_key() { echo "pusher-key"; }
+    coolify_phase5_probe_websocket_code() {
+      case "$1" in
+        "ws://${TS_IP}:6001/"*) echo "101" ;;
+        "ws://${SERVER_IP}:6001/"*) echo "000" ;;
+        "wss://ws.${DOMAIN}/"*) echo "404" ;;
+        *) echo "000" ;;
+      esac
+    }
+    cf_assert_private_tailscale_a_record() { :; }
+    fetch_validate_json() { echo "{\"fail\":0,\"checks\":[]}"; }
+    print_deployment_summary() { :; }
+
+    coolify_phase5_verify_shared fetch_validate_json external :
+  '
+  assert_failure
+  assert_output --partial "Gate F: private websocket WSS handshake failed"
 }
