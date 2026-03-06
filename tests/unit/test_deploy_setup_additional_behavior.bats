@@ -266,6 +266,31 @@ EOF
   assert_success
 }
 
+@test "retry_root_transport: retries ssh 255 failures and then succeeds" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"${tmpdir}\"" EXIT
+    counter_file="${tmpdir}/attempts"
+    echo 0 > "${counter_file}"
+    flaky_root_cmd() {
+      attempt="$(cat "${counter_file}")"
+      attempt=$((attempt + 1))
+      echo "${attempt}" > "${counter_file}"
+      if (( attempt == 1 )); then
+        return 255
+      fi
+      echo ok
+      return 0
+    }
+    sleep() { :; }
+    retry_root_transport "upload test" flaky_root_cmd
+    [[ "$(cat "${counter_file}")" -eq 2 ]]
+  '
+  assert_success
+  assert_output --partial "ok"
+}
+
 @test "phase1_upload_harden: retries bootstrap exec after transient ssh 255 and captures tailscale ip" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"

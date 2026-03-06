@@ -323,10 +323,10 @@ retry_root_transport() {
 
   local attempt rc
   for attempt in 1 2 3; do
-    "$@"
-    rc=$?
-    if (( rc == 0 )); then
+    if "$@"; then
       return 0
+    else
+      rc=$?
     fi
     if (( rc == 255 && attempt < 3 )); then
       warn "${description} failed with SSH/SCP exit 255 on attempt ${attempt}/3; retrying in 3s."
