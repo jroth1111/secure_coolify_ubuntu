@@ -519,6 +519,29 @@ setup() {
   assert_output --partial "METHOD=POST"
 }
 
+@test "deploy: cf_upsert_a_record skips rewrite when existing record already matches" {
+  run bash -c "
+    source '${DEPLOY_SCRIPT}'
+
+    call_count=0
+    cf_api() {
+      call_count=\$((call_count + 1))
+      if [[ \$call_count -eq 1 ]]; then
+        echo '{\"result\": [{\"id\": \"record123\", \"content\": \"192.168.1.1\", \"proxied\": true}]}'
+      else
+        echo \"METHOD=\$1 ENDPOINT=\$2\" >&2
+        echo '{\"success\": true}'
+      fi
+    }
+    export -f cf_api
+
+    CF_ZONE_ID='zone123'
+    cf_upsert_a_record 'app.example.com' '192.168.1.1' 'true' 2>&1
+    [[ \"\${call_count}\" -eq 1 ]]
+  "
+  assert_output --partial "A record unchanged: app.example.com → 192.168.1.1 (proxied=true)"
+}
+
 @test "deploy: cf_upsert_cname updates existing CNAME" {
   run bash -c "
     source '${DEPLOY_SCRIPT}'
@@ -545,6 +568,29 @@ setup() {
     [[ \"\${deleted}\" == '/zones/zone123/dns_records/cname456' ]]
   "
   assert_output --partial "METHOD=PUT"
+}
+
+@test "deploy: cf_upsert_cname skips rewrite when existing CNAME already matches" {
+  run bash -c "
+    source '${DEPLOY_SCRIPT}'
+
+    call_count=0
+    cf_api() {
+      call_count=\$((call_count + 1))
+      if [[ \$call_count -eq 1 ]]; then
+        echo '{\"result\": [{\"id\": \"cname123\", \"content\": \"tunnel-id.cfargotunnel.com\", \"proxied\": true}]}'
+      else
+        echo \"METHOD=\$1\" >&2
+        echo '{\"success\": true}'
+      fi
+    }
+    export -f cf_api
+
+    CF_ZONE_ID='zone123'
+    cf_upsert_cname 'app.example.com' 'tunnel-id.cfargotunnel.com' 2>&1
+    [[ \"\${call_count}\" -eq 1 ]]
+  "
+  assert_output --partial "CNAME unchanged: app.example.com → tunnel-id.cfargotunnel.com"
 }
 
 # ── Error Handling ────────────────────────────────────────────────────────────

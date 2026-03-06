@@ -594,23 +594,33 @@ cf_upsert_a_record() {
   local name="$1" ip="$2" proxied="${3:-true}"
   local existing
   existing="$(cf_api GET "/zones/${CF_ZONE_ID}/dns_records?type=A&name=${name}")"
-  local record_id
+  local record_id record_content record_proxied needs_update="true"
   record_id="$(printf '%s' "${existing}" | jq -r '.result[0].id // empty')"
+  record_content="$(printf '%s' "${existing}" | jq -r '.result[0].content // empty')"
+  record_proxied="$(printf '%s' "${existing}" | jq -r '.result[0].proxied // false')"
   local body
   body="$(jq -n --arg name "${name}" --arg ip "${ip}" --argjson proxied "${proxied}" \
     '{type:"A",name:$name,content:$ip,proxied:$proxied,ttl:1}')"
   local resp
 
   if [[ -n "${record_id}" ]]; then
-    resp="$(cf_api PUT "/zones/${CF_ZONE_ID}/dns_records/${record_id}" "${body}")"
-    cf_expect_success "Cloudflare A record update (${name})" "${resp}"
+    if [[ "${record_content}" == "${ip}" && "${record_proxied}" == "${proxied}" ]]; then
+      needs_update="false"
+    else
+      resp="$(cf_api PUT "/zones/${CF_ZONE_ID}/dns_records/${record_id}" "${body}")"
+      cf_expect_success "Cloudflare A record update (${name})" "${resp}"
+    fi
     while IFS= read -r duplicate_id; do
       [[ -n "${duplicate_id}" ]] || continue
       resp="$(cf_api DELETE "/zones/${CF_ZONE_ID}/dns_records/${duplicate_id}")"
       cf_expect_success "Cloudflare duplicate A record delete (${name})" "${resp}"
       log "Deleted duplicate A record: ${name} (${duplicate_id})"
     done < <(printf '%s' "${existing}" | jq -r --arg keep "${record_id}" '.result[]?.id | select(. != $keep)')
-    log "Updated A record: ${name} → ${ip} (proxied=${proxied})"
+    if [[ "${needs_update}" == "true" ]]; then
+      log "Updated A record: ${name} → ${ip} (proxied=${proxied})"
+    else
+      log "A record unchanged: ${name} → ${ip} (proxied=${proxied})"
+    fi
   else
     resp="$(cf_api POST "/zones/${CF_ZONE_ID}/dns_records" "${body}")"
     cf_expect_success "Cloudflare A record create (${name})" "${resp}"
@@ -634,9 +644,9 @@ cf_create_tunnel() {
   local tunnel_name
   tunnel_name="$(coolify_tunnel_name)"
 
-  # Delete any existing tunnel with the same name (idempotent re-run support).
-  # Stop cloudflared first so it releases active connections — the CF API rejects DELETE for
-  # tunnels with active connections, and the name stays reserved even after a failed delete.
+  # Prefer reusing the currently configured tunnel on reruns. If the same-name tunnel set
+  # does not match the server's configured credentials, fall back to delete/recreate.
+  # Stop cloudflared first in the delete path so it releases active connections.
   local existing_ids=()
   mapfile -t existing_ids < <(
     cf_tunnel_api GET "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel?name=${tunnel_name}&is_deleted=false" \
@@ -714,23 +724,33 @@ cf_upsert_cname() {
   local name="$1" target="$2"
   local existing
   existing="$(cf_api GET "/zones/${CF_ZONE_ID}/dns_records?type=CNAME&name=${name}")"
-  local record_id
+  local record_id record_content record_proxied needs_update="true"
   record_id="$(printf '%s' "${existing}" | jq -r '.result[0].id // empty')"
+  record_content="$(printf '%s' "${existing}" | jq -r '.result[0].content // empty')"
+  record_proxied="$(printf '%s' "${existing}" | jq -r '.result[0].proxied // false')"
   local body
   body="$(jq -n --arg name "${name}" --arg target "${target}" \
     '{type:"CNAME",name:$name,content:$target,proxied:true,ttl:1}')"
   local resp
 
   if [[ -n "${record_id}" ]]; then
-    resp="$(cf_api PUT "/zones/${CF_ZONE_ID}/dns_records/${record_id}" "${body}")"
-    cf_expect_success "Cloudflare CNAME update (${name})" "${resp}"
+    if [[ "${record_content}" == "${target}" && "${record_proxied}" == "true" ]]; then
+      needs_update="false"
+    else
+      resp="$(cf_api PUT "/zones/${CF_ZONE_ID}/dns_records/${record_id}" "${body}")"
+      cf_expect_success "Cloudflare CNAME update (${name})" "${resp}"
+    fi
     while IFS= read -r duplicate_id; do
       [[ -n "${duplicate_id}" ]] || continue
       resp="$(cf_api DELETE "/zones/${CF_ZONE_ID}/dns_records/${duplicate_id}")"
       cf_expect_success "Cloudflare duplicate CNAME delete (${name})" "${resp}"
       log "Deleted duplicate CNAME: ${name} (${duplicate_id})"
     done < <(printf '%s' "${existing}" | jq -r --arg keep "${record_id}" '.result[]?.id | select(. != $keep)')
-    log "Updated CNAME: ${name} → ${target}"
+    if [[ "${needs_update}" == "true" ]]; then
+      log "Updated CNAME: ${name} → ${target}"
+    else
+      log "CNAME unchanged: ${name} → ${target}"
+    fi
   else
     resp="$(cf_api POST "/zones/${CF_ZONE_ID}/dns_records" "${body}")"
     cf_expect_success "Cloudflare CNAME create (${name})" "${resp}"
@@ -998,7 +1018,7 @@ coolify_phase4_binding_dns_shared() {
   # Tunnel mode: create tunnel, install cloudflared, CNAME
   log "Creating Cloudflare Tunnel..."
   cf_create_tunnel "${stop_cloudflared_fn}" "${fetch_existing_tunnel_fn}"
-  pass "Tunnel created: ${TUNNEL_ID}"
+  pass "Tunnel ready: ${TUNNEL_ID}"
 
   log "Installing cloudflared..."
   run_with_heartbeat "cloudflared install" "${install_cloudflared_fn}" \
