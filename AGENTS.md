@@ -220,7 +220,7 @@ change is the explicit, user-confirmed goal.
 | `validate_hardening.sh --json` schema: `{"pass":N,"fail":N,"info":N,"checks":[...]}` | `validate_hardening.sh` | `report_validation_result()` in `lib/coolify-common.sh` |
 | `HARDEN_RESULT_TAILSCALE_IP=<ip>` sentinel (stdout) | `bootstrap_hardening.sh` | `deploy.sh` phase 1 capture via `tee` |
 | State file `/var/lib/bootstrap-hardening/state` (key=value) | `bootstrap_hardening.sh write_state()` | `validate_hardening.sh` (state-derived checks) |
-| Tunnel name `${DOMAIN%%.*}-coolify` | `lib/coolify-common.sh cf_create_tunnel()` | same function on re-run (delete stale by name before create) |
+| Tunnel name `coolify-<domain-slug>-<sha256-12>` | `lib/coolify-common.sh coolify_tunnel_name()` / `cf_create_tunnel()` | same function on re-run (reuse configured tunnel when possible; otherwise reconcile by deterministic name) |
 
 Changing these without updating all consumers is a breaking change.
 
