@@ -317,6 +317,26 @@ scp_root() {
   sshpass -f "${ROOT_PASS_RUNTIME_FILE}" scp "${ROOT_SSH_OPTS[@]}" "$@"
 }
 
+retry_root_transport() {
+  local description="$1"
+  shift
+
+  local attempt rc
+  for attempt in 1 2 3; do
+    "$@"
+    rc=$?
+    if (( rc == 0 )); then
+      return 0
+    fi
+    if (( rc == 255 && attempt < 3 )); then
+      warn "${description} failed with SSH/SCP exit 255 on attempt ${attempt}/3; retrying in 3s."
+      sleep 3
+      continue
+    fi
+    return "${rc}"
+  done
+}
+
 scp_admin() {
   scp "${SSH_OPTS[@]}" -i "${PRIVATE_KEY}" "$@"
 }
@@ -426,8 +446,12 @@ phase1_upload_harden() {
   for script in "${scripts[@]}"; do
     local path="${SCRIPT_DIR}/${script}"
     [[ -f "${path}" ]] || die "Script not found: ${path}"
-    scp_root "${path}" "root@${SERVER_IP}:/root/${script}"
-    ssh_root "chmod +x /root/${script}"
+    retry_root_transport "Uploading ${script} to ${SERVER_IP}" \
+      scp_root "${path}" "root@${SERVER_IP}:/root/${script}" \
+      || die "Failed to upload ${script} to ${SERVER_IP}"
+    retry_root_transport "Setting execute bit on /root/${script}" \
+      ssh_root "chmod +x /root/${script}" \
+      || die "Failed to set execute bit on /root/${script}"
   done
   pass "Scripts uploaded"
 

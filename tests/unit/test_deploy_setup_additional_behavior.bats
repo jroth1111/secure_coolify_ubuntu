@@ -310,6 +310,65 @@ EOF
   assert_success
 }
 
+@test "phase1_upload_harden: retries transient root upload transport failures" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"${tmpdir}\"" EXIT
+    SCRIPT_DIR="${tmpdir}"
+    for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
+      : > "${tmpdir}/${script}"
+    done
+    SERVER_IP="203.0.113.10"
+    ADMIN_USER="alice"
+    ADMIN_PUBKEY="ssh-ed25519 AAAA test@example"
+    DEPLOY_MODE="tunnel"
+    SWAP_SIZE="2G"
+    SERVER_TIMEZONE="UTC"
+    TAILSCALE_AUTH_KEY="tskey-auth-test"
+    TAILSCALE_DIRECT_WAN="false"
+    REMOTE_DEPLOY_ENV_PATH="/root/deploy.env"
+    upload_counter="${tmpdir}/upload-count"
+    chmod_counter="${tmpdir}/chmod-count"
+    echo 0 > "${upload_counter}"
+    echo 0 > "${chmod_counter}"
+    scp_root() {
+      count="$(cat "${upload_counter}")"
+      count=$((count + 1))
+      echo "${count}" > "${upload_counter}"
+      if (( count == 1 )); then
+        return 255
+      fi
+      return 0
+    }
+    ssh_root() {
+      if [[ "$1" == "chmod +x /root/bootstrap_hardening.sh" ]]; then
+        count="$(cat "${chmod_counter}")"
+        count=$((count + 1))
+        echo "${count}" > "${chmod_counter}"
+        if (( count == 1 )); then
+          return 255
+        fi
+      elif [[ "$1" == chmod\ +x\ /root/* ]]; then
+        count="$(cat "${chmod_counter}")"
+        count=$((count + 1))
+        echo "${count}" > "${chmod_counter}"
+      fi
+      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force"* ]]; then
+        echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.10"
+      fi
+      return 0
+    }
+    run_with_heartbeat() { local label="$1"; shift; "$@"; }
+    sleep() { :; }
+    phase1_upload_harden
+    [[ "$(cat "${upload_counter}")" -eq 5 ]]
+    [[ "$(cat "${chmod_counter}")" -eq 4 ]]
+    [[ "${TS_IP}" == "100.64.0.10" ]]
+  '
+  assert_success
+}
+
 @test "phase1_upload_harden: uploads DOMAIN in bootstrap env file" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"
