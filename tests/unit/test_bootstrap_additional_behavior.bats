@@ -291,6 +291,35 @@ EOF
   [ ! -f "${SSH_DROPIN_FILE}" ]
 }
 
+@test "configure_ssh: successful apply prunes stale backup artifacts" {
+  DRY_RUN="false"
+  ADMIN_USER="coolifyadmin"
+  SSH_PORT="22"
+  DOCKER_SSH_CIDRS=("10.42.0.0/16")
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  SSH_DROPIN_FILE="${tmpdir}/00-coolify-hardening.conf"
+  printf 'old ssh config\n' > "${SSH_DROPIN_FILE}"
+
+  install() {
+    if [[ "${1:-}" == "-d" && "${4:-}" == "/run/sshd" ]]; then
+      return 0
+    fi
+    command install "$@"
+  }
+  sshd() { return 0; }
+  assert_sshd_effective() { return 0; }
+  assert_sshd_match_localhost() { return 0; }
+  reload_ssh_service() { return 0; }
+
+  run configure_ssh
+  assert_success
+  run compgen -G "${SSH_DROPIN_FILE}.bak.*"
+  assert_failure
+
+  rm -rf "${tmpdir}"
+}
+
 @test "install_docker_user_assets: dry-run logs docker-user asset writes" {
   DRY_RUN="true"
   local tmpdir
@@ -419,6 +448,24 @@ EOF
   [ ! -f "${DOCKER_SSH_CIDR_SYNC_SCRIPT}" ]
   [ ! -f "${DOCKER_SSH_CIDR_SYNC_SERVICE}" ]
   [ ! -f "${DOCKER_SSH_CIDR_SYNC_TIMER}" ]
+  rm -rf "${tmpdir}"
+}
+
+@test "configure_docker_ssh_cidr_sync_timer: installed script prunes stale ssh backup artifacts" {
+  DRY_RUN="false"
+  STRICT_DOCKER_SSH_CIDRS="true"
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  DOCKER_SSH_CIDR_SYNC_SCRIPT="${tmpdir}/docker-ssh-cidr-sync.sh"
+  DOCKER_SSH_CIDR_SYNC_SERVICE="${tmpdir}/docker-ssh-cidr-sync.service"
+  DOCKER_SSH_CIDR_SYNC_TIMER="${tmpdir}/docker-ssh-cidr-sync.timer"
+  systemctl() { return 0; }
+
+  run configure_docker_ssh_cidr_sync_timer
+  assert_success
+  run grep -F 'rm -f "${SSH_DROPIN_FILE}".bak.*' "${DOCKER_SSH_CIDR_SYNC_SCRIPT}"
+  assert_success
+
   rm -rf "${tmpdir}"
 }
 
@@ -575,6 +622,28 @@ EOF
   run configure_docker_daemon
   assert_success
   assert_output --partial "Docker not present"
+}
+
+@test "configure_docker_daemon: successful merge prunes stale backup artifacts when restart is not deferred" {
+  DRY_RUN="false"
+  DOCKER_PRESENT="true"
+  DOCKER_NPROC_HARD="8192"
+  DOCKER_NPROC_SOFT="4096"
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  DOCKER_DAEMON_JSON="${tmpdir}/daemon.json"
+  cat > "${DOCKER_DAEMON_JSON}" <<'EOF'
+{"debug":false}
+EOF
+
+  systemctl() { return 1; }
+
+  run configure_docker_daemon
+  assert_success
+  run compgen -G "${DOCKER_DAEMON_JSON}.bak.*"
+  assert_failure
+
+  rm -rf "${tmpdir}"
 }
 
 @test "run_post_checks: dry-run bypasses live host assertions" {

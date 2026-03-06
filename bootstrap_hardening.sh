@@ -1973,6 +1973,8 @@ EOF
     restore_ssh_dropin "${backup}"
     die "Failed to reload SSH service."
   fi
+
+  rm -f "${SSH_DROPIN_FILE}".bak.*
 }
 
 configure_ufw() {
@@ -2369,6 +2371,8 @@ configure_docker_daemon() {
     if systemctl is-active --quiet docker; then
       DOCKER_DAEMON_NEEDS_RESTART="true"
       log "Docker daemon.json updated; restart deferred until after DOCKER-USER rules are applied."
+    else
+      rm -f "${DOCKER_DAEMON_JSON}".bak.*
     fi
 
     log "Docker daemon.json updated with hardening settings."
@@ -3270,6 +3274,7 @@ if [[ -f "${SSH_DROPIN_FILE}" ]] && grep -q '^Match Address ' "${SSH_DROPIN_FILE
     elif systemctl is-active --quiet sshd 2>/dev/null; then
       systemctl reload sshd || systemctl restart sshd
     fi
+    rm -f "${SSH_DROPIN_FILE}".bak.*
   fi
 fi
 
@@ -3416,6 +3421,7 @@ main() {
     if [[ "${DOCKER_PRESENT}" == "true" ]]; then
       run systemctl start docker-user-hardening.service
     fi
+    rm -f "${DOCKER_DAEMON_JSON}".bak.*
   fi
 
   log "Applying fail2ban."
