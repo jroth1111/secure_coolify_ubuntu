@@ -523,8 +523,15 @@ EOF
     detect_wan_iface() { :; }
     ssh_session_safety_gate() { :; }
     ensure_packages() { :; }
+    ensure_bootloader_embed_safety() { :; }
+    configure_networkd_wait_online() { :; }
+    configure_cron_extra_opts() { :; }
+    ensure_power_group() { :; }
+    apply_system_package_updates() { :; }
     require_commands() { :; }
+    ensure_tailscaled_notify_access() { :; }
     verify_tailscale_iface() { :; }
+    ensure_tailscale_ssh_disabled() { :; }
     detect_docker() { :; }
     discover_docker_ssh_cidrs() { :; }
     configure_swap() { :; }
@@ -533,6 +540,7 @@ EOF
     ensure_admin_access() { :; }
     configure_ssh() { :; }
     configure_auditd() { :; }
+    configure_apport() { :; }
     configure_sysctl() { :; }
     configure_ufw() { :; }
     configure_rsyslog_targets() { :; }
@@ -542,6 +550,8 @@ EOF
     configure_journald() { :; }
     configure_unattended_upgrades() { :; }
     configure_hardening_validation_timer() { :; }
+    configure_coolify_binding() { :; }
+    configure_coolify_binding_watchdog() { :; }
     write_state() { :; }
     configure_docker_ssh_cidr_sync_timer() { :; }
     run_post_checks() { :; }
@@ -552,4 +562,174 @@ EOF
   '
   assert_success
   assert_output --partial "HARDEN_RESULT_TAILSCALE_IP=100.64.0.10"
+}
+
+@test "apply_system_package_updates: dry-run reports full-upgrade plan" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="true"
+    apply_system_package_updates
+  '
+  assert_success
+  assert_output --partial "apt-get full-upgrade"
+  assert_output --partial "autoremove --purge"
+}
+
+@test "configure_apport: dry-run updates apport defaults and service state" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="true"
+    APPORT_DEFAULT_FILE="$(mktemp)"
+    printf "enabled=1\n" > "${APPORT_DEFAULT_FILE}"
+    unit_available() { return 0; }
+    configure_apport
+    rm -f "${APPORT_DEFAULT_FILE}"
+  '
+  assert_success
+  assert_output --partial "apport"
+  assert_output --partial "DRY-RUN"
+}
+
+@test "configure_cron_extra_opts: dry-run normalizes cron environment" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="true"
+    CRON_EXTRA_OPTS_DROPIN="$(mktemp)"
+    rm -f "${CRON_EXTRA_OPTS_DROPIN}"
+    unit_available() { return 0; }
+    configure_cron_extra_opts
+  '
+  assert_success
+  assert_output --partial "EXTRA_OPTS"
+  assert_output --partial "DRY-RUN"
+}
+
+@test "emit_filtered_package_output: strips noisy package-manager warnings" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    printf "%s\n" \
+      "SyntaxWarning: invalid escape sequence" \
+      "dpkg: warning: while removing x directory y not empty so not removed" \
+      "Service restarts being deferred:" \
+      "No containers need to be restarted." \
+      "keep-this-line" \
+      | emit_filtered_package_output
+  '
+  assert_success
+  assert_output "keep-this-line"
+}
+
+@test "ensure_bootloader_embed_safety: callable under non-gpt layouts" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    findmnt() { echo /dev/vda1; }
+    lsblk() {
+      if [[ "$1" == "-no" && "$2" == "PKNAME" ]]; then
+        echo vda
+      elif [[ "$1" == "-dn" && "$2" == "-o" && "$3" == "PTTYPE" ]]; then
+        echo dos
+      else
+        return 0
+      fi
+    }
+    ensure_bootloader_embed_safety || true
+  '
+  assert_success
+}
+
+@test "ensure_system_group: dry-run logs missing system group creation" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="true"
+    getent() { return 1; }
+    ensure_system_group "power"
+  '
+  assert_success
+  assert_output --partial "missing system group"
+}
+
+@test "ensure_power_group: delegates to power system group" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="true"
+    getent() { return 1; }
+    ensure_power_group
+  '
+  assert_success
+  assert_output --partial "power"
+}
+
+@test "ensure_tailscaled_notify_access: dry-run prepares NotifyAccess restart" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="true"
+    TAILSCALED_NOTIFY_DROPIN="$(mktemp)"
+    rm -f "${TAILSCALED_NOTIFY_DROPIN}"
+    unit_available() { return 0; }
+    systemctl() {
+      if [[ "$1" == "show" ]]; then
+        echo main
+        return 0
+      fi
+      return 0
+    }
+    ensure_tailscaled_notify_access
+  '
+  assert_success
+  assert_output --partial "NotifyAccess"
+  assert_output --partial "DRY-RUN"
+}
+
+@test "ifupdown_is_authoritative: callable when networking.service is present" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    unit_available() { return 0; }
+    ifupdown_is_authoritative || true
+  '
+  assert_success
+}
+
+@test "retry_apt_noninteractive: retries until apt command succeeds" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    attempts=0
+    sleep() { :; }
+    run_apt_command() {
+      attempts=$((attempts + 1))
+      (( attempts < 3 )) && return 1
+      return 0
+    }
+    retry_apt_noninteractive "apt-get full-upgrade" full-upgrade
+    [[ "${attempts}" -eq 3 ]]
+  '
+  assert_success
+}
+
+@test "run_apt_command: streams filtered output and preserves exit status" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="false"
+    run_apt_command printf "%s\n" \
+      "SyntaxWarning: invalid escape sequence" \
+      "keep-this-line" \
+      "No containers need to be restarted."
+  '
+  assert_success
+  assert_output "keep-this-line"
+}
+
+@test "tailscale_runssh_pref_value: returns parsed RunSSH preference" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    tailscale() {
+      if [[ "$1" == "debug" && "$2" == "prefs" ]]; then
+        echo "{\"RunSSH\":false}"
+        return 0
+      fi
+      return 1
+    }
+    tailscale_runssh_pref_value 1 0
+  '
+  assert_success
+  assert_output "false"
 }

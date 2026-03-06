@@ -1968,3 +1968,213 @@ entries:
   checks:
   - 'tests/unit/test_common_additional_behavior.bats::stream_command_output: writes
     capture file and streams output'
+- id: LS-BOOT-073
+  script_path: bootstrap_hardening.sh
+  function: apply_system_package_updates
+  criticality: security
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::apply_system_package_updates: dry-run reports full-upgrade plan"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::apply_system_package_updates: dry-run reports full-upgrade plan"
+- id: LS-BOOT-074
+  script_path: bootstrap_hardening.sh
+  function: configure_apport
+  criticality: security
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::configure_apport: dry-run updates apport defaults and service state"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::configure_apport: dry-run updates apport defaults and service state"
+- id: LS-BOOT-075
+  script_path: bootstrap_hardening.sh
+  function: configure_cron_extra_opts
+  criticality: utility
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::configure_cron_extra_opts: dry-run normalizes cron environment"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::configure_cron_extra_opts: dry-run normalizes cron environment"
+- id: LS-BOOT-076
+  script_path: bootstrap_hardening.sh
+  function: configure_networkd_wait_online
+  criticality: utility
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::configure_networkd_wait_online: dry-run disables stray networkd units when ifupdown is authoritative"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::configure_networkd_wait_online: dry-run disables stray networkd units when ifupdown is authoritative"
+- id: LS-BOOT-077
+  script_path: bootstrap_hardening.sh
+  function: emit_filtered_package_output
+  criticality: utility
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::emit_filtered_package_output: strips noisy package-manager warnings"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::emit_filtered_package_output: strips noisy package-manager warnings"
+- id: LS-BOOT-078
+  script_path: bootstrap_hardening.sh
+  function: ensure_bootloader_embed_safety
+  criticality: security
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::ensure_bootloader_embed_safety: callable under non-gpt layouts"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::ensure_bootloader_embed_safety: callable under non-gpt layouts"
+- id: LS-BOOT-079
+  script_path: bootstrap_hardening.sh
+  function: ensure_power_group
+  criticality: utility
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::ensure_power_group: delegates to power system group"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::ensure_power_group: delegates to power system group"
+- id: LS-BOOT-080
+  script_path: bootstrap_hardening.sh
+  function: ensure_system_group
+  criticality: utility
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::ensure_system_group: dry-run logs missing system group creation"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::ensure_system_group: dry-run logs missing system group creation"
+- id: LS-BOOT-081
+  script_path: bootstrap_hardening.sh
+  function: ensure_tailscale_ssh_disabled
+  criticality: security
+  behavior_test: "tests/unit/test_tailscale.bats::ensure_tailscale_ssh_disabled: retries transient unknown RunSSH reads before accepting false"
+  checks:
+  - "tests/unit/test_tailscale.bats::ensure_tailscale_ssh_disabled: retries transient unknown RunSSH reads before accepting false"
+- id: LS-BOOT-082
+  script_path: bootstrap_hardening.sh
+  function: ensure_tailscaled_notify_access
+  criticality: security
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::ensure_tailscaled_notify_access: dry-run prepares NotifyAccess restart"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::ensure_tailscaled_notify_access: dry-run prepares NotifyAccess restart"
+- id: LS-BOOT-083
+  script_path: bootstrap_hardening.sh
+  function: ifupdown_is_authoritative
+  criticality: utility
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::ifupdown_is_authoritative: callable when networking.service is present"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::ifupdown_is_authoritative: callable when networking.service is present"
+- id: LS-BOOT-084
+  script_path: bootstrap_hardening.sh
+  function: retry_apt_noninteractive
+  criticality: utility
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::retry_apt_noninteractive: retries until apt command succeeds"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::retry_apt_noninteractive: retries until apt command succeeds"
+- id: LS-BOOT-085
+  script_path: bootstrap_hardening.sh
+  function: run_apt_command
+  criticality: utility
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::run_apt_command: streams filtered output and preserves exit status"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::run_apt_command: streams filtered output and preserves exit status"
+- id: LS-BOOT-086
+  script_path: bootstrap_hardening.sh
+  function: tailscale_runssh_pref_value
+  criticality: utility
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::tailscale_runssh_pref_value: returns parsed RunSSH preference"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::tailscale_runssh_pref_value: returns parsed RunSSH preference"
+- id: LS-VAL-041
+  script_path: validate_hardening.sh
+  function: apport_check
+  criticality: security
+  behavior_test: "tests/unit/test_validate_additional_behavior.bats::apport_check: records disabled apport posture"
+  checks:
+  - "tests/unit/test_validate_additional_behavior.bats::apport_check: records disabled apport posture"
+- id: LS-VAL-042
+  script_path: validate_hardening.sh
+  function: bootloader_check
+  criticality: security
+  behavior_test: "tests/unit/test_validate_additional_behavior.bats::bootloader_check: records info in container mode"
+  checks:
+  - "tests/unit/test_validate_additional_behavior.bats::bootloader_check: records info in container mode"
+- id: LS-VAL-043
+  script_path: validate_hardening.sh
+  function: cron_check
+  criticality: utility
+  behavior_test: "tests/unit/test_validate_additional_behavior.bats::cron_check: records normalized EXTRA_OPTS and clean journal"
+  checks:
+  - "tests/unit/test_validate_additional_behavior.bats::cron_check: records normalized EXTRA_OPTS and clean journal"
+- id: LS-VAL-044
+  script_path: validate_hardening.sh
+  function: ifupdown_is_authoritative
+  criticality: utility
+  behavior_test: "tests/unit/test_validate_additional_behavior.bats::ifupdown_is_authoritative: callable when networking.service is present"
+  checks:
+  - "tests/unit/test_validate_additional_behavior.bats::ifupdown_is_authoritative: callable when networking.service is present"
+- id: LS-VAL-045
+  script_path: validate_hardening.sh
+  function: networkd_wait_online_check
+  criticality: utility
+  behavior_test: "tests/unit/test_validate_additional_behavior.bats::networkd_wait_online_check: passes when ifupdown is authoritative and apt-helper wait-online succeeds"
+  checks:
+  - "tests/unit/test_validate_additional_behavior.bats::networkd_wait_online_check: passes when ifupdown is authoritative and apt-helper wait-online succeeds"
+- id: LS-VAL-046
+  script_path: validate_hardening.sh
+  function: reboot_required_check
+  criticality: utility
+  behavior_test: "tests/unit/test_validate_additional_behavior.bats::reboot_required_check: records pass when reboot is not required"
+  checks:
+  - "tests/unit/test_validate_additional_behavior.bats::reboot_required_check: records pass when reboot is not required"
+- id: LS-VAL-047
+  script_path: validate_hardening.sh
+  function: resolve_root_disk
+  criticality: utility
+  behavior_test: "tests/unit/test_validate_additional_behavior.bats::resolve_root_disk: returns parent disk for root source"
+  checks:
+  - "tests/unit/test_validate_additional_behavior.bats::resolve_root_disk: returns parent disk for root source"
+- id: LS-VAL-048
+  script_path: validate_hardening.sh
+  function: tailscale_runssh_pref_value
+  criticality: utility
+  behavior_test: "tests/unit/test_validate_additional_behavior.bats::tailscale_runssh_pref_value: returns parsed RunSSH preference"
+  checks:
+  - "tests/unit/test_validate_additional_behavior.bats::tailscale_runssh_pref_value: returns parsed RunSSH preference"
+- id: LS-DEP-028
+  script_path: deploy.sh
+  function: gate_c_failures_are_transient
+  criticality: orchestration
+  behavior_test: "tests/unit/test_deploy_workflow_contract.bats::deploy: gate_c_failures_are_transient only accepts timesync-only failures"
+  checks:
+  - "tests/unit/test_deploy_workflow_contract.bats::deploy: gate_c_failures_are_transient only accepts timesync-only failures"
+- id: LS-DEP-029
+  script_path: deploy.sh
+  function: wait_for_admin_ssh_or_die
+  criticality: orchestration
+  behavior_test: "tests/unit/test_deploy_workflow_contract.bats::deploy: wait_for_admin_ssh_or_die retries until ssh responds"
+  checks:
+  - "tests/unit/test_deploy_workflow_contract.bats::deploy: wait_for_admin_ssh_or_die retries until ssh responds"
+- id: LS-COM-057
+  script_path: lib/coolify-common.sh
+  function: coolify_configure_private_tls_dns_script
+  criticality: security
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::coolify_configure_private_tls_dns_script: emits private TLS DNS-01 reconciliation"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::coolify_configure_private_tls_dns_script: emits private TLS DNS-01 reconciliation"
+- id: LS-COM-058
+  script_path: lib/coolify-common.sh
+  function: coolify_install_binding_guard_script
+  criticality: security
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::coolify_install_binding_guard_script: emits guard timer install and enable flow"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::coolify_install_binding_guard_script: emits guard timer install and enable flow"
+- id: LS-COM-059
+  script_path: lib/coolify-common.sh
+  function: coolify_mark_bind_dashboard_state_script
+  criticality: orchestration
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::coolify_mark_bind_dashboard_state_script: emits state reconciliation for bind flag"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::coolify_mark_bind_dashboard_state_script: emits state reconciliation for bind flag"
+- id: LS-COM-060
+  script_path: lib/coolify-common.sh
+  function: coolify_phase5_fetch_pusher_app_key
+  criticality: utility
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::coolify_phase5_fetch_pusher_app_key: returns the last non-empty PUSHER_APP_KEY"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::coolify_phase5_fetch_pusher_app_key: returns the last non-empty PUSHER_APP_KEY"
+- id: LS-COM-061
+  script_path: lib/coolify-common.sh
+  function: coolify_phase5_probe_websocket_code
+  criticality: utility
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::coolify_phase5_probe_websocket_code: returns 000 for invalid websocket schemes"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::coolify_phase5_probe_websocket_code: returns 000 for invalid websocket schemes"
+- id: LS-COM-062
+  script_path: lib/coolify-common.sh
+  function: coolify_phase5_websocket_url
+  criticality: utility
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::coolify_phase5_websocket_url: builds the expected websocket endpoint"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::coolify_phase5_websocket_url: builds the expected websocket endpoint"

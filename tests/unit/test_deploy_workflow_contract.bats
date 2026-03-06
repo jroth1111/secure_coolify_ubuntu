@@ -400,3 +400,38 @@ EOF
   '
   assert_success
 }
+
+@test "deploy: wait_for_admin_ssh_or_die retries until ssh responds" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    attempts=0
+    sleep() { :; }
+    ssh_admin() {
+      if [[ "$1" == "echo ok" ]]; then
+        attempts=$((attempts + 1))
+        (( attempts < 3 )) && return 1
+        echo ok
+        return 0
+      fi
+      return 0
+    }
+
+    wait_for_admin_ssh_or_die "Gate A" 4 1
+    [[ "${attempts}" -eq 3 ]]
+  '
+  assert_success
+}
+
+@test "deploy: gate_c_failures_are_transient only accepts timesync-only failures" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    gate_c_failures_are_transient '\''{"checks":[{"check":"timesync: NTPSynchronized","status":"FAIL"}]}'\''
+  '
+  assert_success
+
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    gate_c_failures_are_transient '\''{"checks":[{"check":"timesync: NTPSynchronized","status":"FAIL"},{"check":"ufw: active","status":"FAIL"}]}'\''
+  '
+  assert_failure
+}

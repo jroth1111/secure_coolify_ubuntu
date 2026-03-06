@@ -1824,3 +1824,111 @@ EOF
   assert_success
   assert_output --partial '"pass"'
 }
+
+@test "apport_check: records disabled apport posture" {
+  local defaults
+  defaults="$(mktemp)"
+  printf "enabled=0\n" > "${defaults}"
+  APPORT_DEFAULT_FILE="${defaults}"
+
+  systemctl() {
+    if [[ "$1" == "list-unit-files" ]]; then
+      echo "apport.service enabled"
+      return 0
+    fi
+    if [[ "$1" == "is-active" ]]; then
+      return 1
+    fi
+    if [[ "$1" == "is-enabled" ]]; then
+      echo masked
+      return 0
+    fi
+    return 0
+  }
+
+  apport_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "apport: enabled=0" "PASS"
+  assert_json_check_status "${json}" "apport: service inactive" "PASS"
+  assert_json_check_status "${json}" "apport: service disabled/masked (masked)" "PASS"
+  assert_json_fail_count "${json}" "0"
+  rm -f "${defaults}"
+}
+
+@test "bootloader_check: records info in container mode" {
+  IS_CONTAINER="true"
+
+  bootloader_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "bootloader: partition safety" "INFO"
+  assert_json_fail_count "${json}" "0"
+}
+
+@test "cron_check: records normalized EXTRA_OPTS and clean journal" {
+  unit_available() { return 0; }
+  systemctl() {
+    if [[ "$1" == "show" && "$2" == "cron.service" && "$3" == "-p" && "$4" == "Environment" ]]; then
+      echo 'EXTRA_OPTS='
+      return 0
+    fi
+    if [[ "$1" == "show" && "$2" == "cron.service" && "$3" == "-p" && "$4" == "ActiveEnterTimestamp" ]]; then
+      echo 'Thu 2026-03-06 00:00:00 UTC'
+      return 0
+    fi
+    return 0
+  }
+  journalctl() { return 0; }
+
+  cron_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "cron: EXTRA_OPTS environment set" "PASS"
+  assert_json_check_status "${json}" "cron: no EXTRA_OPTS unset warnings after last start" "PASS"
+  assert_json_fail_count "${json}" "0"
+}
+
+@test "ifupdown_is_authoritative: callable when networking.service is present" {
+  run bash -c '
+    source "'"${VALIDATE_SCRIPT}"'"
+    unit_available() { return 0; }
+    ifupdown_is_authoritative || true
+  '
+  assert_success
+}
+
+@test "reboot_required_check: records pass when reboot is not required" {
+  if [[ -f /run/reboot-required ]]; then
+    skip "/run/reboot-required already present on runner"
+  fi
+
+  reboot_required_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "reboot: not required" "PASS"
+  assert_json_fail_count "${json}" "0"
+}
+
+@test "resolve_root_disk: returns parent disk for root source" {
+  findmnt() { echo /dev/vda1; }
+  lsblk() { echo vda; }
+
+  run resolve_root_disk
+  assert_success
+  assert_output "/dev/vda"
+}
+
+@test "tailscale_runssh_pref_value: returns parsed RunSSH preference" {
+  tailscale() {
+    if [[ "$1" == "debug" && "$2" == "prefs" ]]; then
+      echo '{"RunSSH":false}'
+      return 0
+    fi
+    return 1
+  }
+
+  run tailscale_runssh_pref_value 1 0
+  assert_success
+  assert_output "false"
+}

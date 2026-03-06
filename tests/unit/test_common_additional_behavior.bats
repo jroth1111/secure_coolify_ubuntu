@@ -688,3 +688,47 @@ setup() {
   assert_failure
   assert_output --partial "Gate F: private websocket WSS handshake failed"
 }
+
+@test "coolify_mark_bind_dashboard_state_script: emits state reconciliation for bind flag" {
+  run coolify_mark_bind_dashboard_state_script
+  assert_success
+  assert_output --partial "bind_dashboard_to_tailscale=true"
+  assert_output --partial 'install -m 0640'
+}
+
+@test "coolify_phase5_fetch_pusher_app_key: returns the last non-empty PUSHER_APP_KEY" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    ssh_admin_sudo() {
+      cat <<EOF
+APP_ENV=production
+
+PUSHER_APP_KEY=old-key
+PUSHER_APP_KEY=new-key
+EOF
+    }
+    coolify_phase5_fetch_pusher_app_key
+  '
+  assert_success
+  assert_output "new-key"
+}
+
+@test "coolify_phase5_websocket_url: builds the expected websocket endpoint" {
+  run coolify_phase5_websocket_url "wss://ws.example.com" "pusher-key"
+  assert_success
+  assert_output "wss://ws.example.com/app/pusher-key?protocol=7&client=js&version=8.4.0&flash=false"
+}
+
+@test "coolify_phase5_probe_websocket_code: returns 000 for invalid websocket schemes" {
+  run coolify_phase5_probe_websocket_code "https://ws.example.com" 1
+  assert_success
+  assert_output "000"
+}
+
+@test "coolify_configure_private_tls_dns_script: emits private TLS DNS-01 reconciliation" {
+  run coolify_configure_private_tls_dns_script
+  assert_success
+  assert_output --partial "CF_DNS_API_TOKEN is required"
+  assert_output --partial "/data/coolify/proxy/.env"
+  assert_output --partial "certificatesResolvers.${PRIVATE_TLS_RESOLVER}.acme.dnsChallenge.provider=cloudflare"
+}
