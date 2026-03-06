@@ -2568,7 +2568,7 @@ coolify_instance_settings_check() {
   settings_row="$(
     docker exec -i coolify-db env PGPASSWORD="${db_pass}" \
       psql -v ON_ERROR_STOP=1 -U "${db_user}" -d "${db_name}" -At -F '|' \
-      -c "SELECT COALESCE(is_registration_enabled::text,''), COALESCE(fqdn,'') FROM instance_settings LIMIT 1;" \
+      -c "SELECT is_registration_enabled, COALESCE(fqdn,'') FROM instance_settings LIMIT 1;" \
       2>/dev/null || true
   )"
 
