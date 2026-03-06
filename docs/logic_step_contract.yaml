@@ -2136,6 +2136,13 @@ entries:
   behavior_test: "tests/unit/test_deploy_workflow_contract.bats::deploy: wait_for_admin_ssh_or_die retries until ssh responds"
   checks:
   - "tests/unit/test_deploy_workflow_contract.bats::deploy: wait_for_admin_ssh_or_die retries until ssh responds"
+- id: LS-DEP-030
+  script_path: deploy.sh
+  function: wait_for_gate_c_timesync_remote
+  criticality: orchestration
+  behavior_test: "tests/unit/test_deploy_workflow_contract.bats::deploy: wait_for_gate_c_timesync_remote waits for synchronized clock"
+  checks:
+  - "tests/unit/test_deploy_workflow_contract.bats::deploy: wait_for_gate_c_timesync_remote waits for synchronized clock"
 - id: LS-COM-057
   script_path: lib/coolify-common.sh
   function: coolify_configure_private_tls_dns_script

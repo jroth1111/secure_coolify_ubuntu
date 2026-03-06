@@ -325,6 +325,36 @@ EOF
   assert_output --partial "Gate C pre-check: timesync synchronized"
 }
 
+@test "deploy: wait_for_gate_c_timesync_remote waits for synchronized clock" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    timesync_file="$(mktemp)"
+    echo 0 > "${timesync_file}"
+
+    sleep() { :; }
+    ssh_admin_sudo() {
+      if [[ "$1" == "timedatectl show --property=NTPSynchronized --value 2>/dev/null || true" ]]; then
+        attempt="$(cat "${timesync_file}")"
+        attempt=$((attempt + 1))
+        echo "${attempt}" > "${timesync_file}"
+        if (( attempt < 2 )); then
+          echo no
+        else
+          echo yes
+        fi
+        return 0
+      fi
+      return 0
+    }
+
+    wait_for_gate_c_timesync_remote 3 1
+    [[ "$(cat "${timesync_file}")" -eq 2 ]]
+  '
+  assert_success
+  assert_output --partial "Gate C pre-check: waiting for system clock synchronization..."
+  assert_output --partial "Gate C pre-check: timesync synchronized"
+}
+
 @test "deploy: gate D validates service active and managed rules" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"
