@@ -903,6 +903,27 @@ get_tailscale_ip() {
   echo "${DETECTED_TAILSCALE_IP}"
 }
 
+tailscale_runssh_pref_value() {
+  local attempts="${1:-5}"
+  local delay_seconds="${2:-1}"
+  local attempt=1
+  local run_ssh_pref="unknown"
+
+  while (( attempt <= attempts )); do
+    run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r 'if has("RunSSH") then (.RunSSH|tostring) else "unknown" end' 2>/dev/null || echo "unknown")"
+    if [[ "${run_ssh_pref}" == "true" || "${run_ssh_pref}" == "false" ]]; then
+      printf '%s\n' "${run_ssh_pref}"
+      return 0
+    fi
+    if (( attempt < attempts )); then
+      sleep "${delay_seconds}"
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  printf '%s\n' "${run_ssh_pref:-unknown}"
+}
+
 install_tailscale() {
   if command -v tailscale >/dev/null 2>&1; then
     log "Tailscale already installed."
@@ -1004,20 +1025,23 @@ ensure_tailscale_ssh_disabled() {
   fi
 
   local run_ssh_pref
-  run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r 'if has("RunSSH") then (.RunSSH|tostring) else "unknown" end' 2>/dev/null || echo "unknown")"
-  if [[ "${run_ssh_pref}" == "unknown" ]]; then
-    warn "Unable to read Tailscale RunSSH preference; skipping RunSSH enforcement."
-    return 0
-  fi
+  run_ssh_pref="$(tailscale_runssh_pref_value 5 1)"
 
-  if [[ "${run_ssh_pref}" == "true" ]]; then
+  if [[ "${run_ssh_pref}" != "false" ]]; then
     if is_true "${DRY_RUN}"; then
-      log "DRY-RUN: would run 'tailscale set --ssh=false' to keep host sshd as the only SSH control plane."
+      if [[ "${run_ssh_pref}" == "unknown" ]]; then
+        log "DRY-RUN: would run 'tailscale set --ssh=false' because Tailscale RunSSH preference could not be confirmed after retries."
+      else
+        log "DRY-RUN: would run 'tailscale set --ssh=false' to keep host sshd as the only SSH control plane."
+      fi
       return 0
     fi
 
+    if [[ "${run_ssh_pref}" == "unknown" ]]; then
+      warn "Unable to confirm Tailscale RunSSH preference after retries; forcing 'tailscale set --ssh=false'."
+    fi
     run tailscale set --ssh=false
-    run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r 'if has("RunSSH") then (.RunSSH|tostring) else "unknown" end' 2>/dev/null || echo "unknown")"
+    run_ssh_pref="$(tailscale_runssh_pref_value 5 1)"
     [[ "${run_ssh_pref}" == "false" ]] || die "Failed to disable Tailscale SSH (RunSSH=${run_ssh_pref:-unknown})."
     log "Tailscale SSH disabled (RunSSH=false); host sshd remains authoritative."
   else
@@ -2620,7 +2644,7 @@ run_post_checks() {
     || die "Post-check failed: timezone is ${current_timezone:-unknown}, expected ${TIMEZONE}."
 
   local run_ssh_pref
-  run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r 'if has("RunSSH") then (.RunSSH|tostring) else "unknown" end' 2>/dev/null || echo "unknown")"
+  run_ssh_pref="$(tailscale_runssh_pref_value 5 1)"
   [[ "${run_ssh_pref}" == "false" ]] \
     || die "Post-check failed: tailscale RunSSH is ${run_ssh_pref:-unknown}, expected false."
 
@@ -2767,7 +2791,7 @@ generate_report() {
   local swap_active
   swap_active="$(swapon --show --noheadings 2>/dev/null | grep -q . && echo "true" || echo "false")"
   fail2ban_active="$(systemctl is-active --quiet fail2ban && echo "true" || echo "false")"
-  tailscale_runssh_disabled="$(tailscale debug prefs 2>/dev/null | jq -r 'if .RunSSH == false then "true" else "false" end' 2>/dev/null || echo "false")"
+  tailscale_runssh_disabled="$([[ "$(tailscale_runssh_pref_value 5 1)" == "false" ]] && echo "true" || echo "false")"
   banner_present="$([[ -f /etc/issue.net ]] && echo "true" || echo "false")"
   docker_ssh_cidrs_csv="$(IFS=,; echo "${DOCKER_SSH_CIDRS[*]}")"
 

@@ -103,6 +103,93 @@ setup() {
   assert_output --partial "not found"
 }
 
+@test "ensure_tailscale_ssh_disabled: retries transient unknown RunSSH reads before accepting false" {
+  local old_path="${PATH}"
+  local mock_dir
+  local debug_counter_file
+  mock_dir="$(mktemp -d)"
+  debug_counter_file="$(mktemp)"
+  printf '0\n' > "${debug_counter_file}"
+  export TAILSCALE_DEBUG_COUNTER_FILE="${debug_counter_file}"
+  PATH="${mock_dir}:${PATH}"
+
+  sleep() { :; }
+
+  cat > "${mock_dir}/tailscale" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "debug" && "${2:-}" == "prefs" ]]; then
+  count="$(<"${TAILSCALE_DEBUG_COUNTER_FILE}")"
+  count=$((count + 1))
+  printf '%s\n' "${count}" > "${TAILSCALE_DEBUG_COUNTER_FILE}"
+  if (( count < 3 )); then
+    echo '{}'
+  else
+    echo '{"RunSSH":false}'
+  fi
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "${mock_dir}/tailscale"
+
+  ensure_tailscale_ssh_disabled
+  [[ "$(<"${debug_counter_file}")" -eq 3 ]]
+  PATH="${old_path}"
+  /bin/rm -rf "${mock_dir}"
+  /bin/rm -f "${debug_counter_file}"
+}
+
+@test "ensure_tailscale_ssh_disabled: forces tailscale set when RunSSH remains unreadable" {
+  local old_path="${PATH}"
+  local mock_dir
+  local debug_counter_file
+  local set_counter_file
+  mock_dir="$(mktemp -d)"
+  debug_counter_file="$(mktemp)"
+  set_counter_file="$(mktemp)"
+  printf '0\n' > "${debug_counter_file}"
+  printf '0\n' > "${set_counter_file}"
+  export TAILSCALE_DEBUG_COUNTER_FILE="${debug_counter_file}"
+  export TAILSCALE_SET_COUNTER_FILE="${set_counter_file}"
+  PATH="${mock_dir}:${PATH}"
+
+  run() { "$@"; }
+  sleep() { :; }
+
+  cat > "${mock_dir}/tailscale" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "debug" && "${2:-}" == "prefs" ]]; then
+  debug_calls="$(<"${TAILSCALE_DEBUG_COUNTER_FILE}")"
+  debug_calls=$((debug_calls + 1))
+  printf '%s\n' "${debug_calls}" > "${TAILSCALE_DEBUG_COUNTER_FILE}"
+  set_calls="$(<"${TAILSCALE_SET_COUNTER_FILE}")"
+  if (( set_calls == 0 )); then
+    echo '{}'
+  else
+    echo '{"RunSSH":false}'
+  fi
+  exit 0
+fi
+if [[ "${1:-}" == "set" && "${2:-}" == "--ssh=false" ]]; then
+  set_calls="$(<"${TAILSCALE_SET_COUNTER_FILE}")"
+  set_calls=$((set_calls + 1))
+  printf '%s\n' "${set_calls}" > "${TAILSCALE_SET_COUNTER_FILE}"
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "${mock_dir}/tailscale"
+
+  ensure_tailscale_ssh_disabled
+  [[ "$(<"${set_counter_file}")" -eq 1 ]]
+  [[ "$(<"${debug_counter_file}")" -ge 6 ]]
+  PATH="${old_path}"
+  /bin/rm -rf "${mock_dir}"
+  /bin/rm -f "${debug_counter_file}" "${set_counter_file}"
+}
+
 # ── Integration: full Tailscale flow validation ─────────────────────────────────
 
 @test "validate_inputs: accepts --install-tailscale with all required options" {
