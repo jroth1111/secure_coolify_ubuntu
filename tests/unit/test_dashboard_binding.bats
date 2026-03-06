@@ -103,6 +103,21 @@ setup() {
   rm -f "${COOLIFY_ENV_FILE}"
 }
 
+@test "configure_coolify_binding: reports Tailscale bind target without advertising raw IP URL" {
+  BIND_DASHBOARD_TO_TAILSCALE="true"
+  DETECTED_TAILSCALE_IP="100.64.1.42"
+  DRY_RUN="true"
+  COOLIFY_ENV_FILE="$(mktemp)"
+  printf 'APP_PORT=8000\nSOKETI_PORT=6001\n' > "${COOLIFY_ENV_FILE}"
+
+  run configure_coolify_binding
+  assert_success
+  assert_output --partial "Dashboard bound on Tailscale IP 100.64.1.42:8000"
+  refute_output --partial "Dashboard accessible at:"
+
+  rm -f "${COOLIFY_ENV_FILE}"
+}
+
 # ── Error handling ──────────────────────────────────────────────────────────────
 
 @test "configure_coolify_binding: fails when Tailscale IP not detected" {

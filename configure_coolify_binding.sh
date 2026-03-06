@@ -190,4 +190,4 @@ if command -v nc >/dev/null 2>&1; then
 fi
 
 log "Coolify binding configuration complete."
-log "Dashboard accessible at: http://${TAILSCALE_IP}:8000 (via Tailscale)"
+log "Dashboard bound on Tailscale IP ${TAILSCALE_IP}:8000"

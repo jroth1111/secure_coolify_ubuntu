@@ -689,6 +689,30 @@ setup() {
   assert_output --partial "Gate F: private websocket WSS handshake failed"
 }
 
+@test "print_deployment_summary: tunnel mode prefers private HTTPS guidance" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    DEPLOY_MODE="tunnel"
+    DOMAIN="vps.example.com"
+    APP_DOMAIN="example.com"
+    CF_ZONE_NAME="example.com"
+    SERVER_IP="203.0.113.10"
+    TS_IP="100.64.0.10"
+    ADMIN_USER="coolifyadmin"
+    TUNNEL_ID="tunnel-1234"
+    SERVER_TIMEZONE="UTC"
+    log() { printf "%s\n" "$*"; }
+
+    print_deployment_summary
+  '
+  assert_success
+  assert_output --partial "Dashboard URL    : https://vps.example.com"
+  assert_output --partial "Open https://vps.example.com and create your Coolify admin account."
+  assert_output --partial "Private dashboard/websocket TLS is already configured for https://vps.example.com and wss://ws.vps.example.com."
+  refute_output --partial "fallback http://100.64.0.10:8000"
+  refute_output --partial "Cloudflare SSL mode"
+}
+
 @test "coolify_mark_bind_dashboard_state_script: emits state reconciliation for bind flag" {
   run coolify_mark_bind_dashboard_state_script
   assert_success

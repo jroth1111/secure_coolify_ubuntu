@@ -1984,14 +1984,18 @@ print_deployment_summary() {
   printf '\n'
   log "Next steps:"
   if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
-    log "  1. Open https://${DOMAIN} (or fallback http://${TS_IP}:8000) and create your Coolify admin account."
+    log "  1. Open https://${DOMAIN} and create your Coolify admin account."
   else
     log "  1. Open http://${TS_IP}:8000 and create your Coolify admin account."
   fi
   log ""
-  log "  2. Cloudflare SSL mode (one-time):"
-  log "       Cloudflare dashboard > your zone > SSL/TLS > Overview > set to 'Full'"
-  log "       (use Full Strict only if you manage strict-valid origin certs for all proxied hosts)"
+  if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
+    log "  2. Private dashboard/websocket TLS is already configured for https://${DOMAIN} and wss://ws.${DOMAIN}."
+  else
+    log "  2. Cloudflare SSL mode (one-time):"
+    log "       Cloudflare dashboard > your zone > SSL/TLS > Overview > set to 'Full'"
+    log "       (use Full Strict only if you manage strict-valid origin certs for all proxied hosts)"
+  fi
   log ""
   log "  3. Start the proxy: Coolify UI > Servers > localhost > Proxy > Start Proxy"
   log "       (required for app subdomains to route through Traefik)"
