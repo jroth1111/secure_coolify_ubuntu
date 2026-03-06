@@ -107,6 +107,7 @@ EOF
     ADMIN_USER="coolifyadmin"
     attempts=0
     sync_called=0
+    known_hosts_sync=0
 
     sleep() { :; }
     ssh_admin() {
@@ -134,6 +135,7 @@ EOF
       fi
       return 0
     }
+    sync_operator_known_host_entries() { [[ "$2" == "100.64.0.25" ]]; known_hosts_sync=1; }
     reconcile_docker_daemon_remote() { :; }
     sync_companion_scripts() { sync_called=1; }
     report_validation_result() { :; }
@@ -141,6 +143,7 @@ EOF
     phase2_gates
     [[ "${attempts}" -eq 3 ]]
     [[ "${sync_called}" -eq 1 ]]
+    [[ "${known_hosts_sync}" -eq 1 ]]
   '
   assert_success
 }

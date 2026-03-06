@@ -75,6 +75,48 @@ cleanup_temp_files() {
   rm -f "${DEPLOY_KNOWN_HOSTS:-}" "${ADMIN_KNOWN_HOSTS:-}" "${ROOT_PASS_RUNTIME_FILE:-}"
 }
 
+sync_operator_known_host_entries() {
+  local source_file="${1:-}"
+  shift || true
+  [[ -n "${HOME:-}" ]] || return 0
+  [[ -n "${source_file}" && -s "${source_file}" ]] || return 0
+
+  local ssh_dir="${HOME}/.ssh"
+  local operator_known_hosts="${ssh_dir}/known_hosts"
+  if ! mkdir -p "${ssh_dir}" 2>/dev/null; then
+    warn "Could not create ${ssh_dir}; skipping operator known_hosts refresh."
+    return 0
+  fi
+  chmod 700 "${ssh_dir}" >/dev/null 2>&1 || true
+  if ! touch "${operator_known_hosts}" 2>/dev/null; then
+    warn "Could not write ${operator_known_hosts}; skipping operator known_hosts refresh."
+    return 0
+  fi
+  chmod 600 "${operator_known_hosts}" >/dev/null 2>&1 || true
+
+  local host
+  for host in "$@"; do
+    [[ -n "${host}" ]] || continue
+    ssh-keygen -R "${host}" -f "${operator_known_hosts}" >/dev/null 2>&1 || true
+  done
+
+  local line added=0
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] || continue
+    if ! grep -qxF -- "${line}" "${operator_known_hosts}" 2>/dev/null; then
+      printf '%s\n' "${line}" >> "${operator_known_hosts}" || {
+        warn "Could not update ${operator_known_hosts}; skipping remaining operator known_hosts refresh."
+        return 0
+      }
+      added=$((added + 1))
+    fi
+  done < "${source_file}"
+
+  if (( added > 0 )) && [[ $# -gt 0 ]]; then
+    log "Operator known_hosts refreshed for: $*"
+  fi
+}
+
 cleanup_remote_deploy_env() {
   [[ "${DEPLOY_ENV_REMOTE_PENDING}" == "true" ]] || return 0
 
@@ -434,6 +476,7 @@ preflight() {
   else
     log "Testing SSH to root@${SERVER_IP}..."
     if ssh_root 'echo ok' >/dev/null 2>&1; then
+      sync_operator_known_host_entries "${DEPLOY_KNOWN_HOSTS}" "${SERVER_IP}"
       pass "SSH root@${SERVER_IP} reachable"
     else
       die "Cannot SSH to root@${SERVER_IP}. Check IP and root password."
@@ -608,6 +651,7 @@ phase2_gates() {
   log "Gate A: Testing SSH admin@${TS_IP} via key auth..."
   # (Gate A runs first so we know SSH works before syncing scripts)
   if wait_for_admin_ssh_or_die "Gate A (Tailscale peering may need time)" 6 10; then
+    sync_operator_known_host_entries "${ADMIN_KNOWN_HOSTS}" "${TS_IP}"
     pass "Gate A: SSH ${ADMIN_USER}@${TS_IP} works"
   else
     fail "Gate A: Cannot SSH to ${ADMIN_USER}@${TS_IP} after retries"

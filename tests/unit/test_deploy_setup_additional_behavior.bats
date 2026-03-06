@@ -17,6 +17,21 @@ load '../helpers'
   assert_success
 }
 
+@test "sync_operator_known_host_entries: replaces stale operator known_hosts entries with verified session keys" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    HOME="$(mktemp -d)"
+    mkdir -p "${HOME}/.ssh"
+    printf "100.64.0.10 ssh-ed25519 AAAAOLDKEY\n" > "${HOME}/.ssh/known_hosts"
+    source_file="$(mktemp)"
+    printf "100.64.0.10 ssh-ed25519 AAAANEWKEY\n" > "${source_file}"
+    sync_operator_known_host_entries "${source_file}" "100.64.0.10"
+    ! grep -q "AAAAOLDKEY" "${HOME}/.ssh/known_hosts"
+    grep -q "AAAANEWKEY" "${HOME}/.ssh/known_hosts"
+  '
+  assert_success
+}
+
 @test "deploy_exit_trap: best-effort cleans remote deploy env then local temp files" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"
