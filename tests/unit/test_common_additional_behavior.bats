@@ -396,6 +396,15 @@ setup() {
   assert_output --partial "ON_ERROR_STOP=1"
 }
 
+@test "coolify_reconcile_instance_settings_script: emits fqdn and registration reconciliation" {
+  run coolify_reconcile_instance_settings_script
+  assert_success
+  assert_output --partial ': "${DOMAIN:?DOMAIN is required}"'
+  assert_output --partial "is_registration_enabled = false"
+  assert_output --partial "fqdn = 'https://\${DOMAIN}'"
+  assert_output --partial "ON_ERROR_STOP=1"
+}
+
 @test "print_deployment_summary: prints completion banner and key endpoints" {
   SERVER_IP="203.0.113.10"
   TS_IP="100.64.0.10"
@@ -522,7 +531,9 @@ setup() {
     bind_calls=0
     mark_binding_state_calls=0
     wildcard_calls=0
+    instance_settings_calls=0
     pusher_calls=0
+    configure_private_tls_calls=0
     configure_private_routes_calls=0
     remove_private_routes_calls=0
     a_records=""
@@ -531,26 +542,30 @@ setup() {
     configure_binding() { bind_calls=$((bind_calls + 1)); }
     mark_binding_state() { mark_binding_state_calls=$((mark_binding_state_calls + 1)); }
     set_wildcard_domain() { wildcard_calls=$((wildcard_calls + 1)); }
+    reconcile_instance_settings() { instance_settings_calls=$((instance_settings_calls + 1)); }
     reconcile_pusher() { pusher_calls=$((pusher_calls + 1)); }
     install_cloudflared() { return 0; }
     configure_cloudflared() { return 0; }
     stop_cloudflared() { return 0; }
     configure_private_routes() { configure_private_routes_calls=$((configure_private_routes_calls + 1)); }
+    configure_private_tls() { configure_private_tls_calls=$((configure_private_tls_calls + 1)); }
     remove_private_routes() { remove_private_routes_calls=$((remove_private_routes_calls + 1)); }
     cf_upsert_a_record() { a_records+="$1|$2|$3"$'"'"'\n'"'"'; }
     cf_create_tunnel() { echo "unexpected tunnel" >&2; return 1; }
     cf_upsert_cname() { echo "unexpected cname" >&2; return 1; }
 
     coolify_phase4_binding_dns_shared \
-      coolify_env_exists configure_binding mark_binding_state set_wildcard_domain reconcile_pusher \
+      coolify_env_exists configure_binding mark_binding_state set_wildcard_domain reconcile_instance_settings reconcile_pusher \
       install_cloudflared configure_cloudflared stop_cloudflared \
-      configure_private_routes remove_private_routes
+      configure_private_routes configure_private_tls remove_private_routes
 
     [[ "${wait_checks}" -eq 1 ]]
     [[ "${bind_calls}" -eq 1 ]]
     [[ "${mark_binding_state_calls}" -eq 1 ]]
     [[ "${wildcard_calls}" -eq 1 ]]
+    [[ "${instance_settings_calls}" -eq 1 ]]
     [[ "${pusher_calls}" -eq 1 ]]
+    [[ "${configure_private_tls_calls}" -eq 0 ]]
     [[ "${configure_private_routes_calls}" -eq 0 ]]
     [[ "${remove_private_routes_calls}" -eq 1 ]]
     grep -q "^coolify.vps.example.com|203.0.113.10|true$" <<< "${a_records}"
@@ -573,11 +588,13 @@ setup() {
     bind_calls=0
     mark_binding_state_calls=0
     wildcard_calls=0
+    instance_settings_calls=0
     pusher_calls=0
     install_calls=0
     configure_calls=0
     stop_calls=0
     create_tunnel_calls=0
+    configure_private_tls_calls=0
     configure_private_routes_calls=0
     remove_private_routes_calls=0
     deleted_hosts=""
@@ -588,11 +605,13 @@ setup() {
     configure_binding() { bind_calls=$((bind_calls + 1)); }
     mark_binding_state() { mark_binding_state_calls=$((mark_binding_state_calls + 1)); }
     set_wildcard_domain() { wildcard_calls=$((wildcard_calls + 1)); }
+    reconcile_instance_settings() { instance_settings_calls=$((instance_settings_calls + 1)); }
     reconcile_pusher() { pusher_calls=$((pusher_calls + 1)); }
     install_cloudflared() { install_calls=$((install_calls + 1)); }
     configure_cloudflared() { configure_calls=$((configure_calls + 1)); }
     stop_cloudflared() { stop_calls=$((stop_calls + 1)); }
     configure_private_routes() { configure_private_routes_calls=$((configure_private_routes_calls + 1)); }
+    configure_private_tls() { configure_private_tls_calls=$((configure_private_tls_calls + 1)); }
     remove_private_routes() { remove_private_routes_calls=$((remove_private_routes_calls + 1)); }
     cf_create_tunnel() { create_tunnel_calls=$((create_tunnel_calls + 1)); }
     cf_delete_host_records() { deleted_hosts+="$1"$'"'"'\n'"'"'; }
@@ -600,20 +619,22 @@ setup() {
     cf_upsert_cname() { cname_records+="$1|$2"$'"'"'\n'"'"'; }
 
     coolify_phase4_binding_dns_shared \
-      coolify_env_exists configure_binding mark_binding_state set_wildcard_domain reconcile_pusher \
+      coolify_env_exists configure_binding mark_binding_state set_wildcard_domain reconcile_instance_settings reconcile_pusher \
       install_cloudflared configure_cloudflared stop_cloudflared \
-      configure_private_routes remove_private_routes
+      configure_private_routes configure_private_tls remove_private_routes
 
     [[ "${wait_checks}" -eq 1 ]]
     [[ "${bind_calls}" -eq 1 ]]
     [[ "${mark_binding_state_calls}" -eq 1 ]]
     [[ "${wildcard_calls}" -eq 1 ]]
+    [[ "${instance_settings_calls}" -eq 1 ]]
     [[ "${pusher_calls}" -eq 1 ]]
     [[ "${install_calls}" -eq 1 ]]
     [[ "${configure_calls}" -eq 1 ]]
     [[ "${create_tunnel_calls}" -eq 1 ]]
     [[ "${stop_calls}" -eq 0 ]]
     [[ "${configure_private_routes_calls}" -eq 1 ]]
+    [[ "${configure_private_tls_calls}" -eq 1 ]]
     [[ "${remove_private_routes_calls}" -eq 0 ]]
     grep -q "^coolify.vps.example.com$" <<< "${deleted_hosts}"
     grep -q "^ws.coolify.vps.example.com$" <<< "${deleted_hosts}"

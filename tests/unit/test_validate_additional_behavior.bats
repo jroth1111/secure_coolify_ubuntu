@@ -986,6 +986,86 @@ EOF
   rm -f "${hosts_file}"
 }
 
+@test "coolify_instance_settings_check: fails when registration is enabled and fqdn is empty" {
+  local tempdir
+  tempdir="$(mktemp -d)"
+  COOLIFY_ENV_FILE="${tempdir}/coolify.env"
+  cat > "${COOLIFY_ENV_FILE}" <<'EOF'
+DB_USERNAME=coolify
+DB_DATABASE=coolify
+DB_PASSWORD=secret
+EOF
+  DOMAIN="vps.example.com"
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  docker() {
+    if [[ "${1:-}" == "ps" ]]; then
+      echo "coolify-db"
+      return 0
+    fi
+    if [[ "${1:-}" == "exec" ]]; then
+      echo "t|"
+      return 0
+    fi
+    return 0
+  }
+
+  coolify_instance_settings_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "coolify: registration disabled" "FAIL"
+  assert_json_check_status "${json}" "coolify: instance fqdn" "FAIL"
+  assert_json_fail_count "${json}" "2"
+
+  rm -rf "${tempdir}"
+}
+
+@test "coolify_instance_settings_check: passes when registration is disabled and fqdn matches domain" {
+  local tempdir
+  tempdir="$(mktemp -d)"
+  COOLIFY_ENV_FILE="${tempdir}/coolify.env"
+  cat > "${COOLIFY_ENV_FILE}" <<'EOF'
+DB_USERNAME=coolify
+DB_DATABASE=coolify
+DB_PASSWORD=secret
+EOF
+  DOMAIN="vps.example.com"
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  docker() {
+    if [[ "${1:-}" == "ps" ]]; then
+      echo "coolify-db"
+      return 0
+    fi
+    if [[ "${1:-}" == "exec" ]]; then
+      echo "f|https://vps.example.com"
+      return 0
+    fi
+    return 0
+  }
+
+  coolify_instance_settings_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "coolify: registration disabled" "PASS"
+  assert_json_check_status "${json}" "coolify: instance fqdn" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  rm -rf "${tempdir}"
+}
+
 @test "docker_trust_boundary_check: fails when privileged containers are not allowlisted" {
   local sock_dir sock_pid
   sock_dir="$(mktemp -d)"

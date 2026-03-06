@@ -785,6 +785,11 @@ phase4_binding_dns() {
     app_domain_q="$(printf '%q' "${APP_DOMAIN}")"
     coolify_set_wildcard_domain_script | ssh_admin_sudo "APP_DOMAIN=${app_domain_q} bash -s"
   }
+  phase4_reconcile_instance_settings() {
+    local domain_q
+    domain_q="$(printf '%q' "${DOMAIN}")"
+    coolify_reconcile_instance_settings_script | ssh_admin_sudo "DOMAIN=${domain_q} bash -s"
+  }
   phase4_reconcile_pusher_env() {
     local deploy_mode_q ts_ip_q domain_q
     deploy_mode_q="$(printf '%q' "${DEPLOY_MODE}")"
@@ -835,6 +840,7 @@ phase4_binding_dns() {
     phase4_configure_binding \
     phase4_mark_binding_state \
     phase4_set_wildcard_domain \
+    phase4_reconcile_instance_settings \
     phase4_reconcile_pusher_env \
     phase4_install_cloudflared \
     phase4_configure_cloudflared \

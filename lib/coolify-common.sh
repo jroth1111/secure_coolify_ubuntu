@@ -839,6 +839,7 @@ coolify_phase3_docker_coolify_shared() {
 #   configure_binding_fn()
 #   mark_binding_state_fn()
 #   set_wildcard_domain_fn()
+#   reconcile_instance_settings_fn()
 #   reconcile_pusher_fn()
 #   install_cloudflared_fn()
 #   configure_cloudflared_fn()
@@ -851,13 +852,14 @@ coolify_phase4_binding_dns_shared() {
   local configure_binding_fn="$2"
   local mark_binding_state_fn="$3"
   local set_wildcard_domain_fn="$4"
-  local reconcile_pusher_fn="$5"
-  local install_cloudflared_fn="$6"
-  local configure_cloudflared_fn="$7"
-  local stop_cloudflared_fn="$8"
-  local configure_private_routes_fn="$9"
-  local configure_private_tls_fn="${10}"
-  local remove_private_routes_fn="${11}"
+  local reconcile_instance_settings_fn="$5"
+  local reconcile_pusher_fn="$6"
+  local install_cloudflared_fn="$7"
+  local configure_cloudflared_fn="$8"
+  local stop_cloudflared_fn="$9"
+  local configure_private_routes_fn="${10}"
+  local configure_private_tls_fn="${11}"
+  local remove_private_routes_fn="${12}"
 
   step "4/5" "Configure dashboard binding & DNS"
 
@@ -887,6 +889,10 @@ coolify_phase4_binding_dns_shared() {
   log "Setting Coolify wildcard domain to http://${APP_DOMAIN}..."
   "${set_wildcard_domain_fn}" || die "Failed to update wildcard domain in Coolify database"
   pass "Coolify wildcard domain: http://${APP_DOMAIN}"
+
+  log "Reconciling Coolify instance settings..."
+  "${reconcile_instance_settings_fn}" || die "Failed to reconcile Coolify instance settings"
+  pass "Coolify instance settings reconciled: fqdn=https://${DOMAIN}, registration disabled"
 
   # Configure PUSHER_* for the selected mode.
   # Tunnel mode keeps realtime traffic on Tailscale; standard mode clears explicit overrides.
@@ -1577,6 +1583,32 @@ if ! docker ps --filter "name=coolify-db" --filter "status=running" --format "{{
   exit 1
 fi
 sql="UPDATE server_settings SET wildcard_domain = 'http://${APP_DOMAIN}' WHERE server_id = 0;"
+docker exec -i coolify-db sh -ceu '
+  IFS= read -r PGPASSWORD
+  export PGPASSWORD
+  psql -v ON_ERROR_STOP=1 -U "$1" -d "$2" -c "$3" >/dev/null
+' _ "${db_user}" "${db_name}" "${sql}" <<< "${db_pass}"
+EOF
+}
+
+# coolify_reconcile_instance_settings_script — Emit host-side script to update
+# Coolify instance settings directly in PostgreSQL. Requires DOMAIN.
+coolify_reconcile_instance_settings_script() {
+  cat <<'EOF'
+set -Eeuo pipefail
+: "${DOMAIN:?DOMAIN is required}"
+coolify_env="/data/coolify/source/.env"
+db_user="$(grep -m1 '^DB_USERNAME=' "${coolify_env}" | cut -d= -f2- || true)"
+db_name="$(grep -m1 '^DB_DATABASE=' "${coolify_env}" | cut -d= -f2- || true)"
+db_pass="$(grep -m1 '^DB_PASSWORD=' "${coolify_env}" | cut -d= -f2- || true)"
+db_user="${db_user:-coolify}"
+db_name="${db_name:-coolify}"
+[[ -n "${db_pass}" ]] || { echo "DB_PASSWORD missing in ${coolify_env}" >&2; exit 1; }
+if ! docker ps --filter "name=coolify-db" --filter "status=running" --format "{{.Names}}" 2>/dev/null | grep -q "coolify-db"; then
+  echo "coolify-db container is not running" >&2
+  exit 1
+fi
+sql="UPDATE instance_settings SET is_registration_enabled = false, fqdn = 'https://${DOMAIN}';"
 docker exec -i coolify-db sh -ceu '
   IFS= read -r PGPASSWORD
   export PGPASSWORD

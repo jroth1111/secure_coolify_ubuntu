@@ -622,6 +622,15 @@ entries:
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::coolify_container_check: reports
     info when Docker is missing'
+- id: LS-VAL-008A
+  script_path: validate_hardening.sh
+  function: coolify_instance_settings_check
+  criticality: security
+  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::coolify_instance_settings_check:
+    passes when registration is disabled and fqdn matches domain'
+  checks:
+  - 'tests/unit/test_validate_additional_behavior.bats::coolify_instance_settings_check:
+    fails when registration is enabled and fqdn is empty'
 - id: LS-VAL-009
   script_path: validate_hardening.sh
   function: coolify_ssh_check
@@ -1816,6 +1825,15 @@ entries:
   checks:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_configure_private_dashboard_routes_script:
     emits managed Traefik routes for dashboard and ws hosts'
+- id: LS-COM-042A
+  script_path: lib/coolify-common.sh
+  function: coolify_reconcile_instance_settings_script
+  criticality: utility
+  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_instance_settings_script:
+    emits fqdn and registration reconciliation'
+  checks:
+  - 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_instance_settings_script:
+    emits fqdn and registration reconciliation'
 - id: LS-COM-043
   script_path: lib/coolify-common.sh
   function: coolify_phase5_verify_shared

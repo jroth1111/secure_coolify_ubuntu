@@ -2473,7 +2473,7 @@ coolify_container_check() {
   # Gate-C safe: only enforce Coolify container health after Coolify environment
   # has been created. Partial directories from interrupted installs should not
   # fail pre-phase3 validation.
-  if [[ ! -d "/data/coolify" || ! -f "${COOLIFY_ENV_FILE}" ]]; then
+  if [[ ! -f "${COOLIFY_ENV_FILE}" ]]; then
     return 0
   fi
 
@@ -2512,6 +2512,70 @@ coolify_container_check() {
         record "FAIL" "coolify-containers: ${ctr} health" "${health}" ;;
     esac
   done
+}
+
+coolify_instance_settings_check() {
+  if ! command -v docker >/dev/null 2>&1; then
+    record "INFO" "coolify: instance settings" "Docker not installed; skipped"
+    return
+  fi
+
+  if [[ ! -d "/data/coolify" || ! -f "${COOLIFY_ENV_FILE}" ]]; then
+    return 0
+  fi
+
+  if [[ -z "${DOMAIN}" ]]; then
+    record "FAIL" "coolify: instance fqdn" "domain missing from ${STATE_FILE}"
+    record "FAIL" "coolify: registration disabled" "domain missing from ${STATE_FILE}"
+    return
+  fi
+
+  local db_user db_name db_pass settings_row registration_enabled fqdn expected_fqdn
+  db_user="$(grep -m1 '^DB_USERNAME=' "${COOLIFY_ENV_FILE}" | cut -d= -f2- || true)"
+  db_name="$(grep -m1 '^DB_DATABASE=' "${COOLIFY_ENV_FILE}" | cut -d= -f2- || true)"
+  db_pass="$(grep -m1 '^DB_PASSWORD=' "${COOLIFY_ENV_FILE}" | cut -d= -f2- || true)"
+  db_user="${db_user:-coolify}"
+  db_name="${db_name:-coolify}"
+  expected_fqdn="https://${DOMAIN}"
+
+  if [[ -z "${db_pass}" ]]; then
+    record "FAIL" "coolify: instance settings query" "DB_PASSWORD missing in ${COOLIFY_ENV_FILE}"
+    return
+  fi
+
+  if ! docker ps --filter "name=coolify-db" --filter "status=running" --format "{{.Names}}" 2>/dev/null | grep -q "coolify-db"; then
+    record "FAIL" "coolify: instance settings query" "coolify-db container is not running"
+    return
+  fi
+
+  settings_row="$(
+    docker exec -i coolify-db env PGPASSWORD="${db_pass}" \
+      psql -v ON_ERROR_STOP=1 -U "${db_user}" -d "${db_name}" -At -F '|' \
+      -c "SELECT COALESCE(is_registration_enabled::text,''), COALESCE(fqdn,'') FROM instance_settings LIMIT 1;" \
+      2>/dev/null || true
+  )"
+
+  if [[ -z "${settings_row}" ]]; then
+    record "FAIL" "coolify: instance settings query" "instance_settings query returned no data"
+    return
+  fi
+
+  registration_enabled="${settings_row%%|*}"
+  fqdn="${settings_row#*|}"
+
+  if [[ "${registration_enabled}" == "f" ]]; then
+    record "PASS" "coolify: registration disabled"
+  else
+    record "FAIL" "coolify: registration disabled" \
+      "expected false, found ${registration_enabled:-<empty>}"
+  fi
+
+  if [[ "${fqdn}" == "${expected_fqdn}" ]]; then
+    record "PASS" "coolify: instance fqdn"
+  else
+    record "FAIL" "coolify: instance fqdn" \
+      "expected ${expected_fqdn}, found ${fqdn:-<empty>}"
+  fi
 }
 
 # ── Hardening validation timer ──
@@ -2573,6 +2637,7 @@ main() {
   else
     coolify_ssh_check
     coolify_container_check
+    coolify_instance_settings_check
   fi
   validate_timer_check
   listening_ports_info

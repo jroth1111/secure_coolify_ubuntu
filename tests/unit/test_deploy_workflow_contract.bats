@@ -392,6 +392,7 @@ EOF
       return 0
     }
     coolify_set_wildcard_domain_script() { echo "true"; }
+    coolify_reconcile_instance_settings_script() { echo "true"; }
     coolify_reconcile_pusher_env_script() { echo "true"; }
     cf_upsert_a_record() { calls+="$1|$2|$3"$'\''\n'\''; }
 
