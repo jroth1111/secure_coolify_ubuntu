@@ -351,16 +351,16 @@ Minimal commands by workflow:
 
 ```bash
 # deploy.sh fresh run
-bash deploy.sh --server-ip <ip> --domain <fqdn> --root-pass-file <path> \
+/opt/homebrew/bin/bash deploy.sh --server-ip <ip> --domain <fqdn> --root-pass-file <path> \
   --tailscale-auth-key <tskey-auth-...> --server-timezone <IANA> \
   --cf-api-token-file <path> --yes
 
 # deploy.sh resume from phase 2
-bash deploy.sh --server-ip <ip> --domain <fqdn> --ts-ip <100.x.x.x> \
+/opt/homebrew/bin/bash deploy.sh --server-ip <ip> --domain <fqdn> --ts-ip <100.x.x.x> \
   --server-timezone <IANA> --cf-api-token-file <path> --yes
 
 # setup.sh server-local
-sudo bash setup.sh --server-ip <ip> --admin-user <name> --pubkey-file <path> \
+sudo /opt/homebrew/bin/bash setup.sh --server-ip <ip> --admin-user <name> --pubkey-file <path> \
   --domain <fqdn> --tailscale-auth-key <tskey-auth-...> --server-timezone <IANA> \
   --cf-api-token-file <path> --yes
 ```

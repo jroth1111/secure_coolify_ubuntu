@@ -8,16 +8,16 @@ For a fully automated deployment, use `deploy.sh` (from your laptop) or `setup.s
 
 ```bash
 # Tunnel mode (default — recommended), combined token model
-bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
+/opt/homebrew/bin/bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
   --server-timezone <IANA> --domain <fqdn> --cf-api-token-file /secure/path/cf_api.token --yes
 
 # Tunnel mode (split-token model: DNS token + tunnel token)
-bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
+/opt/homebrew/bin/bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
   --server-timezone <IANA> --domain <fqdn> --cf-api-token-file /secure/path/cf_dns.token \
   --cf-tunnel-api-token-file /secure/path/cf_tunnel.token --yes
 
 # Standard mode (open public 80/443), DNS token only
-bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
+/opt/homebrew/bin/bash deploy.sh --server-ip <ip> --root-pass-file /secure/path/root.pass --tailscale-auth-key <key> \
   --server-timezone <IANA> --domain <fqdn> --cf-api-token-file /secure/path/cf_api.token --mode standard --yes
 ```
 
@@ -50,16 +50,16 @@ Minimal commands by workflow:
 
 ```bash
 # deploy.sh fresh run
-bash deploy.sh --server-ip <ip> --domain <fqdn> --root-pass-file <path> \
+/opt/homebrew/bin/bash deploy.sh --server-ip <ip> --domain <fqdn> --root-pass-file <path> \
   --tailscale-auth-key <tskey-auth-...> --server-timezone <IANA> \
   --cf-api-token-file <path> --yes
 
 # deploy.sh resume from phase 2
-bash deploy.sh --server-ip <ip> --domain <fqdn> --ts-ip <100.x.x.x> \
+/opt/homebrew/bin/bash deploy.sh --server-ip <ip> --domain <fqdn> --ts-ip <100.x.x.x> \
   --server-timezone <IANA> --cf-api-token-file <path> --yes
 
 # setup.sh server-local
-sudo bash setup.sh --server-ip <ip> --admin-user <name> --pubkey-file <path> \
+sudo /opt/homebrew/bin/bash setup.sh --server-ip <ip> --admin-user <name> --pubkey-file <path> \
   --domain <fqdn> --tailscale-auth-key <tskey-auth-...> --server-timezone <IANA> \
   --cf-api-token-file <path> --yes
 ```
@@ -88,7 +88,7 @@ Pre-run checklist:
 For fast permission validation before touching the server, run:
 
 ```bash
-bash deploy.sh --domain <fqdn> --cf-api-token-file /secure/path/cf_api.token --preflight-only
+/opt/homebrew/bin/bash deploy.sh --domain <fqdn> --cf-api-token-file /secure/path/cf_api.token --preflight-only
 ```
 
 On macOS, scripts require Bash 4+ (default `/bin/bash` 3.2 is unsupported). Install modern bash and run with:

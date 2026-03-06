@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+  for candidate in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    if [[ -x "${candidate}" ]]; then
+      exec "${candidate}" "$0" "$@"
+    fi
+  done
   printf 'FATAL: %s requires Bash 4+ (found %s). On macOS: brew install bash, then run with /opt/homebrew/bin/bash %s ...\n' \
     "$(basename "$0")" "${BASH_VERSION:-unknown}" "$(basename "$0")" >&2
   exit 1
