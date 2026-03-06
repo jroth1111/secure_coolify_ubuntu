@@ -630,6 +630,7 @@ coolify_tunnel_name() {
 
 cf_create_tunnel() {
   local stop_fn="${1:-}"   # optional: name of function to call to stop cloudflared
+  local fetch_existing_tunnel_fn="${2:-}"  # optional: prints "id<TAB>secret" for server-configured tunnel
   local tunnel_name
   tunnel_name="$(coolify_tunnel_name)"
 
@@ -642,6 +643,43 @@ cf_create_tunnel() {
       | jq -r '.result[]?.id // empty'
   )
   if (( ${#existing_ids[@]} > 0 )); then
+    local reusable_id="" reusable_secret="" reusable_material=""
+    if [[ -n "${fetch_existing_tunnel_fn}" ]] && declare -F "${fetch_existing_tunnel_fn}" >/dev/null 2>&1; then
+      reusable_material="$("${fetch_existing_tunnel_fn}" 2>/dev/null || true)"
+      if [[ -n "${reusable_material}" ]]; then
+        IFS=$'\t' read -r reusable_id reusable_secret <<< "${reusable_material}"
+      fi
+    fi
+
+    if [[ -n "${reusable_id}" && -n "${reusable_secret}" ]]; then
+      local existing_id found_reusable="false" delete_resp delete_ok delete_err
+      for existing_id in "${existing_ids[@]}"; do
+        if [[ "${existing_id}" == "${reusable_id}" ]]; then
+          found_reusable="true"
+          break
+        fi
+      done
+      if [[ "${found_reusable}" == "true" ]]; then
+        TUNNEL_ID="${reusable_id}"
+        TUNNEL_SECRET="${reusable_secret}"
+        for existing_id in "${existing_ids[@]}"; do
+          [[ "${existing_id}" == "${TUNNEL_ID}" ]] && continue
+          log "Deleting duplicate stale tunnel ${tunnel_name} (${existing_id}) while reusing ${TUNNEL_ID}..."
+          delete_resp="$(cf_tunnel_api DELETE "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel/${existing_id}" 2>/dev/null || true)"
+          delete_ok="$(printf '%s' "${delete_resp}" | jq -r '.success // false' 2>/dev/null || echo "false")"
+          if [[ "${delete_ok}" == "true" ]]; then
+            log "Deleted stale tunnel ${existing_id}"
+          else
+            delete_err="$(printf '%s' "${delete_resp}" | jq -r '[.errors[]?.message] | join("; ")' 2>/dev/null || true)"
+            [[ -n "${delete_err}" && "${delete_err}" != "null" ]] || delete_err="unknown"
+            die "Could not delete duplicate stale tunnel ${existing_id} (${delete_err}) while reusing ${TUNNEL_ID}."
+          fi
+        done
+        log "Reusing existing tunnel: ${tunnel_name} (${TUNNEL_ID})"
+        return 0
+      fi
+    fi
+
     log "Stopping cloudflared on server to release tunnel connections before delete..."
     [[ -n "${stop_fn}" ]] && "${stop_fn}"
     sleep 3  # Allow connections to close
@@ -871,6 +909,7 @@ coolify_phase3_docker_coolify_shared() {
 #   install_cloudflared_fn()
 #   configure_cloudflared_fn()
 #   stop_cloudflared_fn()
+#   fetch_existing_tunnel_fn()   # optional; prints "id<TAB>secret" or nothing
 #   configure_private_routes_fn()
 #   configure_private_tls_fn()
 #   remove_private_routes_fn()
@@ -884,9 +923,10 @@ coolify_phase4_binding_dns_shared() {
   local install_cloudflared_fn="$7"
   local configure_cloudflared_fn="$8"
   local stop_cloudflared_fn="$9"
-  local configure_private_routes_fn="${10}"
-  local configure_private_tls_fn="${11}"
-  local remove_private_routes_fn="${12}"
+  local fetch_existing_tunnel_fn="${10}"
+  local configure_private_routes_fn="${11}"
+  local configure_private_tls_fn="${12}"
+  local remove_private_routes_fn="${13}"
 
   step "4/5" "Configure dashboard binding & DNS"
 
@@ -957,7 +997,7 @@ coolify_phase4_binding_dns_shared() {
 
   # Tunnel mode: create tunnel, install cloudflared, CNAME
   log "Creating Cloudflare Tunnel..."
-  cf_create_tunnel "${stop_cloudflared_fn}"
+  cf_create_tunnel "${stop_cloudflared_fn}" "${fetch_existing_tunnel_fn}"
   pass "Tunnel created: ${TUNNEL_ID}"
 
   log "Installing cloudflared..."

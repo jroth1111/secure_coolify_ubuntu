@@ -599,6 +599,7 @@ setup() {
     install_cloudflared() { return 0; }
     configure_cloudflared() { return 0; }
     stop_cloudflared() { return 0; }
+    fetch_existing_tunnel() { return 0; }
     configure_private_routes() { configure_private_routes_calls=$((configure_private_routes_calls + 1)); }
     configure_private_tls() { configure_private_tls_calls=$((configure_private_tls_calls + 1)); }
     remove_private_routes() { remove_private_routes_calls=$((remove_private_routes_calls + 1)); }
@@ -609,6 +610,7 @@ setup() {
     coolify_phase4_binding_dns_shared \
       coolify_env_exists configure_binding mark_binding_state set_wildcard_domain reconcile_instance_settings reconcile_pusher \
       install_cloudflared configure_cloudflared stop_cloudflared \
+      fetch_existing_tunnel \
       configure_private_routes configure_private_tls remove_private_routes
 
     [[ "${wait_checks}" -eq 1 ]]
@@ -646,6 +648,7 @@ setup() {
     configure_calls=0
     stop_calls=0
     create_tunnel_calls=0
+    create_tunnel_fetch_arg=""
     configure_private_tls_calls=0
     configure_private_routes_calls=0
     remove_private_routes_calls=0
@@ -662,10 +665,14 @@ setup() {
     install_cloudflared() { install_calls=$((install_calls + 1)); }
     configure_cloudflared() { configure_calls=$((configure_calls + 1)); }
     stop_cloudflared() { stop_calls=$((stop_calls + 1)); }
+    fetch_existing_tunnel() { return 0; }
     configure_private_routes() { configure_private_routes_calls=$((configure_private_routes_calls + 1)); }
     configure_private_tls() { configure_private_tls_calls=$((configure_private_tls_calls + 1)); }
     remove_private_routes() { remove_private_routes_calls=$((remove_private_routes_calls + 1)); }
-    cf_create_tunnel() { create_tunnel_calls=$((create_tunnel_calls + 1)); }
+    cf_create_tunnel() {
+      create_tunnel_calls=$((create_tunnel_calls + 1))
+      create_tunnel_fetch_arg="${2:-}"
+    }
     cf_delete_conflicting_host_records() { conflicting_hosts+="$1"$'"'"'\n'"'"'; }
     cf_upsert_a_record() { a_records+="$1|$2|$3"$'"'"'\n'"'"'; }
     cf_upsert_cname() { cname_records+="$1|$2"$'"'"'\n'"'"'; }
@@ -673,6 +680,7 @@ setup() {
     coolify_phase4_binding_dns_shared \
       coolify_env_exists configure_binding mark_binding_state set_wildcard_domain reconcile_instance_settings reconcile_pusher \
       install_cloudflared configure_cloudflared stop_cloudflared \
+      fetch_existing_tunnel \
       configure_private_routes configure_private_tls remove_private_routes
 
     [[ "${wait_checks}" -eq 1 ]]
@@ -684,6 +692,7 @@ setup() {
     [[ "${install_calls}" -eq 1 ]]
     [[ "${configure_calls}" -eq 1 ]]
     [[ "${create_tunnel_calls}" -eq 1 ]]
+    [[ "${create_tunnel_fetch_arg}" == "fetch_existing_tunnel" ]]
     [[ "${stop_calls}" -eq 0 ]]
     [[ "${configure_private_routes_calls}" -eq 1 ]]
     [[ "${configure_private_tls_calls}" -eq 1 ]]
