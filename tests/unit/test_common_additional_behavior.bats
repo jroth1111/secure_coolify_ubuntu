@@ -852,6 +852,22 @@ PY
         *) echo "000" ;;
       esac
     }
+    openssl() {
+      if [[ "${1:-}" == "s_client" ]]; then
+        printf "CONNECTED\n"
+        return 0
+      fi
+      if [[ "${1:-}" == "x509" ]]; then
+        cat <<EOF
+subject=CN = Example Intermediate
+issuer=CN = Example Intermediate
+X509v3 Subject Alternative Name:
+    DNS:vps.example.com, DNS:ws.vps.example.com
+EOF
+        return 0
+      fi
+      command openssl "$@"
+    }
     cf_assert_private_tailscale_a_record() { :; }
     fetch_validate_json() { echo "{\"fail\":0,\"checks\":[]}"; }
     print_deployment_summary() { :; }
@@ -863,6 +879,7 @@ PY
   assert_output --partial "Gate F: private websocket HTTP redirects to HTTPS"
   refute_output --partial "Gate F: private dashboard HTTP did not redirect to HTTPS"
   refute_output --partial "Gate F: private websocket HTTP did not redirect to HTTPS"
+  assert_output --partial "Gate F diagnostic (ws.vps.example.com):"
   assert_output --partial "Gate F: private websocket WSS handshake failed"
 }
 
@@ -971,6 +988,44 @@ EOF
   assert_output "000"
 }
 
+@test "coolify_phase5_private_tls_diagnostic: identifies routes hidden behind default cert" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    log() { printf "%s\n" "$*"; }
+    curl() {
+      if [[ "$*" == *"--resolve vps.example.com:443:100.64.0.10"* ]]; then
+        if [[ "$*" == *"-k"* ]]; then
+          printf "200\n"
+        else
+          printf "000\n"
+        fi
+        return 0
+      fi
+      command curl "$@"
+    }
+    openssl() {
+      if [[ "${1:-}" == "s_client" ]]; then
+        printf "CONNECTED\n"
+        return 0
+      fi
+      if [[ "${1:-}" == "x509" ]]; then
+        cat <<EOF
+subject=CN = TRAEFIK DEFAULT CERT
+issuer=CN = TRAEFIK DEFAULT CERT
+X509v3 Subject Alternative Name:
+    DNS:vps.example.com, DNS:ws.vps.example.com
+EOF
+        return 0
+      fi
+      command openssl "$@"
+    }
+    coolify_phase5_private_tls_diagnostic "vps.example.com" "100.64.0.10" "/api/v1/health"
+  '
+  assert_success
+  assert_output --partial "Gate F diagnostic (vps.example.com): route responds behind untrusted default cert"
+  assert_output --partial "verified=000, insecure=200"
+}
+
 @test "coolify_configure_private_tls_dns_script: emits private TLS DNS-01 reconciliation" {
   run coolify_configure_private_tls_dns_script
   assert_success
@@ -989,6 +1044,9 @@ EOF
   assert_output --partial 'for _ in $(seq 1 30); do'
   assert_output --partial 'Public Coolify HTTPS routers remained in ${coolify_dynamic_file}'
   assert_output --partial 'Public letsencrypt resolver remained in ${default_redirect_file}'
+  assert_output --partial 'dashboard_code_insecure="$(curl -k -s -o /dev/null -w '\''%{http_code}'\'' --max-time 10 \'
+  assert_output --partial 'Waiting for trusted private TLS on ${host}: route is up behind untrusted cert'
+  assert_output --partial 'Timed out waiting for trusted private TLS on ${host}; verified=${dashboard_code:-000}, insecure=${dashboard_code_insecure:-000}'
   assert_output --partial "--api.insecure=false"
   assert_output --partial 'docker compose -f "${compose_file}" up -d >/dev/null'
 }

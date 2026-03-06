@@ -1162,6 +1162,49 @@ except Exception:
 PY
 }
 
+coolify_phase5_private_tls_diagnostic() {
+  local host="${1:?coolify_phase5_private_tls_diagnostic requires host}"
+  local connect_host="${2:?coolify_phase5_private_tls_diagnostic requires connect_host}"
+  local health_path="${3:-/api/v1/health}"
+  local verified_code="000"
+  local insecure_code="000"
+  local cert_meta cert_subject cert_issuer san_summary
+
+  if command -v curl >/dev/null 2>&1; then
+    verified_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+      --resolve "${host}:443:${connect_host}" "https://${host}${health_path}" 2>/dev/null || true)"
+    insecure_code="$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 10 \
+      --resolve "${host}:443:${connect_host}" "https://${host}${health_path}" 2>/dev/null || true)"
+  fi
+  verified_code="${verified_code:-000}"
+  insecure_code="${insecure_code:-000}"
+  verified_code="${verified_code:0:3}"
+  insecure_code="${insecure_code:0:3}"
+
+  cert_meta=""
+  if command -v openssl >/dev/null 2>&1; then
+    cert_meta="$(printf '' | openssl s_client -connect "${connect_host}:443" -servername "${host}" -showcerts 2>/dev/null \
+      | openssl x509 -noout -subject -issuer -ext subjectAltName 2>/dev/null || true)"
+  fi
+  cert_subject="$(awk -F= '/^subject=/{print $2; exit}' <<< "${cert_meta}" | sed 's/^ *//')"
+  cert_issuer="$(awk -F= '/^issuer=/{print $2; exit}' <<< "${cert_meta}" | sed 's/^ *//')"
+  san_summary="$(awk '
+    BEGIN { in_san=0 }
+    /^X509v3 Subject Alternative Name:/ { in_san=1; next }
+    in_san && /^[[:space:]]*DNS:/ { gsub(/^[[:space:]]+/, "", $0); print; exit }
+  ' <<< "${cert_meta}")"
+
+  if [[ -n "${cert_meta}" ]] && grep -Fq "TRAEFIK DEFAULT CERT" <<< "${cert_meta}"; then
+    if [[ "${insecure_code}" =~ ^2[0-9][0-9]$ && ! "${verified_code}" =~ ^2[0-9][0-9]$ ]]; then
+      log "  Gate F diagnostic (${host}): route responds behind untrusted default cert (verified=${verified_code}, insecure=${insecure_code}, subject=${cert_subject:-unknown}, issuer=${cert_issuer:-unknown})"
+    else
+      log "  Gate F diagnostic (${host}): Traefik default cert still served (verified=${verified_code}, insecure=${insecure_code}, subject=${cert_subject:-unknown}, issuer=${cert_issuer:-unknown})"
+    fi
+  else
+    log "  Gate F diagnostic (${host}): verified=${verified_code}, insecure=${insecure_code}, subject=${cert_subject:-unknown}, issuer=${cert_issuer:-unknown}, san=${san_summary:-<none>}"
+  fi
+}
+
 coolify_http_code_is_success_or_redirect() {
   local code="${1:-000}"
   [[ "${code}" =~ ^2[0-9][0-9]$ || "${code}" =~ ^30[12378]$ ]]
@@ -1350,6 +1393,13 @@ coolify_phase5_verify_shared() {
         gate_f_private_routes_passed=true
         break
       fi
+      if [[ "${dashboard_private_code}" =~ ^30[12378]$ && \
+            "${ws_private_code}" =~ ^30[12378]$ && \
+            ( "${dashboard_private_https_code}" == "000" || "${ws_private_wss_code}" == "000" ) && \
+            ( ${attempt} == 1 || $(( attempt % 12 )) == 0 ) ]]; then
+        coolify_phase5_private_tls_diagnostic "${DOMAIN}" "${TS_IP}" "/api/v1/health"
+        coolify_phase5_private_tls_diagnostic "ws.${DOMAIN}" "${TS_IP}" "/"
+      fi
       if (( attempt < attempts )); then
         log "  Gate F private routes not ready (dashboard-http=${dashboard_private_code}, ws-http=${ws_private_code}, dashboard-https=${dashboard_private_https_code}, ws-wss=${ws_private_wss_code}); retrying in ${delay}s (${attempt}/${attempts})..."
         sleep "${delay}"
@@ -1357,6 +1407,8 @@ coolify_phase5_verify_shared() {
     done
 
     if [[ "${gate_f_private_routes_passed}" != "true" ]]; then
+      coolify_phase5_private_tls_diagnostic "${DOMAIN}" "${TS_IP}" "/api/v1/health"
+      coolify_phase5_private_tls_diagnostic "ws.${DOMAIN}" "${TS_IP}" "/"
       if [[ "${dashboard_private_code}" =~ ^30[12378]$ ]]; then
         pass "Gate F: private dashboard HTTP redirects to HTTPS (http://${DOMAIN} → HTTP ${dashboard_private_code})"
       else
@@ -2094,7 +2146,7 @@ wait_for_private_tls_ready() {
   local ws_host="ws.vps.invalid"
   local attempts=120
   local delay=5
-  local attempt dashboard_code cert_meta cert_subject
+  local attempt dashboard_code dashboard_code_insecure cert_meta cert_subject cert_issuer
 
   if ! command -v curl >/dev/null 2>&1 || ! command -v openssl >/dev/null 2>&1; then
     return 0
@@ -2105,12 +2157,17 @@ wait_for_private_tls_ready() {
   for (( attempt=1; attempt<=attempts; attempt++ )); do
     dashboard_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
       --resolve "${host}:443:127.0.0.1" "https://${host}/api/v1/health" 2>/dev/null || true)"
+    dashboard_code_insecure="$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 10 \
+      --resolve "${host}:443:127.0.0.1" "https://${host}/api/v1/health" 2>/dev/null || true)"
     dashboard_code="${dashboard_code:-000}"
+    dashboard_code_insecure="${dashboard_code_insecure:-000}"
     dashboard_code="${dashboard_code:0:3}"
+    dashboard_code_insecure="${dashboard_code_insecure:0:3}"
 
     cert_meta="$(printf '' | openssl s_client -connect 127.0.0.1:443 -servername "${host}" -showcerts 2>/dev/null \
-      | openssl x509 -noout -subject -ext subjectAltName 2>/dev/null || true)"
+      | openssl x509 -noout -subject -issuer -ext subjectAltName 2>/dev/null || true)"
     cert_subject="$(awk -F= '/^subject=/{print $2; exit}' <<< "${cert_meta}" | sed 's/^ *//')"
+    cert_issuer="$(awk -F= '/^issuer=/{print $2; exit}' <<< "${cert_meta}" | sed 's/^ *//')"
 
     if [[ "${dashboard_code}" =~ ^2[0-9][0-9]$ ]] \
       && ! grep -Fq "TRAEFIK DEFAULT CERT" <<< "${cert_meta}" \
@@ -2120,12 +2177,20 @@ wait_for_private_tls_ready() {
       return 0
     fi
 
+    if (( attempt == 1 || attempt % 12 == 0 )); then
+      if [[ "${dashboard_code_insecure}" =~ ^2[0-9][0-9]$ && ! "${dashboard_code}" =~ ^2[0-9][0-9]$ ]]; then
+        echo "Waiting for trusted private TLS on ${host}: route is up behind untrusted cert (verified=${dashboard_code}, insecure=${dashboard_code_insecure}, subject=${cert_subject:-unknown}, issuer=${cert_issuer:-unknown}, attempt=${attempt}/${attempts})."
+      else
+        echo "Waiting for trusted private TLS on ${host}: verified=${dashboard_code}, insecure=${dashboard_code_insecure}, subject=${cert_subject:-unknown}, issuer=${cert_issuer:-unknown}, attempt=${attempt}/${attempts}."
+      fi
+    fi
+
     if (( attempt < attempts )); then
       sleep "${delay}"
     fi
   done
 
-  echo "Timed out waiting for trusted private TLS on ${host}; last health code=${dashboard_code:-000}, subject=${cert_subject:-unknown}" >&2
+  echo "Timed out waiting for trusted private TLS on ${host}; verified=${dashboard_code:-000}, insecure=${dashboard_code_insecure:-000}, subject=${cert_subject:-unknown}, issuer=${cert_issuer:-unknown}" >&2
   return 1
 }
 
