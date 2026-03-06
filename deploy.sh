@@ -466,15 +466,31 @@ phase1_upload_harden() {
   # we cannot open a new root SSH session to run 'tailscale ip -4'. Instead, bootstrap
   # prints 'HARDEN_RESULT_TAILSCALE_IP=<ip>' as the last stdout line; we parse that.
   log "Running bootstrap_hardening.sh (this may take a few minutes)..."
-  local harden_tmp
+  local harden_tmp bootstrap_attempt bootstrap_rc
   harden_tmp="$(mktemp)" || die "Failed to create temp file for hardening output"
+  bootstrap_rc=0
 
   # Capture stdout/stderr while preserving failure semantics from the SSH command.
   # Emit heartbeat lines so the operator sees progress even when apt/tee is quiet.
-  if ! run_with_heartbeat \
-    "bootstrap_hardening.sh on ${SERVER_IP}" \
-    stream_command_output "${harden_tmp}" \
-    ssh_root "/root/bootstrap_hardening.sh --env-file ${REMOTE_DEPLOY_ENV_PATH} --install-tailscale --force"; then
+  for bootstrap_attempt in 1 2 3; do
+    if run_with_heartbeat \
+      "bootstrap_hardening.sh on ${SERVER_IP} (attempt ${bootstrap_attempt}/3)" \
+      stream_command_output "${harden_tmp}" \
+      ssh_root "/root/bootstrap_hardening.sh --env-file ${REMOTE_DEPLOY_ENV_PATH} --install-tailscale --force"; then
+      bootstrap_rc=0
+      break
+    else
+      bootstrap_rc=$?
+      if (( bootstrap_rc == 255 && bootstrap_attempt < 3 )); then
+        warn "bootstrap_hardening.sh SSH transport/auth failed on attempt ${bootstrap_attempt}/3; retrying in 3s."
+        sleep 3
+        continue
+      fi
+      break
+    fi
+  done
+
+  if (( bootstrap_rc != 0 )); then
     warn "bootstrap_hardening.sh failed. Last 50 lines of captured output:"
     tail -n 50 "${harden_tmp}" || true
     warn "Attempting to fetch remote /var/log/bootstrap-hardening.log tail (best effort)..."

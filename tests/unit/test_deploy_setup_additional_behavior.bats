@@ -266,6 +266,50 @@ EOF
   assert_success
 }
 
+@test "phase1_upload_harden: retries bootstrap exec after transient ssh 255 and captures tailscale ip" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"${tmpdir}\"" EXIT
+    counter_file="${tmpdir}/bootstrap-attempts"
+    echo 0 > "${counter_file}"
+    SCRIPT_DIR="${tmpdir}"
+    for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
+      : > "${tmpdir}/${script}"
+    done
+    SERVER_IP="203.0.113.10"
+    ADMIN_USER="alice"
+    ADMIN_PUBKEY="ssh-ed25519 AAAA test@example"
+    DEPLOY_MODE="tunnel"
+    SWAP_SIZE="2G"
+    SERVER_TIMEZONE="UTC"
+    TAILSCALE_AUTH_KEY="tskey-auth-test"
+    TAILSCALE_DIRECT_WAN="false"
+    REMOTE_DEPLOY_ENV_PATH="/root/deploy.env"
+    scp_root() { return 0; }
+    ssh_root() {
+      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force"* ]]; then
+        attempt="$(cat "${counter_file}")"
+        attempt=$((attempt + 1))
+        echo "${attempt}" > "${counter_file}"
+        if [[ "${attempt}" -eq 1 ]]; then
+          echo "Permission denied" >&2
+          return 255
+        fi
+        echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.10"
+        return 0
+      fi
+      return 0
+    }
+    run_with_heartbeat() { local label="$1"; shift; "$@"; }
+    sleep() { :; }
+    phase1_upload_harden
+    [[ "$(cat "${counter_file}")" -eq 2 ]]
+    [[ "${TS_IP}" == "100.64.0.10" ]]
+  '
+  assert_success
+}
+
 @test "phase3_docker_coolify (deploy): executes docker/coolify reconcile flow" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"
