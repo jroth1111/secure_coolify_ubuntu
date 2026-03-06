@@ -1087,13 +1087,14 @@ coolify_phase5_websocket_url() {
 coolify_phase5_probe_websocket_code() {
   local websocket_url="${1:?coolify_phase5_probe_websocket_code requires websocket_url}"
   local timeout_seconds="${2:-10}"
+  local connect_host="${3:-}"
 
   if ! command -v python3 >/dev/null 2>&1; then
     printf '000\n'
     return 0
   fi
 
-  python3 - "${websocket_url}" "${timeout_seconds}" <<'PY'
+  python3 - "${websocket_url}" "${timeout_seconds}" "${connect_host}" <<'PY'
 import base64
 import os
 import socket
@@ -1109,6 +1110,7 @@ def emit(code: str) -> None:
 try:
     raw_url = sys.argv[1]
     timeout = float(sys.argv[2])
+    connect_host = sys.argv[3] if len(sys.argv) > 3 else ""
     parsed = urlparse(raw_url)
     if parsed.scheme not in ("ws", "wss") or not parsed.hostname:
         emit("000")
@@ -1116,6 +1118,7 @@ try:
 
     host = parsed.hostname
     port = parsed.port or (443 if parsed.scheme == "wss" else 80)
+    target_host = connect_host or host
     path = parsed.path or "/"
     if parsed.query:
         path = f"{path}?{parsed.query}"
@@ -1134,7 +1137,7 @@ try:
         "\r\n"
     ).encode("ascii")
 
-    with socket.create_connection((host, port), timeout=timeout) as sock:
+    with socket.create_connection((target_host, port), timeout=timeout) as sock:
         sock.settimeout(timeout)
         if parsed.scheme == "wss":
             context = ssl.create_default_context()
@@ -1318,19 +1321,19 @@ coolify_phase5_verify_shared() {
     fi
   else
     # Gate F (tunnel/private): private host routes must work on Tailscale-only DNS.
-    # Extend the window: tunnel mode requires DNS propagation + ACME DNS-01 cert issuance
-    # via Cloudflare, which can take 5-10 minutes on a fresh deploy.
-    attempts=90
+    # Probe the expected Tailscale IP directly so Gate F does not depend on local DNS cache
+    # propagation. Keep a longer window for private ACME DNS-01 issuance + Traefik reload.
+    attempts=180
     log "Gate F: Checking private host routes and public-origin blocking..."
     local dashboard_private_code ws_private_code dashboard_private_https_code ws_private_wss_code
     local ws_private_url
     ws_private_url="$(coolify_phase5_websocket_url "wss://ws.${DOMAIN}" "${pusher_app_key}")"
     local gate_f_private_routes_passed=false
     for (( attempt=1; attempt<=attempts; attempt++ )); do
-      dashboard_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${DOMAIN}" 2>/dev/null)" || dashboard_private_code=""
-      ws_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://ws.${DOMAIN}" 2>/dev/null)" || ws_private_code=""
-      dashboard_private_https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://${DOMAIN}/api/v1/health" 2>/dev/null)" || dashboard_private_https_code=""
-      ws_private_wss_code="$(coolify_phase5_probe_websocket_code "${ws_private_url}" 10)"
+      dashboard_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --resolve "${DOMAIN}:80:${TS_IP}" "http://${DOMAIN}" 2>/dev/null)" || dashboard_private_code=""
+      ws_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --resolve "ws.${DOMAIN}:80:${TS_IP}" "http://ws.${DOMAIN}" 2>/dev/null)" || ws_private_code=""
+      dashboard_private_https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --resolve "${DOMAIN}:443:${TS_IP}" "https://${DOMAIN}/api/v1/health" 2>/dev/null)" || dashboard_private_https_code=""
+      ws_private_wss_code="$(coolify_phase5_probe_websocket_code "${ws_private_url}" 10 "${TS_IP}")"
       dashboard_private_code="${dashboard_private_code:-000}"
       ws_private_code="${ws_private_code:-000}"
       dashboard_private_https_code="${dashboard_private_https_code:-000}"
@@ -2085,6 +2088,48 @@ if grep -Eq '^[[:space:]]*coolify-(https|realtime-wss|terminal-wss):[[:space:]]*
   echo "Public Coolify HTTPS routers remained in ${coolify_dynamic_file}" >&2
   exit 1
 fi
+
+wait_for_private_tls_ready() {
+  local host="vps.invalid"
+  local ws_host="ws.vps.invalid"
+  local attempts=120
+  local delay=5
+  local attempt dashboard_code cert_meta cert_subject
+
+  if ! command -v curl >/dev/null 2>&1 || ! command -v openssl >/dev/null 2>&1; then
+    return 0
+  fi
+
+  host="${DOMAIN}"
+  ws_host="ws.${DOMAIN}"
+  for (( attempt=1; attempt<=attempts; attempt++ )); do
+    dashboard_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+      --resolve "${host}:443:127.0.0.1" "https://${host}/api/v1/health" 2>/dev/null || true)"
+    dashboard_code="${dashboard_code:-000}"
+    dashboard_code="${dashboard_code:0:3}"
+
+    cert_meta="$(printf '' | openssl s_client -connect 127.0.0.1:443 -servername "${host}" -showcerts 2>/dev/null \
+      | openssl x509 -noout -subject -ext subjectAltName 2>/dev/null || true)"
+    cert_subject="$(awk -F= '/^subject=/{print $2; exit}' <<< "${cert_meta}" | sed 's/^ *//')"
+
+    if [[ "${dashboard_code}" =~ ^2[0-9][0-9]$ ]] \
+      && ! grep -Fq "TRAEFIK DEFAULT CERT" <<< "${cert_meta}" \
+      && grep -Fq "DNS:${host}" <<< "${cert_meta}" \
+      && grep -Fq "DNS:${ws_host}" <<< "${cert_meta}"; then
+      echo "Private TLS certificate ready for ${host} (HTTP ${dashboard_code})."
+      return 0
+    fi
+
+    if (( attempt < attempts )); then
+      sleep "${delay}"
+    fi
+  done
+
+  echo "Timed out waiting for trusted private TLS on ${host}; last health code=${dashboard_code:-000}, subject=${cert_subject:-unknown}" >&2
+  return 1
+}
+
+wait_for_private_tls_ready
 
 echo "Private TLS DNS challenge configured for resolver '${PRIVATE_TLS_RESOLVER}'."
 EOF

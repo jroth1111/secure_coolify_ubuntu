@@ -2462,6 +2462,64 @@ cloudflared_check() {
     else
       record "INFO" "cloudflared: DNS resolution checks" "getent not found; skipped private DNS checks"
     fi
+
+    check_private_tls_cert_served() {
+      local host="$1"
+      local label="$2"
+      local cert_meta
+      cert_meta="$(printf '' | openssl s_client -connect 127.0.0.1:443 -servername "${host}" -showcerts 2>/dev/null \
+        | openssl x509 -noout -subject -issuer -ext subjectAltName 2>/dev/null || true)"
+
+      if [[ -z "${cert_meta}" ]]; then
+        record "FAIL" "cloudflared: ${label} served TLS cert" \
+          "could not inspect served certificate for ${host} on 127.0.0.1:443"
+        return 0
+      fi
+
+      if grep -Fq "TRAEFIK DEFAULT CERT" <<< "${cert_meta}"; then
+        record "FAIL" "cloudflared: ${label} served TLS cert" \
+          "Traefik default certificate still served for ${host}"
+      else
+        record "PASS" "cloudflared: ${label} served TLS cert"
+      fi
+
+      if grep -Fq "DNS:${host}" <<< "${cert_meta}"; then
+        record "PASS" "cloudflared: ${label} certificate SAN (${host})"
+      else
+        record "FAIL" "cloudflared: ${label} certificate SAN (${host})" \
+          "missing DNS:${host} in served certificate"
+      fi
+    }
+
+    if command -v openssl >/dev/null 2>&1; then
+      if [[ -n "${dashboard_host}" ]]; then
+        check_private_tls_cert_served "${dashboard_host}" "dashboard host"
+      fi
+      if [[ -n "${ws_host}" ]]; then
+        check_private_tls_cert_served "${ws_host}" "websocket host"
+      fi
+    else
+      record "INFO" "cloudflared: private TLS certificate checks" "openssl not found; skipped served certificate checks"
+    fi
+
+    if command -v curl >/dev/null 2>&1; then
+      if [[ -n "${dashboard_host}" ]]; then
+        local private_dashboard_https_code
+        private_dashboard_https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+          --resolve "${dashboard_host}:443:127.0.0.1" "https://${dashboard_host}/api/v1/health" 2>/dev/null || true)"
+        private_dashboard_https_code="${private_dashboard_https_code:-000}"
+        private_dashboard_https_code="${private_dashboard_https_code:0:3}"
+
+        if [[ "${private_dashboard_https_code}" =~ ^2[0-9][0-9]$ ]]; then
+          record "PASS" "cloudflared: private dashboard HTTPS health verified"
+        else
+          record "FAIL" "cloudflared: private dashboard HTTPS health verified" \
+            "expected 2xx from https://${dashboard_host}/api/v1/health via local Traefik, got ${private_dashboard_https_code}"
+        fi
+      fi
+    else
+      record "INFO" "cloudflared: private dashboard HTTPS health verified" "curl not found; skipped verified HTTPS health check"
+    fi
   fi
 
   # Functional connectivity: probe cloudflared's /ready endpoint.

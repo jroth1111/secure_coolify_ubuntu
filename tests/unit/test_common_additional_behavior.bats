@@ -833,7 +833,7 @@ PY
         echo "302"
       elif [[ "${url}" == "http://ws.${DOMAIN}" ]]; then
         echo "302"
-      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
+      elif [[ "${url}" == "https://${DOMAIN}/api/v1/health" ]]; then
         echo "200"
       elif [[ "${url}" == "http://${SERVER_IP}" ]]; then
         echo "000"
@@ -882,7 +882,7 @@ PY
         "http://${SERVER_IP}:8000") echo "000" ;;
         "http://${DOMAIN}") echo "303" ;;
         "http://ws.${DOMAIN}") echo "303" ;;
-        "https://${DOMAIN}") echo "200" ;;
+        "https://${DOMAIN}/api/v1/health") echo "200" ;;
         "http://${SERVER_IP}") echo "000" ;;
         "https://${SERVER_IP}") echo "000" ;;
         *) echo "404" ;;

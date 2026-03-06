@@ -1381,11 +1381,39 @@ EOF
   command() {
     if [[ "${1:-}" == "-v" ]]; then
       case "${2:-}" in
-        cloudflared|sysctl) return 0 ;;
+        cloudflared|sysctl|openssl|curl) return 0 ;;
         getent|dig) return 1 ;;
       esac
     fi
     builtin command "$@"
+  }
+
+  openssl() {
+    if [[ "${1:-}" == "s_client" ]]; then
+      cat <<'EOF'
+CONNECTED
+EOF
+      return 0
+    fi
+    if [[ "${1:-}" == "x509" ]]; then
+      cat <<'EOF'
+subject=CN = vps.example.com
+issuer=CN = Example Intermediate
+X509v3 Subject Alternative Name:
+    DNS:vps.example.com, DNS:ws.vps.example.com
+EOF
+      return 0
+    fi
+    command openssl "$@"
+  }
+
+  curl() {
+    local url="${@: -1}"
+    if [[ "${url}" == "https://vps.example.com/api/v1/health" ]]; then
+      echo "200"
+      return 0
+    fi
+    command curl "$@"
   }
 
   sysctl() {
@@ -1404,7 +1432,170 @@ EOF
   assert_json_check_status "${json}" "cloudflared: public letsencrypt resolver removed" "PASS"
   assert_json_check_status "${json}" "cloudflared: catchall route avoids public letsencrypt" "PASS"
   assert_json_check_status "${json}" "cloudflared: generated Coolify HTTPS routers disabled" "PASS"
+  assert_json_check_status "${json}" "cloudflared: dashboard host served TLS cert" "PASS"
+  assert_json_check_status "${json}" "cloudflared: dashboard host certificate SAN (vps.example.com)" "PASS"
+  assert_json_check_status "${json}" "cloudflared: websocket host served TLS cert" "PASS"
+  assert_json_check_status "${json}" "cloudflared: websocket host certificate SAN (ws.vps.example.com)" "PASS"
+  assert_json_check_status "${json}" "cloudflared: private dashboard HTTPS health verified" "PASS"
   assert_json_fail_count "${json}" "0"
+
+  rm -rf "${tempdir}"
+}
+
+@test "cloudflared_check: fails when private hosts still serve Traefik default cert" {
+  local tempdir config_file private_route_file compose_file redirect_file dynamic_file coolify_env_file
+  tempdir="$(mktemp -d)"
+  config_file="${tempdir}/config.yml"
+  private_route_file="${tempdir}/coolify-private-dashboard.yaml"
+  compose_file="${tempdir}/docker-compose.yml"
+  redirect_file="${tempdir}/default_redirect_503.yaml"
+  dynamic_file="${tempdir}/coolify.yaml"
+  coolify_env_file="${tempdir}/coolify.env"
+
+  cat > "${config_file}" <<'EOF'
+tunnel: test-tunnel
+ingress:
+  - hostname: "vps.example.com"
+    service: http://localhost:80
+  - hostname: "ws.vps.example.com"
+    service: http_status:404
+  - hostname: "vps.example.com"
+    service: http_status:404
+  - service: http_status:404
+EOF
+
+  cat > "${private_route_file}" <<'EOF'
+http:
+  middlewares:
+    coolify-private-force-https:
+      redirectScheme:
+        scheme: https
+  routers:
+    coolify-private-dashboard-http:
+      rule: "Host(`vps.example.com`)"
+      service: noop@internal
+      middlewares:
+        - coolify-private-force-https
+    coolify-private-dashboard-https:
+      rule: "Host(`vps.example.com`)"
+      tls:
+        certResolver: privatedns
+    coolify-private-realtime-http:
+      rule: "Host(`ws.vps.example.com`)"
+      service: noop@internal
+      middlewares:
+        - coolify-private-force-https
+    coolify-private-realtime-https:
+      rule: "Host(`ws.vps.example.com`)"
+      tls: {}
+EOF
+
+  cat > "${compose_file}" <<'EOF'
+services:
+  traefik:
+    command:
+      - '--certificatesresolvers.privatedns.acme.storage=/traefik/acme.json'
+EOF
+
+  cat > "${redirect_file}" <<'EOF'
+http:
+  routers:
+    catchall:
+      priority: -1000
+EOF
+
+  cat > "${dynamic_file}" <<'EOF'
+http:
+  routers:
+    coolify-http:
+      rule: Host(`vps.example.com`)
+EOF
+
+  cat > "${coolify_env_file}" <<'EOF'
+PUSHER_HOST=ws.vps.example.com
+PUSHER_PORT=443
+PUSHER_SCHEME=https
+EOF
+
+  TUNNEL_MODE="true"
+  TAILSCALE_IP=""
+  CLOUDFLARED_CONFIG_FILE="${config_file}"
+  COOLIFY_PRIVATE_ROUTE_FILE="${private_route_file}"
+  COOLIFY_PROXY_COMPOSE_FILE="${compose_file}"
+  COOLIFY_PROXY_DEFAULT_REDIRECT_FILE="${redirect_file}"
+  COOLIFY_PROXY_DYNAMIC_FILE="${dynamic_file}"
+  COOLIFY_ENV_FILE="${coolify_env_file}"
+
+  systemctl() {
+    if [[ "${1:-}" == "list-unit-files" ]]; then
+      echo "cloudflared.service enabled"
+      return 0
+    fi
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "is-active" ]]; then
+      echo "active"
+      return 0
+    fi
+    return 0
+  }
+
+  command() {
+    if [[ "${1:-}" == "-v" ]]; then
+      case "${2:-}" in
+        cloudflared|sysctl|openssl|curl) return 0 ;;
+        getent|dig) return 1 ;;
+      esac
+    fi
+    builtin command "$@"
+  }
+
+  openssl() {
+    if [[ "${1:-}" == "s_client" ]]; then
+      cat <<'EOF'
+CONNECTED
+EOF
+      return 0
+    fi
+    if [[ "${1:-}" == "x509" ]]; then
+      cat <<'EOF'
+subject=CN = TRAEFIK DEFAULT CERT
+issuer=CN = TRAEFIK DEFAULT CERT
+X509v3 Subject Alternative Name:
+    DNS:vps.example.com, DNS:ws.vps.example.com
+EOF
+      return 0
+    fi
+    command openssl "$@"
+  }
+
+  curl() {
+    local url="${@: -1}"
+    if [[ "${url}" == "https://vps.example.com/api/v1/health" ]]; then
+      echo "000"
+      return 0
+    fi
+    command curl "$@"
+  }
+
+  sysctl() {
+    if [[ "${1:-}" == "-n" && "${2:-}" == "net.ipv4.ping_group_range" ]]; then
+      echo "0 2147483647"
+      return 0
+    fi
+    command sysctl "$@"
+  }
+
+  pgrep() { return 1; }
+
+  cloudflared_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "cloudflared: dashboard host served TLS cert" "FAIL"
+  assert_json_check_status "${json}" "cloudflared: websocket host served TLS cert" "FAIL"
+  assert_json_check_status "${json}" "cloudflared: private dashboard HTTPS health verified" "FAIL"
+  assert_json_fail_count "${json}" "3"
 
   rm -rf "${tempdir}"
 }
