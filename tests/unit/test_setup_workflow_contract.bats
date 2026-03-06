@@ -51,6 +51,39 @@ load '../helpers'
   assert_output --partial "Invalid server IP"
 }
 
+@test "setup: validate_inputs rejects --yes outside preflight-only" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"${tmpdir}\"" EXIT
+    id() { [[ "$1" == "-u" ]] && { echo 0; return 0; }; command id "$@"; }
+    finalize_cloudflare_tokens() { :; }
+    ssh-keygen() { return 0; }
+
+    SERVER_IP="203.0.113.10"
+    ADMIN_USER="coolifyadmin"
+    PUBKEY_FILE="${tmpdir}/id_ed25519.pub"
+    printf "ssh-ed25519 AAAATEST test@example\n" > "${PUBKEY_FILE}"
+    TAILSCALE_AUTH_KEY="tskey-auth-test"
+    DEPLOY_MODE="tunnel"
+    APP_DOMAIN_MODE="apex"
+    DOMAIN="example.com"
+    CF_API_TOKEN="token"
+    SWAP_SIZE="2G"
+    SERVER_TIMEZONE="UTC"
+    AUTO_YES="true"
+    PREFLIGHT_ONLY="false"
+    for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
+      : > "${tmpdir}/${script}"
+    done
+    SCRIPT_DIR="${tmpdir}"
+
+    validate_inputs
+  '
+  assert_failure
+  assert_output --partial "setup.sh --yes is only supported with --preflight-only"
+}
+
 @test "setup: preflight phase marker exists" {
   run bash -c '
     source "'"${SETUP_SCRIPT}"'"
@@ -240,6 +273,36 @@ EOF
   '
   assert_failure
   assert_output --partial "Gate D failed: docker-user-hardening.service is not active."
+}
+
+@test "setup: validate_inputs rejects --yes without preflight-only" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    SCRIPT_DIR="${tmpdir}"
+    for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
+      : > "${tmpdir}/${script}"
+    done
+    ssh-keygen -q -t ed25519 -N "" -f "${tmpdir}/id_ed25519" >/dev/null
+    SERVER_IP="203.0.113.10"
+    ADMIN_USER="coolifyadmin"
+    PUBKEY_FILE="${tmpdir}/id_ed25519.pub"
+    TAILSCALE_AUTH_KEY="tskey-auth-testvalue"
+    DEPLOY_MODE="tunnel"
+    DOMAIN="coolify.vps.example.com"
+    CF_API_TOKEN="cf-token"
+    APP_DOMAIN_MODE="apex"
+    SWAP_SIZE="2G"
+    SERVER_TIMEZONE="UTC"
+    AUTO_YES="true"
+    PREFLIGHT_ONLY="false"
+
+    finalize_cloudflare_tokens() { :; }
+
+    validate_inputs
+  '
+  assert_failure
+  assert_output --partial "setup.sh --yes is only supported with --preflight-only"
 }
 
 @test "setup: phase4 binding+dns marker exists" {

@@ -109,7 +109,7 @@ Optional:
   --tailscale-direct-wan        Allow WAN UDP 41641 for direct Tailscale paths (optional optimization)
   --no-tailscale-direct-wan     Keep WAN UDP 41641 closed (default; DERP fallback remains available)
   --preflight-only              Run local/Cloudflare preflight checks only, then exit
-  --yes                         Skip confirmation prompts (for automation)
+  --yes                         Skip confirmation prompts (preflight-only; full setup still requires operator checks)
   -h, --help                    Show this help
 EOF
 }
@@ -162,6 +162,10 @@ collect_inputs() {
 
 validate_inputs() {
   finalize_cloudflare_tokens
+
+  if is_true "${AUTO_YES}" && ! is_true "${PREFLIGHT_ONLY}"; then
+    die "setup.sh --yes is only supported with --preflight-only. Full setup requires operator confirmations from a laptop; use deploy.sh or run setup.sh interactively."
+  fi
 
   if ! is_true "${PREFLIGHT_ONLY}"; then
     [[ "$(id -u)" -eq 0 ]] || die "This script must be run as root (use sudo)."
