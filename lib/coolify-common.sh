@@ -1219,6 +1219,9 @@ coolify_phase5_verify_shared() {
     fi
   else
     # Gate F (tunnel/private): private host routes must work on Tailscale-only DNS.
+    # Extend the window: tunnel mode requires DNS propagation + ACME DNS-01 cert issuance
+    # via Cloudflare, which can take 5-10 minutes on a fresh deploy.
+    attempts=90
     log "Gate F: Checking private host routes and public-origin blocking..."
     local dashboard_private_code ws_private_code dashboard_private_https_code ws_private_wss_code
     local ws_private_url

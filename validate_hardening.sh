@@ -2580,7 +2580,7 @@ coolify_instance_settings_check() {
   registration_enabled="${settings_row%%|*}"
   fqdn="${settings_row#*|}"
 
-  if [[ "${registration_enabled}" == "f" ]]; then
+  if [[ "${registration_enabled}" == "f" || "${registration_enabled}" == "false" ]]; then
     record "PASS" "coolify: registration disabled"
   else
     record "FAIL" "coolify: registration disabled" \
