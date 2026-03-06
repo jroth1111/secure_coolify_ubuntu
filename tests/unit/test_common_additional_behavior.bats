@@ -764,6 +764,9 @@ EOF
   assert_output --partial "certificatesResolvers.${PRIVATE_TLS_RESOLVER}.acme.dnsChallenge.provider=cloudflare"
   assert_output --partial 'sed -i "/certificatesresolvers\.letsencrypt\./d" "${compose_file}"'
   assert_output --partial 'default_redirect_file="${dynamic_dir}/default_redirect_503.yaml"'
+  assert_output --partial 'scrub_default_redirect_public_resolver() {'
   assert_output --partial 'text = text.replace("      tls:\n        certResolver: letsencrypt\n", "")'
+  assert_output --partial 'for _ in $(seq 1 30); do'
+  assert_output --partial 'Public letsencrypt resolver remained in ${default_redirect_file}'
   assert_output --partial "--api.insecure=false"
 }

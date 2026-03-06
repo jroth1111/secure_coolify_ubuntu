@@ -1772,9 +1772,8 @@ ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.dnscha
 ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.email=coolify-admin@${CF_ZONE_NAME}"
 ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.storage=/traefik/acme.json"
 
-# Coolify regenerates this catchall file with a public resolver; remove it in
-# tunnel mode so wildcard traffic cannot trigger public ACME flows.
-if [[ -f "${default_redirect_file}" ]]; then
+scrub_default_redirect_public_resolver() {
+  [[ -f "${default_redirect_file}" ]] || return 0
   python3 - "${default_redirect_file}" <<'PY'
 from pathlib import Path
 import sys
@@ -1784,12 +1783,29 @@ text = path.read_text()
 text = text.replace("      tls:\n        certResolver: letsencrypt\n", "")
 path.write_text(text)
 PY
-fi
+}
+
+# Coolify regenerates this catchall file with a public resolver; remove it in
+# tunnel mode so wildcard traffic cannot trigger public ACME flows.
+scrub_default_redirect_public_resolver
 
 if docker compose -f "${compose_file}" config >/dev/null 2>&1; then
   docker compose -f "${compose_file}" up -d
 else
   echo "Invalid Traefik compose generated at ${compose_file}" >&2
+  exit 1
+fi
+
+for _ in $(seq 1 30); do
+  scrub_default_redirect_public_resolver
+  if ! grep -Eq '^[[:space:]]*certResolver:[[:space:]]*letsencrypt[[:space:]]*$' "${default_redirect_file}" 2>/dev/null; then
+    break
+  fi
+  sleep 1
+done
+
+if grep -Eq '^[[:space:]]*certResolver:[[:space:]]*letsencrypt[[:space:]]*$' "${default_redirect_file}" 2>/dev/null; then
+  echo "Public letsencrypt resolver remained in ${default_redirect_file}" >&2
   exit 1
 fi
 
