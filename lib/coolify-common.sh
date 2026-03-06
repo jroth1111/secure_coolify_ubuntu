@@ -1268,7 +1268,7 @@ coolify_phase5_verify_shared() {
     for (( attempt=1; attempt<=attempts; attempt++ )); do
       dashboard_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${DOMAIN}" 2>/dev/null)" || dashboard_private_code=""
       ws_private_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://ws.${DOMAIN}" 2>/dev/null)" || ws_private_code=""
-      dashboard_private_https_code="$(curl -s -L -o /dev/null -w '%{http_code}' --max-time 10 "https://${DOMAIN}" 2>/dev/null)" || dashboard_private_https_code=""
+      dashboard_private_https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://${DOMAIN}/api/v1/health" 2>/dev/null)" || dashboard_private_https_code=""
       ws_private_wss_code="$(coolify_phase5_probe_websocket_code "${ws_private_url}" 10)"
       dashboard_private_code="${dashboard_private_code:-000}"
       ws_private_code="${ws_private_code:-000}"
