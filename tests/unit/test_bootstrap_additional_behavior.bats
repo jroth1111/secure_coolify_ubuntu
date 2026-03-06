@@ -465,6 +465,10 @@ EOF
   assert_success
   run grep -F 'rm -f "${SSH_DROPIN_FILE}".bak.*' "${DOCKER_SSH_CIDR_SYNC_SCRIPT}"
   assert_success
+  run grep -F 'ufw --force delete allow in proto tcp from "${old_cidr}" to any port "${ssh_port}" comment "${RULE_COMMENT}"' "${DOCKER_SSH_CIDR_SYNC_SCRIPT}"
+  assert_success
+  run grep -F 'ufw allow in proto tcp from "${cidr}" to any port "${ssh_port}" comment "${RULE_COMMENT}"' "${DOCKER_SSH_CIDR_SYNC_SCRIPT}"
+  assert_success
 
   rm -rf "${tmpdir}"
 }

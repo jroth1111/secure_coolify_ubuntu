@@ -3284,10 +3284,11 @@ if command -v ufw >/dev/null 2>&1; then
   for old_cidr in "${old_cidrs[@]}"; do
     old_cidr="${old_cidr//[[:space:]]/}"
     [[ -n "${old_cidr}" ]] || continue
+    ufw --force delete allow in proto tcp from "${old_cidr}" to any port "${ssh_port}" comment "${RULE_COMMENT}" >/dev/null 2>&1 || true
     ufw --force delete allow in from "${old_cidr}" to any port "${ssh_port}" comment "${RULE_COMMENT}" >/dev/null 2>&1 || true
   done
   for cidr in "${cidrs[@]}"; do
-    ufw allow in from "${cidr}" to any port "${ssh_port}" comment "${RULE_COMMENT}" >/dev/null 2>&1 || true
+    ufw allow in proto tcp from "${cidr}" to any port "${ssh_port}" comment "${RULE_COMMENT}" >/dev/null 2>&1 || true
   done
 fi
 
