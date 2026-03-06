@@ -2232,3 +2232,24 @@ entries:
   behavior_test: "tests/unit/test_common_additional_behavior.bats::coolify_phase5_websocket_url: builds the expected websocket endpoint"
   checks:
   - "tests/unit/test_common_additional_behavior.bats::coolify_phase5_websocket_url: builds the expected websocket endpoint"
+- id: LS-COM-063
+  script_path: lib/coolify-common.sh
+  function: coolify_tunnel_name
+  criticality: orchestration
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::coolify_tunnel_name: incorporates full domain and deterministic hash"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::coolify_tunnel_name: incorporates full domain and deterministic hash"
+- id: LS-COM-064
+  script_path: lib/coolify-common.sh
+  function: coolify_http_code_is_success_or_redirect
+  criticality: utility
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::coolify_http_code_is_success_or_redirect: accepts success and redirect codes only"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::coolify_http_code_is_success_or_redirect: accepts success and redirect codes only"
+- id: LS-COM-065
+  script_path: lib/coolify-common.sh
+  function: coolify_dashboard_http_code_is_healthy
+  criticality: security
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::coolify_dashboard_http_code_is_healthy: rejects auth-only and missing-route responses"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::coolify_dashboard_http_code_is_healthy: rejects auth-only and missing-route responses"

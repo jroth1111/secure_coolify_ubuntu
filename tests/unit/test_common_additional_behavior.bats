@@ -289,12 +289,36 @@ setup() {
   run bash -c '
     source "'"${COMMON_LIB}"'"
     DOMAIN="vps1.internal.example.org"
+    coolify_tunnel_name >/dev/null
     name="$(coolify_tunnel_name)"
     printf "%s\n" "${name}"
     [[ "${#name}" -le 63 ]]
   '
   assert_success
   assert_regex '^coolify-vps1-internal-example-org-[0-9a-f]{12}$'
+}
+
+@test "coolify_http_code_is_success_or_redirect: accepts success and redirect codes only" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    coolify_http_code_is_success_or_redirect 200
+    coolify_http_code_is_success_or_redirect 303
+    ! coolify_http_code_is_success_or_redirect 404
+  '
+  assert_success
+}
+
+@test "coolify_dashboard_http_code_is_healthy: rejects auth-only and missing-route responses" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    coolify_dashboard_http_code_is_healthy 200
+    coolify_dashboard_http_code_is_healthy 302
+    ! coolify_dashboard_http_code_is_healthy 401
+    ! coolify_dashboard_http_code_is_healthy 403
+    ! coolify_dashboard_http_code_is_healthy 404
+    ! coolify_dashboard_http_code_is_healthy 500
+  '
+  assert_success
 }
 
 @test "collect_common_inputs: preserves pre-populated values without prompting" {
