@@ -531,7 +531,7 @@ EOF
     tailscale() { echo "100.64.0.44"; }
 
     phase1_harden
-    grep -q "^DOMAIN=vps.example.com$" "${captured_env}"
+    grep -q "^DOMAIN=\"vps.example.com\"$" "${captured_env}"
   '
   assert_success
 }
@@ -583,6 +583,17 @@ EOF
   '
   assert_success
   assert_output --partial "check gate"
+}
+
+@test "pause_for_operator (setup): AUTO_YES=true fails with operator guidance" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    AUTO_YES="true"
+    pause_for_operator "check gate"
+  '
+  assert_failure
+  assert_output --partial "Operator confirmation required"
+  assert_output --partial "use deploy.sh"
 }
 
 @test "main (setup): executes setup phases with stubbed actions" {
