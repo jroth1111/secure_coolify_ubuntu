@@ -551,6 +551,10 @@ STATUS
     if [[ "${1:-}" == "ip" && "${2:-}" == "-4" ]]; then
       return 0
     fi
+    if [[ "${1:-}" == "debug" && "${2:-}" == "prefs" ]]; then
+      echo '{"RunSSH":false}'
+      return 0
+    fi
     return 0
   }
 

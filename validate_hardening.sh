@@ -158,6 +158,27 @@ is_tailscale_ipv4() {
   (( o4 >= 0 && o4 <= 255 )) || return 1
 }
 
+tailscale_runssh_pref_value() {
+  local attempts="${1:-5}"
+  local delay_seconds="${2:-1}"
+  local attempt=1
+  local run_ssh_pref="unknown"
+
+  while (( attempt <= attempts )); do
+    run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r 'if has("RunSSH") then (.RunSSH|tostring) else "unknown" end' 2>/dev/null || echo "unknown")"
+    if [[ "${run_ssh_pref}" == "true" || "${run_ssh_pref}" == "false" ]]; then
+      printf '%s\n' "${run_ssh_pref}"
+      return 0
+    fi
+    if (( attempt < attempts )); then
+      sleep "${delay_seconds}"
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  printf '%s\n' "${run_ssh_pref:-unknown}"
+}
+
 load_docker_ssh_cidrs() {
   local raw="${DOCKER_SSH_CIDRS:-10.0.0.0/8,172.16.0.0/12}"
   local item
@@ -1583,9 +1604,11 @@ tailscale_check() {
     fi
 
     local run_ssh_pref
-    run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r 'if has("RunSSH") then (.RunSSH|tostring) else "unknown" end' 2>/dev/null || echo "unknown")"
+    run_ssh_pref="$(tailscale_runssh_pref_value 5 1)"
     if [[ "${run_ssh_pref}" == "false" ]]; then
       record "PASS" "tailscale: RunSSH=false"
+    elif [[ "${run_ssh_pref}" == "unknown" ]]; then
+      record "FAIL" "tailscale: RunSSH" "expected false, got unknown after retries"
     else
       record "FAIL" "tailscale: RunSSH" "expected false, got ${run_ssh_pref}"
     fi
@@ -1603,7 +1626,7 @@ tailscale_check() {
       local ts_active_since ts_notify_warn_count
       ts_active_since="$(systemctl show tailscaled.service -p ActiveEnterTimestamp --value 2>/dev/null || true)"
       ts_notify_warn_count="$(journalctl -u tailscaled --since "${ts_active_since:-now}" --no-pager 2>/dev/null \
-        | grep -c 'Got notification message from PID .*reception only permitted for main PID' || true)"
+        | grep -Ec 'Got notification message from PID .*reception only permitted for main PID|Cannot find unit for notify message of PID .*, ignoring\.' || true)"
       if [[ "${ts_notify_warn_count}" =~ ^[0-9]+$ && "${ts_notify_warn_count}" -eq 0 ]]; then
         record "PASS" "tailscale: no systemd notify warnings after last start"
       else

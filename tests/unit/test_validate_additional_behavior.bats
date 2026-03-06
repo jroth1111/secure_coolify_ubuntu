@@ -1405,6 +1405,8 @@ SSHD
     return 1
   }
 
+  systemctl() { return 1; }
+
   command() {
     if [[ "${1:-}" == "-v" && "${2:-}" == "tailscale" ]]; then
       return 0
@@ -1421,6 +1423,10 @@ SSHD
       echo "100.64.0.2"
       return 0
     fi
+    if [[ "${1:-}" == "debug" && "${2:-}" == "prefs" ]]; then
+      echo '{"RunSSH":false}'
+      return 0
+    fi
     return 0
   }
 
@@ -1430,6 +1436,132 @@ SSHD
   assert_json_check_status "${json}" "tailscale: tailscale0 present" "PASS"
   assert_json_check_status "${json}" "tailscale: BackendState=Running" "PASS"
   assert_json_check_status "${json}" "tailscale: IPv4 assigned (100.64.0.2)" "PASS"
+  assert_json_check_status "${json}" "tailscale: RunSSH=false" "PASS"
+  assert_json_fail_count "${json}" "0"
+}
+
+@test "tailscale_check: retries transient unknown RunSSH reads before recording PASS" {
+  TAILSCALE_IFACE="tailscale0"
+  local old_path="${PATH}"
+  local mock_dir
+  local debug_counter_file
+  mock_dir="$(mktemp -d)"
+  debug_counter_file="$(mktemp)"
+  printf '0\n' > "${debug_counter_file}"
+  export TAILSCALE_DEBUG_COUNTER_FILE="${debug_counter_file}"
+  PATH="${mock_dir}:${PATH}"
+
+  ip() {
+    if [[ "${1:-}" == "link" && "${2:-}" == "show" && "${3:-}" == "tailscale0" ]]; then
+      return 0
+    fi
+    return 1
+  }
+
+  systemctl() { return 1; }
+
+  cat > "${mock_dir}/tailscale" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "status" && "${2:-}" == "--json" ]]; then
+  echo '{"BackendState":"Running","Peer":[]}'
+  exit 0
+fi
+if [[ "${1:-}" == "ip" && "${2:-}" == "-4" ]]; then
+  echo "100.64.0.2"
+  exit 0
+fi
+if [[ "${1:-}" == "debug" && "${2:-}" == "prefs" ]]; then
+  count="$(<"${TAILSCALE_DEBUG_COUNTER_FILE}")"
+  count=$((count + 1))
+  printf '%s\n' "${count}" > "${TAILSCALE_DEBUG_COUNTER_FILE}"
+  if (( count < 3 )); then
+    echo '{}'
+  else
+    echo '{"RunSSH":false}'
+  fi
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "${mock_dir}/tailscale"
+
+  cat > "${mock_dir}/sleep" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "${mock_dir}/sleep"
+
+  tailscale_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "tailscale: RunSSH=false" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  PATH="${old_path}"
+  /bin/rm -rf "${mock_dir}"
+  /bin/rm -f "${debug_counter_file}"
+}
+
+@test "tailscale_check: fails on alternate tailscaled notify warning wording" {
+  TAILSCALE_IFACE="tailscale0"
+
+  ip() {
+    if [[ "${1:-}" == "link" && "${2:-}" == "show" && "${3:-}" == "tailscale0" ]]; then
+      return 0
+    fi
+    return 1
+  }
+
+  command() {
+    if [[ "${1:-}" == "-v" && ( "${2:-}" == "tailscale" || "${2:-}" == "journalctl" ) ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  systemctl() {
+    if [[ "${1:-}" == "show" && "${2:-}" == "--property=LoadState" && "${3:-}" == "--value" && "${4:-}" == "tailscaled.service" ]]; then
+      echo "loaded"
+      return 0
+    fi
+    if [[ "${1:-}" == "show" && "${2:-}" == "tailscaled.service" && "${3:-}" == "-p" && "${4:-}" == "NotifyAccess" && "${5:-}" == "--value" ]]; then
+      echo "all"
+      return 0
+    fi
+    if [[ "${1:-}" == "show" && "${2:-}" == "tailscaled.service" && "${3:-}" == "-p" && "${4:-}" == "ActiveEnterTimestamp" && "${5:-}" == "--value" ]]; then
+      echo "2026-03-05 02:24:40"
+      return 0
+    fi
+    return 0
+  }
+
+  tailscale() {
+    if [[ "${1:-}" == "status" && "${2:-}" == "--json" ]]; then
+      echo '{"BackendState":"Running","Peer":[]}'
+      return 0
+    fi
+    if [[ "${1:-}" == "ip" && "${2:-}" == "-4" ]]; then
+      echo "100.64.0.2"
+      return 0
+    fi
+    if [[ "${1:-}" == "debug" && "${2:-}" == "prefs" ]]; then
+      echo '{"RunSSH":false}'
+      return 0
+    fi
+    return 0
+  }
+
+  journalctl() {
+    echo 'Cannot find unit for notify message of PID 123, ignoring.'
+    return 0
+  }
+
+  tailscale_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "tailscale: no systemd notify warnings after last start" "FAIL"
+  assert_json_check_detail_contains "${json}" "tailscale: no systemd notify warnings after last start" "found 1 warning"
 }
 
 @test "unattended_upgrades_check: fails when local policy file is missing" {
