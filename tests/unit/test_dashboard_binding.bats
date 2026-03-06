@@ -62,6 +62,7 @@ setup() {
   run configure_coolify_binding
   assert_success
   assert_output --partial "DRY-RUN: would verify UFW rules"
+  assert_output --partial "external exposure is validated from off-host"
   assert_output --partial "8000"
   run cat "${COOLIFY_ENV_FILE}"
   assert_success
@@ -114,6 +115,7 @@ setup() {
   assert_success
   assert_output --partial "Dashboard bound on Tailscale IP 100.64.1.42:8000"
   refute_output --partial "Dashboard accessible at:"
+  refute_output --partial "public IP"
 
   rm -f "${COOLIFY_ENV_FILE}"
 }

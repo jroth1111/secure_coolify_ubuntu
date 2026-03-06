@@ -1124,17 +1124,6 @@ if "${changed}"; then
 else
   log "UFW rules for ports 8000, 6001, and 6002 on ${TAILSCALE_IFACE} are present — no action needed."
 fi
-
-# Verify public IP is NOT serving the dashboard
-if command -v nc >/dev/null 2>&1; then
-  public_ip="$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')" || true
-  tailscale_ip="$(tailscale ip -4 2>/dev/null)" || true
-  if [[ -n "${public_ip}" && "${public_ip}" != "${tailscale_ip}" ]]; then
-    if nc -z -w2 "${public_ip}" 8000 2>/dev/null; then
-      log "WARN: Port 8000 still reachable on public IP ${public_ip} — check UFW rules."
-    fi
-  fi
-fi
 GUARD_EOF
 
   write_file "${COOLIFY_BINDING_GUARD_SERVICE}" "0644" "root" "root" <<'UNIT_EOF'
@@ -1183,7 +1172,7 @@ configure_coolify_binding() {
 
   if is_true "${DRY_RUN}"; then
     log "DRY-RUN: would verify UFW rules for ports 8000, 6001, and 6002 on ${TAILSCALE_IFACE}"
-    log "DRY-RUN: would verify port 8000 is listening and not reachable on public IP"
+    log "DRY-RUN: would verify port 8000 is listening; external exposure is validated from off-host"
     return 0
   fi
 
@@ -1229,22 +1218,7 @@ configure_coolify_binding() {
     warn "Port 8000 not yet listening. Check: ss -tlnp | grep 8000"
   fi
 
-  # Verify public IP is NOT serving the dashboard (UFW should block it)
-  if command -v nc >/dev/null 2>&1; then
-    local public_ip
-    public_ip="$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')"
-    local tailscale_ip
-    tailscale_ip="$(get_tailscale_ip)" || true
-    if [[ -n "${public_ip}" && "${public_ip}" != "${tailscale_ip}" ]]; then
-      if nc -z -w2 "${public_ip}" 8000 2>/dev/null; then
-        warn "Port 8000 still appears reachable on public IP ${public_ip}. Check UFW rules."
-      else
-        log "PASS: Port 8000 not reachable on public IP ${public_ip}"
-      fi
-    fi
-  fi
-
-  log "Coolify dashboard UFW restriction verified."
+  log "Coolify dashboard UFW restriction verified. External exposure is validated from off-host."
 }
 
 ensure_timesync() {
@@ -2880,18 +2854,7 @@ run_post_checks() {
       fi
     fi
 
-    # Verify public IP is NOT serving the dashboard
-    if command -v nc >/dev/null 2>&1 && [[ -n "${DETECTED_TAILSCALE_IP}" ]]; then
-      local public_ip
-      public_ip="$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')"
-      if [[ -n "${public_ip}" && "${public_ip}" != "${DETECTED_TAILSCALE_IP}" ]]; then
-        if nc -z -w2 "${public_ip}" 8000 2>/dev/null; then
-          warn "Port 8000 still appears reachable on public IP ${public_ip}. Check UFW rules."
-        else
-          log "PASS: Port 8000 not reachable on public IP ${public_ip}"
-        fi
-      fi
-    fi
+    log "External dashboard exposure is validated from off-host; skipping host-local public-IP probe."
   fi
 }
 

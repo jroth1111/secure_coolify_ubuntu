@@ -96,6 +96,26 @@ setup() {
   rm -rf "${tmpdir}"
 }
 
+@test "configure_coolify_binding_watchdog: generated guard skips host-local public IP probing" {
+  DRY_RUN="false"
+  BIND_DASHBOARD_TO_TAILSCALE="true"
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  COOLIFY_BINDING_GUARD_SCRIPT="${tmpdir}/coolify-binding-guard.sh"
+  COOLIFY_BINDING_GUARD_SERVICE="${tmpdir}/coolify-binding-guard.service"
+  COOLIFY_BINDING_GUARD_TIMER="${tmpdir}/coolify-binding-guard.timer"
+  systemctl() { return 0; }
+
+  run configure_coolify_binding_watchdog
+  assert_success
+  run grep -q 'public IP' "${COOLIFY_BINDING_GUARD_SCRIPT}"
+  assert_failure
+  run grep -q 'nc -z -w2' "${COOLIFY_BINDING_GUARD_SCRIPT}"
+  assert_failure
+
+  rm -rf "${tmpdir}"
+}
+
 @test "ensure_timesync: dry-run executes without host mutation" {
   DRY_RUN="true"
   local marker
