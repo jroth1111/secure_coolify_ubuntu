@@ -892,7 +892,7 @@ coolify_phase4_binding_dns_shared() {
 
   log "Reconciling Coolify instance settings..."
   "${reconcile_instance_settings_fn}" || die "Failed to reconcile Coolify instance settings"
-  pass "Coolify instance settings reconciled: fqdn=https://${DOMAIN}, registration disabled"
+  pass "Coolify instance settings reconciled"
 
   # Configure PUSHER_* for the selected mode.
   # Tunnel mode keeps realtime traffic on Tailscale; standard mode clears explicit overrides.
@@ -1592,11 +1592,15 @@ EOF
 }
 
 # coolify_reconcile_instance_settings_script — Emit host-side script to update
-# Coolify instance settings directly in PostgreSQL. Requires DOMAIN.
+# Coolify instance settings directly in PostgreSQL. Requires DOMAIN and
+# DEPLOY_MODE. Tunnel mode keeps fqdn empty so Coolify does not regenerate
+# conflicting dashboard HTTPS routers; standard mode sets fqdn to the public
+# dashboard URL.
 coolify_reconcile_instance_settings_script() {
   cat <<'EOF'
 set -Eeuo pipefail
 : "${DOMAIN:?DOMAIN is required}"
+: "${DEPLOY_MODE:?DEPLOY_MODE is required}"
 coolify_env="/data/coolify/source/.env"
 db_user="$(grep -m1 '^DB_USERNAME=' "${coolify_env}" | cut -d= -f2- || true)"
 db_name="$(grep -m1 '^DB_DATABASE=' "${coolify_env}" | cut -d= -f2- || true)"
@@ -1608,7 +1612,11 @@ if ! docker ps --filter "name=coolify-db" --filter "status=running" --format "{{
   echo "coolify-db container is not running" >&2
   exit 1
 fi
-sql="UPDATE instance_settings SET is_registration_enabled = false, fqdn = 'https://${DOMAIN}';"
+if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
+  sql="UPDATE instance_settings SET is_registration_enabled = false, fqdn = '';"
+else
+  sql="UPDATE instance_settings SET is_registration_enabled = false, fqdn = 'https://${DOMAIN}';"
+fi
 docker exec -i coolify-db sh -ceu '
   IFS= read -r PGPASSWORD
   export PGPASSWORD
@@ -1758,6 +1766,7 @@ compose_file="${proxy_dir}/docker-compose.yml"
 env_file="${proxy_dir}/.env"
 dynamic_dir="${proxy_dir}/dynamic"
 default_redirect_file="${dynamic_dir}/default_redirect_503.yaml"
+coolify_dynamic_file="${dynamic_dir}/coolify.yaml"
 
 [[ -f "${compose_file}" ]] || { echo "Missing ${compose_file}" >&2; exit 1; }
 install -d -m 0700 "${proxy_dir}"
@@ -1817,9 +1826,26 @@ path.write_text(text)
 PY
 }
 
+scrub_coolify_public_https_routers() {
+  [[ -f "${coolify_dynamic_file}" ]] || return 0
+  python3 - "${coolify_dynamic_file}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+for router_name in ("coolify-https", "coolify-realtime-wss", "coolify-terminal-wss"):
+    pattern = rf"(?ms)^    {router_name}:\n(?:      .*\n|        .*\n)*"
+    text = re.sub(pattern, "", text)
+path.write_text(text)
+PY
+}
+
 # Coolify regenerates this catchall file with a public resolver; remove it in
 # tunnel mode so wildcard traffic cannot trigger public ACME flows.
 scrub_default_redirect_public_resolver
+scrub_coolify_public_https_routers
 
 if docker compose -f "${compose_file}" config >/dev/null 2>&1; then
   docker compose -f "${compose_file}" up -d
@@ -1830,7 +1856,9 @@ fi
 
 for _ in $(seq 1 30); do
   scrub_default_redirect_public_resolver
-  if ! grep -Eq '^[[:space:]]*certResolver:[[:space:]]*letsencrypt[[:space:]]*$' "${default_redirect_file}" 2>/dev/null; then
+  scrub_coolify_public_https_routers
+  if ! grep -Eq '^[[:space:]]*certResolver:[[:space:]]*letsencrypt[[:space:]]*$' "${default_redirect_file}" 2>/dev/null \
+    && ! grep -Eq '^[[:space:]]*coolify-(https|realtime-wss|terminal-wss):[[:space:]]*$|^[[:space:]]*certresolver:[[:space:]]*letsencrypt[[:space:]]*$' "${coolify_dynamic_file}" 2>/dev/null; then
     break
   fi
   sleep 1
@@ -1838,6 +1866,11 @@ done
 
 if grep -Eq '^[[:space:]]*certResolver:[[:space:]]*letsencrypt[[:space:]]*$' "${default_redirect_file}" 2>/dev/null; then
   echo "Public letsencrypt resolver remained in ${default_redirect_file}" >&2
+  exit 1
+fi
+
+if grep -Eq '^[[:space:]]*coolify-(https|realtime-wss|terminal-wss):[[:space:]]*$|^[[:space:]]*certresolver:[[:space:]]*letsencrypt[[:space:]]*$' "${coolify_dynamic_file}" 2>/dev/null; then
+  echo "Public Coolify HTTPS routers remained in ${coolify_dynamic_file}" >&2
   exit 1
 fi
 

@@ -2228,10 +2228,12 @@ cloudflared_check() {
     local private_route_file
     local proxy_compose_file
     local default_redirect_file
+    local coolify_dynamic_file
     local coolify_env_file
     private_route_file="${COOLIFY_PRIVATE_ROUTE_FILE:-/data/coolify/proxy/dynamic/coolify-private-dashboard.yaml}"
     proxy_compose_file="${COOLIFY_PROXY_COMPOSE_FILE:-/data/coolify/proxy/docker-compose.yml}"
     default_redirect_file="${COOLIFY_PROXY_DEFAULT_REDIRECT_FILE:-/data/coolify/proxy/dynamic/default_redirect_503.yaml}"
+    coolify_dynamic_file="${COOLIFY_PROXY_DYNAMIC_FILE:-/data/coolify/proxy/dynamic/coolify.yaml}"
     coolify_env_file="${COOLIFY_ENV_FILE:-/data/coolify/source/.env}"
     if [[ -f "${private_route_file}" ]]; then
       record "PASS" "cloudflared: private dashboard route file present"
@@ -2336,6 +2338,17 @@ cloudflared_check() {
       fi
     else
       record "PASS" "cloudflared: catchall route avoids public letsencrypt"
+    fi
+
+    if [[ -f "${coolify_dynamic_file}" ]]; then
+      if grep -Eq '^[[:space:]]*coolify-(https|realtime-wss|terminal-wss):[[:space:]]*$|^[[:space:]]*certresolver:[[:space:]]*letsencrypt[[:space:]]*$' "${coolify_dynamic_file}"; then
+        record "FAIL" "cloudflared: generated Coolify HTTPS routers disabled" \
+          "found public dashboard HTTPS routers in ${coolify_dynamic_file}"
+      else
+        record "PASS" "cloudflared: generated Coolify HTTPS routers disabled"
+      fi
+    else
+      record "FAIL" "cloudflared: generated Coolify route file" "missing ${coolify_dynamic_file}"
     fi
 
     if [[ -n "${dashboard_host}" ]]; then
@@ -2520,7 +2533,7 @@ coolify_instance_settings_check() {
     return
   fi
 
-  if [[ ! -d "/data/coolify" || ! -f "${COOLIFY_ENV_FILE}" ]]; then
+  if [[ ! -f "${COOLIFY_ENV_FILE}" ]]; then
     return 0
   fi
 
@@ -2536,7 +2549,11 @@ coolify_instance_settings_check() {
   db_pass="$(grep -m1 '^DB_PASSWORD=' "${COOLIFY_ENV_FILE}" | cut -d= -f2- || true)"
   db_user="${db_user:-coolify}"
   db_name="${db_name:-coolify}"
-  expected_fqdn="https://${DOMAIN}"
+  if is_true "${TUNNEL_MODE}"; then
+    expected_fqdn=""
+  else
+    expected_fqdn="https://${DOMAIN}"
+  fi
 
   if [[ -z "${db_pass}" ]]; then
     record "FAIL" "coolify: instance settings query" "DB_PASSWORD missing in ${COOLIFY_ENV_FILE}"
@@ -2574,7 +2591,7 @@ coolify_instance_settings_check() {
     record "PASS" "coolify: instance fqdn"
   else
     record "FAIL" "coolify: instance fqdn" \
-      "expected ${expected_fqdn}, found ${fqdn:-<empty>}"
+      "expected ${expected_fqdn:-<empty>}, found ${fqdn:-<empty>}"
   fi
 }
 

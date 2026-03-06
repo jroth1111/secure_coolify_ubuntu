@@ -627,7 +627,7 @@ entries:
   function: coolify_instance_settings_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::coolify_instance_settings_check:
-    passes when registration is disabled and fqdn matches domain'
+    passes when tunnel mode keeps fqdn empty and registration is disabled'
   checks:
   - 'tests/unit/test_validate_additional_behavior.bats::coolify_instance_settings_check:
     fails when registration is enabled and fqdn is empty'

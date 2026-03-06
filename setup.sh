@@ -429,7 +429,7 @@ phase4_binding_dns() {
   }
   phase4_set_wildcard_domain() { APP_DOMAIN="${APP_DOMAIN}" coolify_set_wildcard_domain_script | bash -s; }
   phase4_reconcile_instance_settings() {
-    DOMAIN="${DOMAIN}" coolify_reconcile_instance_settings_script | bash -s
+    DEPLOY_MODE="${DEPLOY_MODE}" DOMAIN="${DOMAIN}" coolify_reconcile_instance_settings_script | bash -s
   }
   phase4_reconcile_pusher_env() {
     DEPLOY_MODE="${DEPLOY_MODE}" TS_IP="${TS_IP}" DOMAIN="${DOMAIN}" coolify_reconcile_pusher_env_script | bash -s

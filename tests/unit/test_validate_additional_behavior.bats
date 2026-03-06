@@ -996,6 +996,7 @@ DB_DATABASE=coolify
 DB_PASSWORD=secret
 EOF
   DOMAIN="vps.example.com"
+  TUNNEL_MODE="true"
 
   command() {
     if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
@@ -1026,7 +1027,7 @@ EOF
   rm -rf "${tempdir}"
 }
 
-@test "coolify_instance_settings_check: passes when registration is disabled and fqdn matches domain" {
+@test "coolify_instance_settings_check: passes when tunnel mode keeps fqdn empty and registration is disabled" {
   local tempdir
   tempdir="$(mktemp -d)"
   COOLIFY_ENV_FILE="${tempdir}/coolify.env"
@@ -1036,6 +1037,7 @@ DB_DATABASE=coolify
 DB_PASSWORD=secret
 EOF
   DOMAIN="vps.example.com"
+  TUNNEL_MODE="true"
 
   command() {
     if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
@@ -1050,7 +1052,7 @@ EOF
       return 0
     fi
     if [[ "${1:-}" == "exec" ]]; then
-      echo "f|https://vps.example.com"
+      echo "f|"
       return 0
     fi
     return 0
@@ -1136,6 +1138,7 @@ EOF
   private_route_file="${tempdir}/coolify-private-dashboard.yaml"
   compose_file="${tempdir}/docker-compose.yml"
   redirect_file="${tempdir}/default_redirect_503.yaml"
+  dynamic_file="${tempdir}/coolify.yaml"
   coolify_env_file="${tempdir}/coolify.env"
 
   cat > "${config_file}" <<'EOF'
@@ -1199,6 +1202,14 @@ http:
         certResolver: letsencrypt
 EOF
 
+  cat > "${dynamic_file}" <<'EOF'
+http:
+  routers:
+    coolify-https:
+      tls:
+        certresolver: letsencrypt
+EOF
+
   cat > "${coolify_env_file}" <<'EOF'
 PUSHER_HOST=ws.vps.example.com
 PUSHER_PORT=443
@@ -1211,6 +1222,7 @@ EOF
   COOLIFY_PRIVATE_ROUTE_FILE="${private_route_file}"
   COOLIFY_PROXY_COMPOSE_FILE="${compose_file}"
   COOLIFY_PROXY_DEFAULT_REDIRECT_FILE="${redirect_file}"
+  COOLIFY_PROXY_DYNAMIC_FILE="${dynamic_file}"
   COOLIFY_ENV_FILE="${coolify_env_file}"
 
   systemctl() {
@@ -1253,7 +1265,8 @@ EOF
   json="$(emit_validate_results_json)"
   assert_json_check_status "${json}" "cloudflared: public letsencrypt resolver removed" "FAIL"
   assert_json_check_status "${json}" "cloudflared: catchall route avoids public letsencrypt" "FAIL"
-  assert_json_fail_count "${json}" "2"
+  assert_json_check_status "${json}" "cloudflared: generated Coolify HTTPS routers disabled" "FAIL"
+  assert_json_fail_count "${json}" "3"
 
   rm -rf "${tempdir}"
 }
@@ -1265,6 +1278,7 @@ EOF
   private_route_file="${tempdir}/coolify-private-dashboard.yaml"
   compose_file="${tempdir}/docker-compose.yml"
   redirect_file="${tempdir}/default_redirect_503.yaml"
+  dynamic_file="${tempdir}/coolify.yaml"
   coolify_env_file="${tempdir}/coolify.env"
 
   cat > "${config_file}" <<'EOF'
@@ -1327,6 +1341,13 @@ http:
       priority: -1000
 EOF
 
+  cat > "${dynamic_file}" <<'EOF'
+http:
+  routers:
+    coolify-http:
+      rule: Host(`vps.example.com`)
+EOF
+
   cat > "${coolify_env_file}" <<'EOF'
 PUSHER_HOST=ws.vps.example.com
 PUSHER_PORT=443
@@ -1339,6 +1360,7 @@ EOF
   COOLIFY_PRIVATE_ROUTE_FILE="${private_route_file}"
   COOLIFY_PROXY_COMPOSE_FILE="${compose_file}"
   COOLIFY_PROXY_DEFAULT_REDIRECT_FILE="${redirect_file}"
+  COOLIFY_PROXY_DYNAMIC_FILE="${dynamic_file}"
   COOLIFY_ENV_FILE="${coolify_env_file}"
 
   systemctl() {
@@ -1381,6 +1403,7 @@ EOF
   json="$(emit_validate_results_json)"
   assert_json_check_status "${json}" "cloudflared: public letsencrypt resolver removed" "PASS"
   assert_json_check_status "${json}" "cloudflared: catchall route avoids public letsencrypt" "PASS"
+  assert_json_check_status "${json}" "cloudflared: generated Coolify HTTPS routers disabled" "PASS"
   assert_json_fail_count "${json}" "0"
 
   rm -rf "${tempdir}"

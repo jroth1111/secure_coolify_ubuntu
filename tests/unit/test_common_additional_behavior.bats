@@ -400,7 +400,10 @@ setup() {
   run coolify_reconcile_instance_settings_script
   assert_success
   assert_output --partial ': "${DOMAIN:?DOMAIN is required}"'
+  assert_output --partial ': "${DEPLOY_MODE:?DEPLOY_MODE is required}"'
   assert_output --partial "is_registration_enabled = false"
+  assert_output --partial 'if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then'
+  assert_output --partial "fqdn = '';"
   assert_output --partial "fqdn = 'https://\${DOMAIN}'"
   assert_output --partial "ON_ERROR_STOP=1"
 }
@@ -785,9 +788,13 @@ EOF
   assert_output --partial "certificatesResolvers.${PRIVATE_TLS_RESOLVER}.acme.dnsChallenge.provider=cloudflare"
   assert_output --partial 'sed -i "/certificatesresolvers\.letsencrypt\./d" "${compose_file}"'
   assert_output --partial 'default_redirect_file="${dynamic_dir}/default_redirect_503.yaml"'
+  assert_output --partial 'coolify_dynamic_file="${dynamic_dir}/coolify.yaml"'
   assert_output --partial 'scrub_default_redirect_public_resolver() {'
+  assert_output --partial 'scrub_coolify_public_https_routers() {'
+  assert_output --partial 'for router_name in ("coolify-https", "coolify-realtime-wss", "coolify-terminal-wss"):'
   assert_output --partial 'text = text.replace("      tls:\n        certResolver: letsencrypt\n", "")'
   assert_output --partial 'for _ in $(seq 1 30); do'
+  assert_output --partial 'Public Coolify HTTPS routers remained in ${coolify_dynamic_file}'
   assert_output --partial 'Public letsencrypt resolver remained in ${default_redirect_file}'
   assert_output --partial "--api.insecure=false"
 }
