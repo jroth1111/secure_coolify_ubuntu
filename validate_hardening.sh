@@ -455,8 +455,11 @@ ufw_check() {
   local cidr escaped_cidr
   while IFS= read -r cidr; do
     escaped_cidr="$(regex_escape "${cidr}")"
-    if grep -qE "${SSH_PORT}.*ALLOW.*${escaped_cidr}" <<< "${ufw_out}"; then
+    if grep -qE "(^|[[:space:]])${SSH_PORT}/tcp([[:space:]]|$).*ALLOW.*${escaped_cidr}" <<< "${ufw_out}"; then
       record "PASS" "ufw: SSH from Docker bridge (${cidr})"
+    elif grep -qE "(^|[[:space:]])${SSH_PORT}([[:space:]]|$).*ALLOW.*${escaped_cidr}" <<< "${ufw_out}"; then
+      record "FAIL" "ufw: SSH from Docker bridge (${cidr})" \
+        "${cidr} → port ${SSH_PORT} must be tcp-only; broad rule allows non-SSH protocols"
     else
       record "FAIL" "ufw: SSH from Docker bridge (${cidr})" "${cidr} → port ${SSH_PORT} rule missing — Coolify cannot reach host"
     fi

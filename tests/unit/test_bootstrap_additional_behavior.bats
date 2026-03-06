@@ -460,6 +460,7 @@ EOF
   run configure_ufw
   assert_success
   assert_output --partial "DRY-RUN"
+  assert_output --partial 'ufw allow in proto tcp from 10.0.0.0/8 to any port 22 comment coolify-hardening-ssh-docker-bridge'
   [ ! -f "${marker}" ]
 }
 

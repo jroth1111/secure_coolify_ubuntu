@@ -148,7 +148,7 @@ STATE
       cat <<UFW
 Status: active
 22/tcp                     ALLOW IN    on tailscale0
-22                         ALLOW       10.0.0.0/8
+22/tcp                     ALLOW IN    10.0.0.0/8
 8000/tcp                   ALLOW IN    on tailscale0
 6001/tcp                   ALLOW IN    on tailscale0
 6002/tcp                   ALLOW IN    on tailscale0
@@ -179,7 +179,7 @@ UFW
       cat <<UFW
 Status: active
 2222/tcp                   ALLOW IN    on tailscale0
-22                         ALLOW       10.0.0.0/8
+22/tcp                     ALLOW IN    10.0.0.0/8
 8000/tcp                   ALLOW IN    on tailscale0
 6001/tcp                   ALLOW IN    on tailscale0
 6002/tcp                   ALLOW IN    on tailscale0
@@ -193,6 +193,36 @@ UFW
   local json
   json="$(emit_validate_results_json)"
   assert_json_check_status "${json}" "ufw: SSH on tailscale0" "FAIL"
+}
+
+@test "ufw_check: fails when docker bridge SSH rule is not tcp-only" {
+  SSH_PORT="22"
+  TAILSCALE_IFACE="tailscale0"
+  WAN_IFACE="eth0"
+  TUNNEL_MODE="false"
+  TAILSCALE_DIRECT_WAN="false"
+  DOCKER_SSH_CIDRS='10.0.0.0/8'
+
+  ufw() {
+    if [[ "$1" == "status" ]]; then
+      cat <<UFW
+Status: active
+22/tcp                     ALLOW IN    on tailscale0
+22                         ALLOW IN    10.0.0.0/8
+8000/tcp                   ALLOW IN    on tailscale0
+6001/tcp                   ALLOW IN    on tailscale0
+6002/tcp                   ALLOW IN    on tailscale0
+UFW
+      return 0
+    fi
+    return 0
+  }
+
+  ufw_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "ufw: SSH from Docker bridge (10.0.0.0/8)" "FAIL"
+  assert_json_fail_count "${json}" "1"
 }
 
 @test "swap_check: reports disabled swap when swap_size is 0" {

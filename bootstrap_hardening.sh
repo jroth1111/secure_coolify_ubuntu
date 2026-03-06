@@ -2005,7 +2005,7 @@ configure_ufw() {
   # Allow Coolify to SSH to the host from Docker bridge CIDRs.
   # Compatibility mode uses broad ranges; strict mode uses discovered bridge CIDRs.
   for cidr in "${DOCKER_SSH_CIDRS[@]}"; do
-    run ufw allow in from "${cidr}" to any port "${SSH_PORT}" comment "coolify-hardening-ssh-docker-bridge"
+    run ufw allow in proto tcp from "${cidr}" to any port "${SSH_PORT}" comment "coolify-hardening-ssh-docker-bridge"
   done
 
   # Allow Coolify dashboard, Soketi, and terminal on Tailscale interface only.
