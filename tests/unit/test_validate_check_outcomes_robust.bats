@@ -585,6 +585,57 @@ STATUS
   assert_json_check_status "${json}" "timesync: NTP" "FAIL"
 }
 
+@test "networkd_wait_online_check: fails when ifupdown is authoritative but systemd-networkd remains active" {
+  local apt_helper_mock
+  apt_helper_mock="$(mktemp)"
+  trap 'rm -f "${apt_helper_mock}"' RETURN
+  cat > "${apt_helper_mock}" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+  chmod +x "${apt_helper_mock}"
+  APT_HELPER_BIN="${apt_helper_mock}"
+
+  ifupdown_is_authoritative() { return 0; }
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "timeout" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+  timeout() { shift; "$@"; }
+  systemctl() {
+    case "$*" in
+      "show --property=LoadState --value systemd-networkd.socket"|\
+      "show --property=LoadState --value systemd-networkd.service"|\
+      "show --property=LoadState --value networkd-dispatcher.service"|\
+      "show --property=LoadState --value networking.service")
+        echo loaded
+        return 0
+        ;;
+      "is-active systemd-networkd.socket"|\
+      "is-active systemd-networkd.service"|\
+      "is-active networkd-dispatcher.service")
+        echo active
+        return 0
+        ;;
+      "is-enabled systemd-networkd.socket"|\
+      "is-enabled systemd-networkd.service"|\
+      "is-enabled networkd-dispatcher.service")
+        echo enabled
+        return 0
+        ;;
+    esac
+    return 1
+  }
+
+  networkd_wait_online_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "networkd-wait-online: stray systemd-networkd stack disabled" "FAIL"
+  assert_json_check_status "${json}" "networkd-wait-online: apt-helper wait-online succeeds" "FAIL"
+}
+
 @test "unattended_upgrades_check: records a fail outcome when validation preconditions are not met" {
   systemctl() { return 1; }
 

@@ -1382,6 +1382,122 @@ SSHD
   assert_json_fail_count "${json}" "0"
 }
 
+@test "networkd_wait_online_check: passes when ifupdown is authoritative and apt-helper wait-online succeeds" {
+  local apt_helper_mock
+  apt_helper_mock="$(mktemp)"
+  trap 'rm -f "${apt_helper_mock}"' RETURN
+  cat > "${apt_helper_mock}" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "${apt_helper_mock}"
+  APT_HELPER_BIN="${apt_helper_mock}"
+
+  ifupdown_is_authoritative() { return 0; }
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "timeout" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+  timeout() { shift; "$@"; }
+  systemctl() {
+    case "$*" in
+      "show --property=LoadState --value systemd-networkd.socket"|\
+      "show --property=LoadState --value systemd-networkd.service"|\
+      "show --property=LoadState --value networkd-dispatcher.service"|\
+      "show --property=LoadState --value networking.service")
+        echo loaded
+        return 0
+        ;;
+      "is-active systemd-networkd.socket"|\
+      "is-active systemd-networkd.service"|\
+      "is-active networkd-dispatcher.service")
+        echo inactive
+        return 0
+        ;;
+      "is-enabled systemd-networkd.socket"|\
+      "is-enabled systemd-networkd.service"|\
+      "is-enabled networkd-dispatcher.service")
+        echo disabled
+        return 0
+        ;;
+    esac
+    return 1
+  }
+
+  networkd_wait_online_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "networkd-wait-online: ifupdown authoritative" "PASS"
+  assert_json_check_status "${json}" "networkd-wait-online: stray systemd-networkd stack disabled" "PASS"
+  assert_json_check_status "${json}" "networkd-wait-online: apt-helper wait-online succeeds" "PASS"
+  assert_json_fail_count "${json}" "0"
+}
+
+@test "networkd_wait_online_check: fails when tuned networkd provider still fails apt-helper wait-online" {
+  local apt_helper_mock
+  apt_helper_mock="$(mktemp)"
+  local dropin_backup=""
+  local had_dropin="false"
+  trap '
+    if [[ "${had_dropin}" == "true" ]]; then
+      cp "${dropin_backup}" "${NETWORKD_WAIT_ONLINE_DROPIN}" >/dev/null 2>&1 || true
+      rm -f "${dropin_backup}"
+    else
+      rm -f "${NETWORKD_WAIT_ONLINE_DROPIN}"
+    fi
+    rm -f "${apt_helper_mock}"
+  ' RETURN
+  cat > "${apt_helper_mock}" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+  chmod +x "${apt_helper_mock}"
+  APT_HELPER_BIN="${apt_helper_mock}"
+
+  ifupdown_is_authoritative() { return 1; }
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "timeout" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+  timeout() { shift; "$@"; }
+  systemctl() {
+    case "$*" in
+      "show --property=LoadState --value systemd-networkd-wait-online.service")
+        echo loaded
+        return 0
+        ;;
+      "show systemd-networkd-wait-online.service -p ExecStart --value")
+        echo "/lib/systemd/systemd-networkd-wait-online --any --timeout=15"
+        return 0
+        ;;
+    esac
+    return 1
+  }
+
+  if [[ -f "${NETWORKD_WAIT_ONLINE_DROPIN}" ]]; then
+    had_dropin="true"
+    dropin_backup="$(mktemp)"
+    cp "${NETWORKD_WAIT_ONLINE_DROPIN}" "${dropin_backup}"
+  fi
+  mkdir -p "$(dirname "${NETWORKD_WAIT_ONLINE_DROPIN}")"
+  cat > "${NETWORKD_WAIT_ONLINE_DROPIN}" <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/lib/systemd/systemd-networkd-wait-online --any --timeout=15
+EOF
+
+  networkd_wait_online_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "networkd-wait-online: drop-in present (--any --timeout=15)" "PASS"
+  assert_json_check_status "${json}" "networkd-wait-online: effective ExecStart tuned" "PASS"
+  assert_json_check_status "${json}" "networkd-wait-online: apt-helper wait-online succeeds" "FAIL"
+}
+
 @test "tailscale_check: fails when tailscale interface is missing" {
   TAILSCALE_IFACE="tailscale0"
 

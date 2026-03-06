@@ -123,6 +123,24 @@ setup() {
   [ ! -f "${marker}" ]
 }
 
+@test "configure_networkd_wait_online: dry-run disables stray networkd units when ifupdown is authoritative" {
+  DRY_RUN="true"
+  NETWORKD_WAIT_ONLINE_DROPIN="$(mktemp)"
+  rm -f "${NETWORKD_WAIT_ONLINE_DROPIN}"
+  trap 'rm -f "${NETWORKD_WAIT_ONLINE_DROPIN}"' RETURN
+
+  unit_available() { return 0; }
+  ifupdown_is_authoritative() { return 0; }
+
+  run configure_networkd_wait_online
+  assert_success
+  assert_output --partial "systemd-networkd-wait-online"
+  assert_output --partial "systemctl stop systemd-networkd.socket systemd-networkd.service networkd-dispatcher.service"
+  assert_output --partial "systemctl disable systemd-networkd.socket systemd-networkd.service networkd-dispatcher.service"
+  assert_output --partial "ifupdown is authoritative"
+  [ ! -f "${NETWORKD_WAIT_ONLINE_DROPIN}" ]
+}
+
 @test "disable_unused_services: dry-run logs service disable actions" {
   DRY_RUN="true"
   local marker

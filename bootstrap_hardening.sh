@@ -1505,6 +1505,20 @@ ExecStart=/lib/systemd/systemd-networkd-wait-online --any --timeout=15
 EOF
 
   run systemctl daemon-reload
+
+  if ifupdown_is_authoritative; then
+    local -a stray_units=()
+    unit_available "systemd-networkd.socket" && stray_units+=("systemd-networkd.socket")
+    unit_available "systemd-networkd.service" && stray_units+=("systemd-networkd.service")
+    unit_available "networkd-dispatcher.service" && stray_units+=("networkd-dispatcher.service")
+    if (( ${#stray_units[@]} > 0 )); then
+      run systemctl stop "${stray_units[@]}"
+      run systemctl disable "${stray_units[@]}"
+    fi
+    log "ifupdown is authoritative; disabled stray systemd-networkd units to keep apt-helper wait-online on networking.service."
+    return 0
+  fi
+
   log "systemd-networkd-wait-online tuned for --any with 15s timeout."
 }
 
@@ -1658,6 +1672,29 @@ unit_available() {
   local load_state
   load_state="$(systemctl show --property=LoadState --value "${unit_name}" 2>/dev/null || true)"
   [[ -n "${load_state}" && "${load_state}" != "not-found" ]]
+}
+
+ifupdown_is_authoritative() {
+  unit_available "networking.service" || return 1
+
+  local path
+  for path in /etc/network/interfaces /etc/network/interfaces.d/*; do
+    [[ -f "${path}" ]] || continue
+    if awk '
+      /^[[:space:]]*#/ { next }
+      /^[[:space:]]*iface[[:space:]]+/ {
+        if ($2 != "lo") {
+          found=1
+          exit
+        }
+      }
+      END { exit(found ? 0 : 1) }
+    ' "${path}"; then
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 add_docker_ssh_cidr() {
