@@ -2361,7 +2361,10 @@ cloudflared_check() {
         record "PASS" "cloudflared: generated Coolify HTTPS routers disabled"
       fi
     else
-      record "FAIL" "cloudflared: generated Coolify route file" "missing ${coolify_dynamic_file}"
+      # In tunnel mode with empty FQDN, Coolify intentionally doesn't generate this file.
+      # No file = no public HTTPS routers, which is the desired state.
+      record "PASS" "cloudflared: generated Coolify HTTPS routers disabled" \
+        "(no ${coolify_dynamic_file} — expected when no public FQDN)"
     fi
 
     if [[ -n "${dashboard_host}" ]]; then
