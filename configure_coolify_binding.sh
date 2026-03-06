@@ -11,7 +11,7 @@ if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
 fi
 set -Eeuo pipefail
 
-# configure_coolify_binding.sh — Bind Coolify dashboard to Tailscale IP only
+# configure_coolify_binding.sh — Restrict Coolify dashboard access to Tailscale via UFW
 # Companion script for bootstrap_hardening.sh
 #
 # Usage:
@@ -38,7 +38,7 @@ die() {
 
 usage() {
   cat <<'EOF'
-Bind Coolify dashboard and Soketi to Tailscale IP only.
+Restrict Coolify dashboard and Soketi access to Tailscale via UFW.
 
 Usage:
   configure_coolify_binding.sh [options]
@@ -115,8 +115,34 @@ fi
 # UFW default-deny incoming + explicit allow rules on tailscale0 provides the same
 # defense-in-depth: dashboard reachable via Tailscale, blocked from public interfaces.
 
-log "Ensuring UFW rules allow dashboard on Tailscale interface..."
+delete_non_tailscale_rule_numbers() {
+  local numbered rules=()
+  numbered="$(ufw status numbered 2>/dev/null || true)"
+  mapfile -t rules < <(
+    awk '
+      BEGIN { IGNORECASE=1 }
+      /\[[[:space:]]*[0-9]+\]/ && /ALLOW IN/ && /(8000|6001|6002)(\/tcp)?/ {
+        line=tolower($0)
+        if (index(line, "tailscale0") == 0) {
+          rule=$1
+          gsub(/\[/, "", rule)
+          gsub(/\]/, "", rule)
+          print rule
+        }
+      }
+    ' <<< "${numbered}" | sort -rn
+  )
+  printf '%s\n' "${rules[@]}"
+}
+
+log "Ensuring UFW restricts dashboard ports to tailscale0..."
 command -v ufw >/dev/null 2>&1 || die "ufw not found. This script requires ufw to enforce dashboard restrictions."
+
+while IFS= read -r rule_number; do
+  [[ -n "${rule_number}" ]] || continue
+  ufw --force delete "${rule_number}" >/dev/null 2>&1 \
+    || die "Failed to remove non-tailscale UFW rule #${rule_number} for dashboard ports."
+done < <(delete_non_tailscale_rule_numbers)
 
 # Idempotent — ufw silently skips duplicate rules
 ufw allow in on tailscale0 proto tcp to any port 8000 comment "coolify-hardening-dashboard-tailscale" >/dev/null 2>&1 \
@@ -187,5 +213,5 @@ if [[ -n "${public_ip}" && "${public_ip}" != "${TAILSCALE_IP}" ]]; then
   log "INFO: External exposure for ${public_ip}:8000 is validated from an off-host probe (Gate E is authoritative)."
 fi
 
-log "Coolify binding configuration complete."
-log "Dashboard bound on Tailscale IP ${TAILSCALE_IP}:8000"
+log "Coolify binding firewall configuration complete."
+log "Dashboard access restricted to Tailscale via UFW on ${TAILSCALE_IP}:8000"

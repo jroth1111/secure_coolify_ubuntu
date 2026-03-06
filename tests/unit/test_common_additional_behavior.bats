@@ -407,6 +407,8 @@ setup() {
   run coolify_set_wildcard_domain_script
   assert_success
   assert_output --partial "DB_PASSWORD="
+  assert_output --partial "SELECT COUNT(*) INTO targeted_rows FROM server_settings WHERE server_id = 0;"
+  assert_output --partial "Unable to identify a unique Coolify server_settings row"
   assert_output --partial "ON_ERROR_STOP=1"
 }
 
@@ -417,8 +419,9 @@ setup() {
   assert_output --partial ': "${DEPLOY_MODE:?DEPLOY_MODE is required}"'
   assert_output --partial "is_registration_enabled = false"
   assert_output --partial 'if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then'
-  assert_output --partial "fqdn = '';"
-  assert_output --partial "fqdn = 'https://\${DOMAIN}'"
+  assert_output --partial "SELECT COUNT(*) INTO total_rows FROM instance_settings;"
+  assert_output --partial "Expected exactly one instance_settings row"
+  assert_output --partial "WHERE id = (SELECT id FROM instance_settings ORDER BY id LIMIT 1);"
   assert_output --partial "ON_ERROR_STOP=1"
 }
 
@@ -870,7 +873,9 @@ EOF
   assert_output --partial "CF_DNS_API_TOKEN is required"
   assert_output --partial "/data/coolify/proxy/.env"
   assert_output --partial "certificatesResolvers.${PRIVATE_TLS_RESOLVER}.acme.dnsChallenge.provider=cloudflare"
-  assert_output --partial 'sed -i "/certificatesresolvers\.letsencrypt\./d" "${compose_file}"'
+  assert_output --partial "reconcile_private_tls_compose() {"
+  assert_output --partial 'service_match = re.search(r"(?ms)^  traefik:\n(?P<body>(?:    .*\n|\n)*)", text)'
+  assert_output --partial "Traefik service block not found in docker-compose.yml"
   assert_output --partial 'default_redirect_file="${dynamic_dir}/default_redirect_503.yaml"'
   assert_output --partial 'coolify_dynamic_file="${dynamic_dir}/coolify.yaml"'
   assert_output --partial 'scrub_default_redirect_public_resolver() {'

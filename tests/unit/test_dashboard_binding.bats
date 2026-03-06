@@ -104,7 +104,7 @@ setup() {
   rm -f "${COOLIFY_ENV_FILE}"
 }
 
-@test "configure_coolify_binding: reports Tailscale bind target without advertising raw IP URL" {
+@test "configure_coolify_binding: reports Tailscale firewall restriction without advertising raw IP URL" {
   BIND_DASHBOARD_TO_TAILSCALE="true"
   DETECTED_TAILSCALE_IP="100.64.1.42"
   DRY_RUN="true"
@@ -113,7 +113,7 @@ setup() {
 
   run configure_coolify_binding
   assert_success
-  assert_output --partial "Dashboard bound on Tailscale IP 100.64.1.42:8000"
+  assert_output --partial "Dashboard access restricted to Tailscale via UFW on 100.64.1.42:8000"
   refute_output --partial "Dashboard accessible at:"
   refute_output --partial "public IP"
 

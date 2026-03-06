@@ -902,10 +902,10 @@ coolify_phase4_binding_dns_shared() {
     sleep 5
   done
 
-  log "Binding Coolify dashboard to Tailscale IP..."
+  log "Restricting Coolify dashboard access to Tailscale via UFW..."
   "${configure_binding_fn}" || die "configure_coolify_binding.sh failed. Fix binding errors before continuing."
   "${mark_binding_state_fn}" || die "Failed to persist bind_dashboard_to_tailscale=true in state."
-  pass "Dashboard binding configured"
+  pass "Dashboard access restrictions configured"
 
   # Set Coolify wildcard domain directly in the database.
   # configure_coolify_binding.sh already waited up to 60s for port 8000 to bind,
@@ -1649,7 +1649,33 @@ if ! docker ps --filter "name=coolify-db" --filter "status=running" --format "{{
   echo "coolify-db container is not running" >&2
   exit 1
 fi
-sql="UPDATE server_settings SET wildcard_domain = 'http://${APP_DOMAIN}' WHERE server_id = 0;"
+sql="$(cat <<SQL
+DO \$\$
+DECLARE
+  targeted_rows integer;
+  total_rows integer;
+BEGIN
+  SELECT COUNT(*) INTO targeted_rows FROM server_settings WHERE server_id = 0;
+  IF targeted_rows = 1 THEN
+    UPDATE server_settings
+       SET wildcard_domain = 'http://${APP_DOMAIN}'
+     WHERE server_id = 0;
+    RETURN;
+  END IF;
+
+  SELECT COUNT(*) INTO total_rows FROM server_settings;
+  IF targeted_rows = 0 AND total_rows = 1 THEN
+    UPDATE server_settings
+       SET wildcard_domain = 'http://${APP_DOMAIN}';
+    RETURN;
+  END IF;
+
+  RAISE EXCEPTION 'Unable to identify a unique Coolify server_settings row (server_id=0 rows=%, total rows=%).',
+    targeted_rows, total_rows;
+END
+\$\$;
+SQL
+)"
 docker exec -i coolify-db sh -ceu '
   IFS= read -r PGPASSWORD
   export PGPASSWORD
@@ -1679,11 +1705,30 @@ if ! docker ps --filter "name=coolify-db" --filter "status=running" --format "{{
   echo "coolify-db container is not running" >&2
   exit 1
 fi
+sql_fqdn=""
 if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
-  sql="UPDATE instance_settings SET is_registration_enabled = false, fqdn = '';"
+  sql_fqdn=""
 else
-  sql="UPDATE instance_settings SET is_registration_enabled = false, fqdn = 'https://${DOMAIN}';"
+  sql_fqdn="https://${DOMAIN}"
 fi
+sql="$(cat <<SQL
+DO \$\$
+DECLARE
+  total_rows integer;
+BEGIN
+  SELECT COUNT(*) INTO total_rows FROM instance_settings;
+  IF total_rows != 1 THEN
+    RAISE EXCEPTION 'Expected exactly one instance_settings row, found %.', total_rows;
+  END IF;
+
+  UPDATE instance_settings
+     SET is_registration_enabled = false,
+         fqdn = '${sql_fqdn}'
+   WHERE id = (SELECT id FROM instance_settings ORDER BY id LIMIT 1);
+END
+\$\$;
+SQL
+)"
 docker exec -i coolify-db sh -ceu '
   IFS= read -r PGPASSWORD
   export PGPASSWORD
@@ -1843,42 +1888,81 @@ CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
 ENV
 chmod 0600 "${env_file}"
 
-# Remove token-specific environment overrides so env_file values are effective.
-sed -i "/^[[:space:]]*-[[:space:]]*CLOUDFLARE_DNS_API_TOKEN=.*/d" "${compose_file}"
-sed -i "/^[[:space:]]*-[[:space:]]*CF_DNS_API_TOKEN=.*/d" "${compose_file}"
+reconcile_private_tls_compose() {
+  python3 - "${compose_file}" "${PRIVATE_TLS_RESOLVER}" "${CF_ZONE_NAME}" <<'PY'
+from pathlib import Path
+import re
+import sys
 
-# Tunnel mode uses the private DNS-01 resolver only; strip any public ACME resolver
-# flags so wildcard catchalls do not trigger public challenge noise.
-sed -i "/certificatesresolvers\\.letsencrypt\\./d" "${compose_file}"
+path = Path(sys.argv[1])
+resolver = sys.argv[2]
+zone = sys.argv[3]
+env_path = "/data/coolify/proxy/.env"
+required_flags = [
+    f"--certificatesresolvers.{resolver}.acme.dnschallenge=true",
+    f"--certificatesresolvers.{resolver}.acme.dnschallenge.provider=cloudflare",
+    f"--certificatesresolvers.{resolver}.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53",
+    f"--certificatesresolvers.{resolver}.acme.email=coolify-admin@{zone}",
+    f"--certificatesresolvers.{resolver}.acme.storage=/traefik/acme.json",
+]
 
-# Ensure Traefik service has env_file reference.
-if ! grep -q "^[[:space:]]*-[[:space:]]*/data/coolify/proxy/.env[[:space:]]*$" "${compose_file}"; then
-  if grep -q "^[[:space:]]*env_file:[[:space:]]*$" "${compose_file}"; then
-    sed -i "/^[[:space:]]*env_file:[[:space:]]*$/a\\      - /data/coolify/proxy/.env" "${compose_file}"
-  else
-    sed -i "/^[[:space:]]*networks:[[:space:]]*$/,/^[[:space:]]*ports:[[:space:]]*$/ {
-/^[[:space:]]*-[[:space:]]*coolify[[:space:]]*$/a\\    env_file:\\n      - /data/coolify/proxy/.env
-}" "${compose_file}"
-  fi
-fi
+text = path.read_text()
+service_match = re.search(r"(?ms)^  traefik:\n(?P<body>(?:    .*\n|\n)*)", text)
+if service_match is None:
+    raise SystemExit("Traefik service block not found in docker-compose.yml")
 
-ensure_compose_flag() {
-  local flag="$1"
-  if grep -Fq -- "${flag}" "${compose_file}"; then
-    return 0
-  fi
-  if grep -Fq -- "--api.insecure=false" "${compose_file}"; then
-    sed -i "/--api\\.insecure=false/i\\      - '${flag}'" "${compose_file}"
-  else
-    sed -i "/^[[:space:]]*command:[[:space:]]*$/a\\      - '${flag}'" "${compose_file}"
-  fi
+body = service_match.group("body")
+body = re.sub(r"(?m)^ {6}- (?:CLOUDFLARE_DNS_API_TOKEN|CF_DNS_API_TOKEN)=.*\n?", "", body)
+body = re.sub(r"(?m)^ {6}- .*certificatesresolvers\.letsencrypt\..*\n?", "", body)
+
+env_match = re.search(r"(?ms)^    env_file:\n(?P<items>(?:^      - .*\n)*)", body)
+if env_match:
+    env_items = env_match.group("items")
+    if f"      - {env_path}\n" not in env_items:
+        env_items = f"{env_items}      - {env_path}\n"
+        body = body[:env_match.start("items")] + env_items + body[env_match.end("items"):]
+else:
+    insert_at = None
+    for marker in ("    image:", "    container_name:", "    restart:"):
+        marker_index = body.find(marker)
+        if marker_index != -1:
+            insert_at = body.find("\n", marker_index)
+            break
+    if insert_at is None:
+        insert_at = 0
+    body = body[: insert_at + 1] + f"    env_file:\n      - {env_path}\n" + body[insert_at + 1 :]
+
+command_match = re.search(r"(?ms)^    command:\n(?P<items>(?:^      - .*\n)*)", body)
+if command_match:
+    command_items = command_match.group("items")
+    insert_at = command_match.end("items")
+else:
+    marker = "    env_file:\n"
+    marker_index = body.find(marker)
+    if marker_index == -1:
+        raise SystemExit("Unable to locate insertion point for Traefik command block")
+    after_env = body.find("\n", marker_index + len(marker))
+    while after_env != -1 and body.startswith("      - ", after_env + 1):
+        after_env = body.find("\n", after_env + 1)
+    command_header = "    command:\n"
+    body = body[: after_env + 1] + command_header + body[after_env + 1 :]
+    insert_at = after_env + 1 + len(command_header)
+    command_items = ""
+
+for flag in required_flags:
+    if flag not in body:
+        command_items += f"      - '{flag}'\n"
+
+if command_match:
+    body = body[:command_match.start("items")] + command_items + body[command_match.end("items"):]
+else:
+    body = body[:insert_at] + command_items + body[insert_at:]
+
+path.write_text(text[:service_match.start("body")] + body + text[service_match.end("body"):])
+PY
 }
 
-ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.dnschallenge=true"
-ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.dnschallenge.provider=cloudflare"
-ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53"
-ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.email=coolify-admin@${CF_ZONE_NAME}"
-ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.storage=/traefik/acme.json"
+reconcile_private_tls_compose
 
 scrub_default_redirect_public_resolver() {
   [[ -f "${default_redirect_file}" ]] || return 0
