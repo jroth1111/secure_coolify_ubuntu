@@ -805,7 +805,64 @@ EOF
   json="$(emit_validate_results_json)"
   assert_json_check_status "${json}" "docker-trust: socket world-writable check" "PASS"
   assert_json_check_status "${json}" "docker-trust: socket owner is root" "PASS"
+  assert_json_check_status "${json}" "docker-trust: docker group has no named members" "PASS"
   assert_json_check_status "${json}" "docker-trust: admin user not in docker group" "PASS"
+}
+
+@test "docker_trust_boundary_check: fails when docker group has named members" {
+  if [[ ! -S "/var/run/docker.sock" ]]; then
+    skip "/var/run/docker.sock unavailable in test environment"
+  fi
+
+  ADMIN_USER="alice"
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  stat() {
+    if [[ "${2:-}" == "/var/run/docker.sock" ]]; then
+      case "${1:-}" in
+        -c)
+          case "${3:-}" in
+            %a) echo 660 ;;
+            %U) echo root ;;
+            %G) echo docker ;;
+          esac
+          return 0
+          ;;
+      esac
+    fi
+    command stat "$@"
+  }
+
+  getent() {
+    if [[ "${1:-}" == "group" && "${2:-}" == "docker" ]]; then
+      echo "docker:x:999:alice,bob"
+      return 0
+    fi
+    command getent "$@"
+  }
+
+  docker() {
+    if [[ "${1:-}" == "ps" && "${2:-}" == "-q" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "inspect" ]]; then
+      return 0
+    fi
+    return 0
+  }
+
+  docker_trust_boundary_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-trust: docker group has no named members" "FAIL"
+  assert_json_check_status "${json}" "docker-trust: admin user not in docker group" "FAIL"
+  assert_json_fail_count "${json}" "2"
 }
 
 @test "docker_user_check: fails fast when iptables is unavailable" {

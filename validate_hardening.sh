@@ -1433,7 +1433,8 @@ docker_trust_boundary_check() {
     if [[ -z "${docker_members}" ]]; then
       record "PASS" "docker-trust: docker group has no named members"
     else
-      record "INFO" "docker-trust: docker group members" "${docker_members}"
+      record "FAIL" "docker-trust: docker group has no named members" \
+        "named members present: ${docker_members} (root-equivalent Docker access)"
     fi
 
     if [[ -n "${ADMIN_USER}" ]] && grep -qE "(^|,)$(regex_escape "${ADMIN_USER}")($|,)" <<< "${docker_members}"; then

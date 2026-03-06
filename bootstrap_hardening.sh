@@ -2619,6 +2619,11 @@ run_post_checks() {
     fi
 
     if getent group docker >/dev/null 2>&1; then
+      local docker_group_members
+      docker_group_members="$(getent group docker | awk -F: '{print $4}')"
+      if [[ -n "${docker_group_members}" ]]; then
+        warn "Post-check: docker group has named members (${docker_group_members}); Docker access is root-equivalent."
+      fi
       if id -nG "${ADMIN_USER}" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
         warn "Post-check: admin user ${ADMIN_USER} is in docker group (root-equivalent Docker access)."
       fi
