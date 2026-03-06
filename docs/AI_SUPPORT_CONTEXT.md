@@ -21,6 +21,7 @@ This server runs **Ubuntu 24.04** hardened for **Coolify** (self-hosted PaaS) wi
 - **Swap file** for OOM protection (configurable, default 2G).
 - **NTP synchronization** verified at boot.
 - **Tunnel private-only profile (when enabled):** dashboard/realtime hostnames are blocked in cloudflared ingress and served privately via Tailscale-routed host DNS + managed Traefik routes.
+- **Private hostname invariant:** `/etc/hosts` must not pin `DOMAIN` or `ws.DOMAIN` to `127.0.0.1` / `::1`. Those names stay DNS-driven to the node Tailscale IP.
 
 ## Key Files
 

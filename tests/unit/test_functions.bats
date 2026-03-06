@@ -571,12 +571,16 @@ EOF
 @test "parse_args: --env-file loads variables" {
   local tmpfile
   tmpfile="$(mktemp)"
-  echo 'ADMIN_USER="envuser"' > "${tmpfile}"
+  cat > "${tmpfile}" <<'EOF'
+ADMIN_USER="envuser"
+DOMAIN="vps.example.com"
+EOF
   chmod 600 "${tmpfile}"
-  run bash -c 'source "'"${SCRIPT}"'" && parse_args --env-file "'"${tmpfile}"'" && echo "${ADMIN_USER}"'
+  run bash -c 'source "'"${SCRIPT}"'" && parse_args --env-file "'"${tmpfile}"'" && echo "${ADMIN_USER} ${DOMAIN}"'
   rm -f "${tmpfile}"
   assert_success
   assert_output --partial "envuser"
+  assert_output --partial "vps.example.com"
 }
 
 @test "parse_args: CLI flag overrides env-file" {
@@ -656,20 +660,25 @@ EOF
     unescape_backslash_sequences "ssh-rsa\\ AAA" >/dev/null
     [[ "$(unescape_backslash_sequences "ssh-rsa\\ AAA")" == "ssh-rsa AAA" ]]
     env_file_key_supported "ADMIN_USER"
+    env_file_key_supported "DOMAIN"
     ! env_file_key_supported "NOT_ALLOWED"
     decode_env_file_value "\"alice\"" >/dev/null
     [[ "$(decode_env_file_value "\"alice\"")" == "alice" ]]
     [[ "$(decode_env_file_value "ssh-rsa\\ AAA")" == "ssh-rsa AAA" ]]
     set_env_file_value "ADMIN_USER" "from-setter"
+    set_env_file_value "DOMAIN" "vps.example.com"
     [[ "${ADMIN_USER}" == "from-setter" ]]
+    [[ "${DOMAIN}" == "vps.example.com" ]]
     env_file="$(mktemp)"
     cat > "${env_file}" <<EOF
 export ADMIN_USER="env-loader"
+DOMAIN="vps.example.com"
 TAILSCALE_DIRECT_WAN=true
 EOF
     chmod 600 "${env_file}"
     load_env_file_safely "${env_file}"
     [[ "${ADMIN_USER}" == "env-loader" ]]
+    [[ "${DOMAIN}" == "vps.example.com" ]]
     [[ "${TAILSCALE_DIRECT_WAN}" == "true" ]]
     rm -f "${env_file}"
   '

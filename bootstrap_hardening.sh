@@ -13,6 +13,7 @@ LOG_FILE="/var/log/bootstrap-hardening.log"
 REPORT_FILE="/var/log/bootstrap-hardening-report.json"
 STATE_DIR="/var/lib/bootstrap-hardening"
 STATE_FILE="${STATE_DIR}/state"
+HOSTS_FILE="${HOSTS_FILE:-/etc/hosts}"
 
 SSH_DROPIN_FILE="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
 JOURNALD_DROPIN_FILE="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
@@ -42,6 +43,7 @@ COOLIFY_ENV_FILE="/data/coolify/source/.env"
 
 ADMIN_USER="${ADMIN_USER:-}"
 ADMIN_PUBKEY="${ADMIN_PUBKEY:-}"
+DOMAIN="${DOMAIN:-}"
 TAILSCALE_CIDR="${TAILSCALE_CIDR:-100.64.0.0/10}"
 SSH_PORT="${SSH_PORT:-22}"
 WAN_IFACE="${WAN_IFACE:-}"
@@ -118,6 +120,7 @@ Required:
   --admin-pubkey "<ssh key>"    SSH public key to add for admin user
 
 Optional:
+  --domain <fqdn>               Dashboard domain for private-hostname /etc/hosts normalization
   --tailscale-cidr <cidr>       Tailscale CIDR hint (default: 100.64.0.0/10)
   --ssh-port <port>             SSH port (default: 22)
   --wan-iface <iface>           WAN interface (default: auto-detected)
@@ -213,7 +216,7 @@ unescape_backslash_sequences() {
 
 env_file_key_supported() {
   case "$1" in
-    ADMIN_USER|ADMIN_PUBKEY|TAILSCALE_CIDR|SSH_PORT|WAN_IFACE|ENABLE_AUTO_REBOOT|AUTO_REBOOT_TIME|UPDATE_PROFILE|JOURNAL_RETENTION|JOURNAL_MAX_USE|TUNNEL_MODE|SWAP_SIZE|TIMEZONE|DRY_RUN|FORCE|UPGRADE_MAIL|BIND_DASHBOARD_TO_TAILSCALE|INSTALL_TAILSCALE|TAILSCALE_AUTH_KEY|TAILSCALE_DIRECT_WAN|STRICT_DOCKER_SSH_CIDRS|INSECURE_ENV|DOCKER_NPROC_HARD|DOCKER_NPROC_SOFT|ALLOWED_PRIVILEGED_CONTAINERS)
+    ADMIN_USER|ADMIN_PUBKEY|DOMAIN|TAILSCALE_CIDR|SSH_PORT|WAN_IFACE|ENABLE_AUTO_REBOOT|AUTO_REBOOT_TIME|UPDATE_PROFILE|JOURNAL_RETENTION|JOURNAL_MAX_USE|TUNNEL_MODE|SWAP_SIZE|TIMEZONE|DRY_RUN|FORCE|UPGRADE_MAIL|BIND_DASHBOARD_TO_TAILSCALE|INSTALL_TAILSCALE|TAILSCALE_AUTH_KEY|TAILSCALE_DIRECT_WAN|STRICT_DOCKER_SSH_CIDRS|INSECURE_ENV|DOCKER_NPROC_HARD|DOCKER_NPROC_SOFT|ALLOWED_PRIVILEGED_CONTAINERS)
       return 0
       ;;
     *)
@@ -226,7 +229,7 @@ set_env_file_value() {
   local key="$1"
   local value="$2"
   case "${key}" in
-    ADMIN_USER|ADMIN_PUBKEY|TAILSCALE_CIDR|SSH_PORT|WAN_IFACE|ENABLE_AUTO_REBOOT|AUTO_REBOOT_TIME|UPDATE_PROFILE|JOURNAL_RETENTION|JOURNAL_MAX_USE|TUNNEL_MODE|SWAP_SIZE|TIMEZONE|DRY_RUN|FORCE|UPGRADE_MAIL|BIND_DASHBOARD_TO_TAILSCALE|INSTALL_TAILSCALE|TAILSCALE_AUTH_KEY|TAILSCALE_DIRECT_WAN|STRICT_DOCKER_SSH_CIDRS|INSECURE_ENV|DOCKER_NPROC_HARD|DOCKER_NPROC_SOFT|ALLOWED_PRIVILEGED_CONTAINERS)
+    ADMIN_USER|ADMIN_PUBKEY|DOMAIN|TAILSCALE_CIDR|SSH_PORT|WAN_IFACE|ENABLE_AUTO_REBOOT|AUTO_REBOOT_TIME|UPDATE_PROFILE|JOURNAL_RETENTION|JOURNAL_MAX_USE|TUNNEL_MODE|SWAP_SIZE|TIMEZONE|DRY_RUN|FORCE|UPGRADE_MAIL|BIND_DASHBOARD_TO_TAILSCALE|INSTALL_TAILSCALE|TAILSCALE_AUTH_KEY|TAILSCALE_DIRECT_WAN|STRICT_DOCKER_SSH_CIDRS|INSECURE_ENV|DOCKER_NPROC_HARD|DOCKER_NPROC_SOFT|ALLOWED_PRIVILEGED_CONTAINERS)
       printf -v "${key}" '%s' "${value}"
       ;;
     *)
@@ -357,6 +360,11 @@ parse_args() {
       --admin-pubkey)
         require_value "$1" "${2:-}"
         ADMIN_PUBKEY="$2"
+        shift 2
+        ;;
+      --domain)
+        require_value "$1" "${2:-}"
+        DOMAIN="$2"
         shift 2
         ;;
       --tailscale-cidr)
@@ -555,6 +563,11 @@ validate_inputs() {
     || die "TIMEZONE must be an IANA timezone name (for example: Australia/Melbourne or UTC)."
   [[ -e "/usr/share/zoneinfo/${TIMEZONE}" ]] \
     || die "TIMEZONE '${TIMEZONE}' not found under /usr/share/zoneinfo."
+
+  if [[ -n "${DOMAIN}" ]]; then
+    [[ "${DOMAIN}" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ && "${DOMAIN}" == *.* && "${DOMAIN}" != *..* ]] \
+      || die "DOMAIN must be a valid FQDN (got: ${DOMAIN})."
+  fi
 
   # Validate split-horizon binding options
   if is_true "${BIND_DASHBOARD_TO_TAILSCALE}" && ! is_true "${DRY_RUN}"; then
@@ -1287,6 +1300,129 @@ configure_timezone() {
   [[ "${current_tz}" == "${TIMEZONE}" ]] \
     || die "Failed to set timezone to ${TIMEZONE} (current: ${current_tz:-unknown})."
   log "Timezone configured: ${TIMEZONE}."
+}
+
+normalize_private_hosts_file() {
+  if [[ -z "${DOMAIN}" ]]; then
+    log "DOMAIN not provided; skipping /etc/hosts private-domain normalization."
+    return 0
+  fi
+
+  if [[ ! -f "${HOSTS_FILE}" ]]; then
+    warn "${HOSTS_FILE} not found; skipping private-domain normalization."
+    return 0
+  fi
+
+  local short_host tmp awk_rc
+  short_host="$(hostname -s 2>/dev/null || true)"
+
+  if is_true "${DRY_RUN}"; then
+    if awk -v dashboard="${DOMAIN}" -v websocket="ws.${DOMAIN}" '
+      $0 !~ /^[[:space:]]*#/ && NF > 1 {
+        ip=$1
+        if (ip ~ /^127\./ || ip == "::1") {
+          for (i=2; i<=NF; i++) {
+            if ($i == dashboard || $i == websocket) exit 0
+          }
+        }
+      }
+      END { exit 1 }
+    ' "${HOSTS_FILE}"; then
+      log "DRY-RUN: would remove ${DOMAIN} and ws.${DOMAIN} from loopback entries in ${HOSTS_FILE}"
+    else
+      log "DRY-RUN: ${HOSTS_FILE} already leaves ${DOMAIN} DNS-driven"
+    fi
+    return 0
+  fi
+
+  tmp="$(mktemp)"
+  if awk -v dashboard="${DOMAIN}" -v websocket="ws.${DOMAIN}" -v short="${short_host}" '
+    function is_loopback(ip) { return ip ~ /^127\./ || ip == "::1" }
+    function has_token(arr, count, value,   idx) {
+      for (idx = 1; idx <= count; idx++) {
+        if (arr[idx] == value) {
+          return 1
+        }
+      }
+      return 0
+    }
+    {
+      if ($0 ~ /^[[:space:]]*#/) {
+        print
+        next
+      }
+      if (NF == 0) {
+        print ""
+        next
+      }
+
+      ip = $1
+      if (!is_loopback(ip)) {
+        print
+        next
+      }
+
+      if (ip == "127.0.1.1") {
+        have_12701 = 1
+      }
+
+      keep_count = 0
+      delete keep
+      for (i = 2; i <= NF; i++) {
+        token = $i
+        if (token == dashboard || token == websocket) {
+          changed = 1
+          continue
+        }
+        keep[++keep_count] = token
+      }
+
+      if (ip == "127.0.1.1" && short != "" && short != "localhost" && !has_token(keep, keep_count, short)) {
+        keep[++keep_count] = short
+        changed = 1
+      }
+
+      if (keep_count == 0) {
+        changed = 1
+        next
+      }
+
+      printf "%s", ip
+      for (i = 1; i <= keep_count; i++) {
+        printf " %s", keep[i]
+      }
+      printf "\n"
+    }
+    END {
+      if (!have_12701 && short != "" && short != "localhost") {
+        print "127.0.1.1 " short
+        changed = 1
+      }
+      exit changed ? 10 : 0
+    }
+  ' "${HOSTS_FILE}" > "${tmp}"; then
+    awk_rc=0
+  else
+    awk_rc=$?
+  fi
+
+  case "${awk_rc}" in
+    0)
+      rm -f "${tmp}"
+      log "${HOSTS_FILE} already keeps ${DOMAIN} and ws.${DOMAIN} DNS-driven."
+      return 0
+      ;;
+    10)
+      install -m 0644 -o root -g root "${tmp}" "${HOSTS_FILE}"
+      rm -f "${tmp}"
+      log "Normalized ${HOSTS_FILE} to keep ${DOMAIN} and ws.${DOMAIN} DNS-driven."
+      return 0
+      ;;
+    *)
+      rm -f "${tmp}"
+      die "Failed to normalize ${HOSTS_FILE} for ${DOMAIN}."
+      ;;
+  esac
 }
 
 configure_swap() {
@@ -2773,6 +2909,7 @@ write_state() {
 script_version=${SCRIPT_VERSION}
 applied_at=$(date -Iseconds)
 admin_user=${ADMIN_USER}
+domain=${DOMAIN}
 wan_iface=${WAN_IFACE}
 ssh_port=${SSH_PORT}
 tailscale_cidr=${TAILSCALE_CIDR}
@@ -3242,6 +3379,9 @@ main() {
 
   log "Configuring system timezone (${TIMEZONE})."
   configure_timezone
+
+  log "Normalizing private hostname loopback overrides."
+  normalize_private_hosts_file
 
   log "Verifying NTP time synchronization."
   ensure_timesync

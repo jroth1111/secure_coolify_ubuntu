@@ -2066,6 +2066,13 @@ entries:
   behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::tailscale_runssh_pref_value: returns parsed RunSSH preference"
   checks:
   - "tests/unit/test_bootstrap_additional_behavior.bats::tailscale_runssh_pref_value: returns parsed RunSSH preference"
+- id: LS-BOOT-087
+  script_path: bootstrap_hardening.sh
+  function: normalize_private_hosts_file
+  criticality: security
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::normalize_private_hosts_file: removes private dashboard loopback overrides and keeps short hostname alias"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::normalize_private_hosts_file: removes private dashboard loopback overrides and keeps short hostname alias"
 - id: LS-VAL-041
   script_path: validate_hardening.sh
   function: apport_check
@@ -2122,6 +2129,14 @@ entries:
   behavior_test: "tests/unit/test_validate_additional_behavior.bats::tailscale_runssh_pref_value: returns parsed RunSSH preference"
   checks:
   - "tests/unit/test_validate_additional_behavior.bats::tailscale_runssh_pref_value: returns parsed RunSSH preference"
+- id: LS-VAL-049
+  script_path: validate_hardening.sh
+  function: private_domain_hosts_check
+  criticality: security
+  behavior_test: "tests/unit/test_validate_additional_behavior.bats::private_domain_hosts_check: fails when dashboard hosts are loopback-pinned"
+  checks:
+  - "tests/unit/test_validate_additional_behavior.bats::private_domain_hosts_check: passes when dashboard hosts are not loopback-pinned"
+  - "tests/unit/test_validate_additional_behavior.bats::private_domain_hosts_check: fails when dashboard hosts are loopback-pinned"
 - id: LS-DEP-028
   script_path: deploy.sh
   function: gate_c_failures_are_transient

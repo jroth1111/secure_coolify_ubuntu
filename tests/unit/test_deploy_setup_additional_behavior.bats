@@ -310,6 +310,45 @@ EOF
   assert_success
 }
 
+@test "phase1_upload_harden: uploads DOMAIN in bootstrap env file" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"${tmpdir}\"" EXIT
+    SCRIPT_DIR="${tmpdir}"
+    for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
+      : > "${tmpdir}/${script}"
+    done
+    captured_env="${tmpdir}/deploy.env.captured"
+    SERVER_IP="203.0.113.10"
+    ADMIN_USER="alice"
+    ADMIN_PUBKEY="ssh-ed25519 AAAA test@example"
+    DOMAIN="vps.example.com"
+    DEPLOY_MODE="tunnel"
+    SWAP_SIZE="2G"
+    SERVER_TIMEZONE="UTC"
+    TAILSCALE_AUTH_KEY="tskey-auth-test"
+    TAILSCALE_DIRECT_WAN="false"
+    REMOTE_DEPLOY_ENV_PATH="/root/deploy.env"
+    scp_root() {
+      if [[ "${2:-}" == "root@203.0.113.10:/root/deploy.env" ]]; then
+        cp "${1}" "${captured_env}"
+      fi
+      return 0
+    }
+    ssh_root() {
+      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force"* ]]; then
+        echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.10"
+      fi
+      return 0
+    }
+    run_with_heartbeat() { local label="$1"; shift; "$@"; }
+    phase1_upload_harden
+    grep -q "^DOMAIN=\\\"vps.example.com\\\"$" "${captured_env}"
+  '
+  assert_success
+}
+
 @test "phase3_docker_coolify (deploy): executes docker/coolify reconcile flow" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"
@@ -361,6 +400,39 @@ EOF
     source "'"${SETUP_SCRIPT}"'"
     coolify_reconcile_docker_daemon_script() { echo "echo reconcile"; }
     reconcile_docker_daemon_local
+  '
+  assert_success
+}
+
+@test "phase1_harden (setup): writes DOMAIN into bootstrap env file" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"${tmpdir}\"" EXIT
+    SCRIPT_DIR="${tmpdir}"
+    DEPLOY_ENV_FILE="${tmpdir}/deploy.env"
+    captured_env="${tmpdir}/captured.env"
+    SERVER_IP="203.0.113.10"
+    ADMIN_USER="coolifyadmin"
+    ADMIN_PUBKEY="ssh-ed25519 AAAATEST key"
+    DOMAIN="vps.example.com"
+    TAILSCALE_AUTH_KEY="tskey-auth-test"
+    DEPLOY_MODE="tunnel"
+    SWAP_SIZE="2G"
+    SERVER_TIMEZONE="UTC"
+    TAILSCALE_DIRECT_WAN="false"
+
+    cat > "${tmpdir}/bootstrap_hardening.sh" <<EOF
+#!/usr/bin/env bash
+cp "\$2" "${captured_env}"
+echo "bootstrap stub"
+EOF
+    chmod +x "${tmpdir}/bootstrap_hardening.sh"
+
+    tailscale() { echo "100.64.0.44"; }
+
+    phase1_harden
+    grep -q "^DOMAIN=vps.example.com$" "${captured_env}"
   '
   assert_success
 }

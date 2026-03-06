@@ -123,6 +123,39 @@ setup() {
   [ ! -f "${marker}" ]
 }
 
+@test "normalize_private_hosts_file: removes private dashboard loopback overrides and keeps short hostname alias" {
+  local hosts_file
+  hosts_file="$(mktemp)"
+  cat > "${hosts_file}" <<'EOF'
+127.0.0.1 localhost vps.example.com ws.vps.example.com
+
+# The following lines are desirable for IPv6 capable hosts
+::1 ip6-localhost ip6-loopback
+EOF
+
+  HOSTS_FILE="${hosts_file}"
+  DOMAIN="vps.example.com"
+  DRY_RUN="false"
+  hostname() {
+    if [[ "${1:-}" == "-s" ]]; then
+      echo "vps"
+      return 0
+    fi
+    echo "vps.example.com"
+  }
+
+  run normalize_private_hosts_file
+  assert_success
+  run grep -q '^127\.0\.0\.1 localhost$' "${hosts_file}"
+  assert_success
+  run grep -q '^127\.0\.1\.1 vps$' "${hosts_file}"
+  assert_success
+  run grep -q 'vps\.example\.com' "${hosts_file}"
+  assert_failure
+
+  rm -f "${hosts_file}"
+}
+
 @test "configure_networkd_wait_online: dry-run disables stray networkd units when ifupdown is authoritative" {
   DRY_RUN="true"
   NETWORKD_WAIT_ONLINE_DROPIN="$(mktemp)"
@@ -139,6 +172,38 @@ setup() {
   assert_output --partial "systemctl disable systemd-networkd.socket systemd-networkd.service networkd-dispatcher.service"
   assert_output --partial "ifupdown is authoritative"
   [ ! -f "${NETWORKD_WAIT_ONLINE_DROPIN}" ]
+}
+
+@test "write_state: persists domain for later validation" {
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  STATE_DIR="${tmpdir}"
+  STATE_FILE="${tmpdir}/state"
+  ADMIN_USER="coolifyadmin"
+  DOMAIN="vps.example.com"
+  WAN_IFACE="eth0"
+  SSH_PORT="22"
+  TAILSCALE_CIDR="100.64.0.0/10"
+  TUNNEL_MODE="true"
+  SWAP_SIZE="2G"
+  JOURNAL_RETENTION="3month"
+  UPDATE_PROFILE="security-only"
+  TIMEZONE="UTC"
+  STRICT_DOCKER_SSH_CIDRS="true"
+  DOCKER_SSH_CIDRS=("172.20.0.0/16")
+  DOCKER_NPROC_HARD="8192"
+  DOCKER_NPROC_SOFT="4096"
+  ALLOWED_PRIVILEGED_CONTAINERS=""
+  TAILSCALE_DIRECT_WAN="false"
+  BIND_DASHBOARD_TO_TAILSCALE="false"
+  INSTALL_TAILSCALE="true"
+  DRY_RUN="false"
+
+  write_state
+  run grep -q '^domain=vps\.example\.com$' "${STATE_FILE}"
+  assert_success
+
+  rm -rf "${tmpdir}"
 }
 
 @test "disable_unused_services: dry-run logs service disable actions" {

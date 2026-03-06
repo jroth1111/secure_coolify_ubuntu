@@ -439,6 +439,7 @@ phase1_upload_harden() {
   {
     printf 'ADMIN_USER="%s"\n' "${ADMIN_USER//\"/\\\"}"
     printf 'ADMIN_PUBKEY="%s"\n' "${ADMIN_PUBKEY//\"/\\\"}"
+    printf 'DOMAIN="%s"\n' "${DOMAIN//\"/\\\"}"
     printf 'TAILSCALE_CIDR="100.64.0.0/10"\n'
     printf 'SSH_PORT="22"\n'
     printf 'TUNNEL_MODE="%s"\n' "${tunnel_flag//\"/\\\"}"

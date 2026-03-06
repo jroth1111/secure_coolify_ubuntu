@@ -915,6 +915,47 @@ EOF
   rm -rf "${sock_dir}"
 }
 
+@test "private_domain_hosts_check: passes when dashboard hosts are not loopback-pinned" {
+  local hosts_file
+  hosts_file="$(mktemp)"
+  cat > "${hosts_file}" <<'EOF'
+127.0.0.1 localhost
+127.0.1.1 vps
+EOF
+
+  DOMAIN="vps.example.com"
+  HOSTS_FILE="${hosts_file}"
+
+  private_domain_hosts_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "hosts: dashboard domain not loopback-pinned" "PASS"
+  assert_json_check_status "${json}" "hosts: websocket domain not loopback-pinned" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  rm -f "${hosts_file}"
+}
+
+@test "private_domain_hosts_check: fails when dashboard hosts are loopback-pinned" {
+  local hosts_file
+  hosts_file="$(mktemp)"
+  cat > "${hosts_file}" <<'EOF'
+127.0.0.1 localhost vps.example.com ws.vps.example.com
+EOF
+
+  DOMAIN="vps.example.com"
+  HOSTS_FILE="${hosts_file}"
+
+  private_domain_hosts_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "hosts: dashboard domain not loopback-pinned" "FAIL"
+  assert_json_check_status "${json}" "hosts: websocket domain not loopback-pinned" "FAIL"
+  assert_json_fail_count "${json}" "2"
+
+  rm -f "${hosts_file}"
+}
+
 @test "docker_trust_boundary_check: fails when privileged containers are not allowlisted" {
   local sock_dir sock_pid
   sock_dir="$(mktemp -d)"

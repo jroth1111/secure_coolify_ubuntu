@@ -270,6 +270,7 @@ phase1_harden() {
   cat > "${deploy_env_file}" <<EOF
 ADMIN_USER=${ADMIN_USER}
 ADMIN_PUBKEY="${ADMIN_PUBKEY}"
+DOMAIN=${DOMAIN}
 TAILSCALE_CIDR=100.64.0.0/10
 SSH_PORT=22
 TUNNEL_MODE=${tunnel_flag}

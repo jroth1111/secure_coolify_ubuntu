@@ -418,6 +418,7 @@ Both deployment modes use Cloudflare's edge for public app TLS via Universal SSL
 
 - **Tunnel mode (apps via wildcard)**: Cloudflare terminates TLS at the edge. Public tunnel ingress is wildcard-app only (`*.app-domain` to `localhost:80`).
 - **Tunnel mode (private dashboard/realtime hostnames)**: cloudflared blocks public ingress (`http_status:404`), exact host DNS (`DOMAIN`, `ws.DOMAIN`) is pinned to server `TS_IP` as DNS-only, and Traefik issues trusted certs for those exact hosts using ACME DNS-01 (Cloudflare token).
+- Bootstrap normalizes `/etc/hosts` so `DOMAIN` and `ws.DOMAIN` are never pinned to loopback. The private dashboard path must stay DNS-driven to the Tailscale IP, not overridden locally.
 - **Standard mode** (proxied + Full SSL): Cloudflare terminates edge TLS and connects to the origin via HTTPS; Full mode accepts any cert.
 
 For custom Full (Strict) scenarios beyond script-managed private hostnames, you can still configure additional Traefik DNS-01 certificates in Coolify UI (Servers > Proxy). See [Coolify wildcard cert docs](https://coolify.io/docs/knowledge-base/proxy/traefik/wildcard-certs).

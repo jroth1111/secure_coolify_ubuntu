@@ -13,6 +13,7 @@ set -Eeuo pipefail
 STATE_FILE="/var/lib/bootstrap-hardening/state"
 JOURNALD_DROPIN="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
 AUDITD_CONF="/etc/audit/auditd.conf"
+HOSTS_FILE="${HOSTS_FILE:-/etc/hosts}"
 JSON_MODE="false"
 HEALTH_CHECK_MODE="false"
 GATE_C_MODE="false"
@@ -116,6 +117,7 @@ ifupdown_is_authoritative() {
 
 # Load state file for context (non-fatal if missing)
 ADMIN_USER=""
+DOMAIN=""
 SSH_PORT="22"
 TUNNEL_MODE="false"
 WAN_IFACE=""
@@ -146,6 +148,7 @@ load_state_context() {
   # shellcheck disable=SC1090
   source "${STATE_FILE}"
   ADMIN_USER="${admin_user:-}"
+  DOMAIN="${domain:-}"
   SSH_PORT="${ssh_port:-22}"
   TUNNEL_MODE="${tunnel_mode:-false}"
   WAN_IFACE="${wan_iface:-}"
@@ -182,6 +185,44 @@ is_tailscale_ipv4() {
   (( o2 >= 64 && o2 <= 127 )) || return 1
   (( o3 >= 0 && o3 <= 255 )) || return 1
   (( o4 >= 0 && o4 <= 255 )) || return 1
+}
+
+private_domain_hosts_check() {
+  if [[ -z "${DOMAIN}" ]]; then
+    record "INFO" "hosts: private domain loopback override" "domain not recorded in state; skipped"
+    return
+  fi
+
+  if [[ ! -f "${HOSTS_FILE}" ]]; then
+    record "FAIL" "hosts: private domain loopback override" "${HOSTS_FILE} not found"
+    return
+  fi
+
+  local pair host label loopback_hits
+  for pair in "${DOMAIN}:dashboard domain" "ws.${DOMAIN}:websocket domain"; do
+    host="${pair%%:*}"
+    label="${pair##*:}"
+    loopback_hits="$(awk -v target="${host}" '
+      $0 !~ /^[[:space:]]*#/ && NF > 1 {
+        ip = $1
+        if (ip ~ /^127\./ || ip == "::1") {
+          for (i = 2; i <= NF; i++) {
+            if ($i == target) {
+              print ip
+              break
+            }
+          }
+        }
+      }
+    ' "${HOSTS_FILE}" | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+
+    if [[ -n "${loopback_hits}" ]]; then
+      record "FAIL" "hosts: ${label} not loopback-pinned" \
+        "${host} mapped to ${loopback_hits} in ${HOSTS_FILE}"
+    else
+      record "PASS" "hosts: ${label} not loopback-pinned"
+    fi
+  done
 }
 
 tailscale_runssh_pref_value() {
@@ -2489,6 +2530,7 @@ main() {
   apport_check
   cron_check
   networkd_wait_online_check
+  private_domain_hosts_check
   tailscale_check
   coolify_binding_check
   if [[ "${GATE_C_MODE}" == "true" ]]; then
