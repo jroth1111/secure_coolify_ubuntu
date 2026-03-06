@@ -2023,58 +2023,84 @@ required_flags = [
 ]
 
 text = path.read_text()
-service_match = re.search(r"(?ms)^  traefik:\n(?P<body>(?:    .*\n|\n)*)", text)
-if service_match is None:
+lines = text.splitlines(keepends=True)
+
+service_start = next((idx for idx, line in enumerate(lines) if re.match(r"^  traefik:\s*$", line)), None)
+if service_start is None:
     raise SystemExit("Traefik service block not found in docker-compose.yml")
 
-body = service_match.group("body")
-body = re.sub(r"(?m)^ {6}- (?:CLOUDFLARE_DNS_API_TOKEN|CF_DNS_API_TOKEN)=.*\n?", "", body)
-body = re.sub(r"(?m)^ {6}- .*certificatesresolvers\.letsencrypt\..*\n?", "", body)
+service_end = service_start + 1
+while service_end < len(lines) and not re.match(r"^  [A-Za-z0-9_-]+:\s*$", lines[service_end]):
+    service_end += 1
 
-env_match = re.search(r"(?ms)^    env_file:\n(?P<items>(?:^      - .*\n)*)", body)
-if env_match:
-    env_items = env_match.group("items")
-    if f"      - {env_path}\n" not in env_items:
-        env_items = f"{env_items}      - {env_path}\n"
-        body = body[:env_match.start("items")] + env_items + body[env_match.end("items"):]
-else:
-    insert_at = None
-    for marker in ("    image:", "    container_name:", "    restart:"):
-        marker_index = body.find(marker)
-        if marker_index != -1:
-            insert_at = body.find("\n", marker_index)
+service_lines = lines[service_start + 1 : service_end]
+scrubbed_service_lines = []
+resolver_flag_pattern = re.compile(rf"^ {{6}}- '?--certificatesresolvers\.{re.escape(resolver)}\..*'?\s*$")
+for line in service_lines:
+    if re.match(r"^ {6}- (?:CLOUDFLARE_DNS_API_TOKEN|CF_DNS_API_TOKEN)=.*$", line):
+        continue
+    if re.match(r"^ {6}- .*certificatesresolvers\.letsencrypt\..*$", line):
+        continue
+    if resolver_flag_pattern.match(line):
+        continue
+    scrubbed_service_lines.append(line)
+service_lines = scrubbed_service_lines
+
+def find_section(block_lines, key):
+    prefix = f"    {key}:"
+    for idx, line in enumerate(block_lines):
+        if line.startswith(prefix):
+            return idx
+    return None
+
+def section_end(block_lines, start_idx):
+    idx = start_idx + 1
+    while idx < len(block_lines):
+        if re.match(r"^    [A-Za-z0-9_-]+:\s*$", block_lines[idx]):
             break
-    if insert_at is None:
-        insert_at = 0
-    body = body[: insert_at + 1] + f"    env_file:\n      - {env_path}\n" + body[insert_at + 1 :]
+        idx += 1
+    return idx
 
-command_match = re.search(r"(?ms)^    command:\n(?P<items>(?:^      - .*\n)*)", body)
-if command_match:
-    command_items = command_match.group("items")
-    insert_at = command_match.end("items")
+env_idx = find_section(service_lines, "env_file")
+if env_idx is None:
+    insert_idx = 0
+    for idx, line in enumerate(service_lines):
+        if re.match(r"^    (image|container_name|restart):", line):
+            insert_idx = idx + 1
+            break
+    service_lines[insert_idx:insert_idx] = ["    env_file:\n", f"      - {env_path}\n"]
+    env_idx = find_section(service_lines, "env_file")
 else:
-    marker = "    env_file:\n"
-    marker_index = body.find(marker)
-    if marker_index == -1:
+    env_end = section_end(service_lines, env_idx)
+    env_items = service_lines[env_idx + 1 : env_end]
+    if f"      - {env_path}\n" not in env_items:
+        env_items.append(f"      - {env_path}\n")
+        service_lines = service_lines[: env_idx + 1] + env_items + service_lines[env_end:]
+
+command_idx = find_section(service_lines, "command")
+if command_idx is None:
+    env_idx = find_section(service_lines, "env_file")
+    if env_idx is None:
         raise SystemExit("Unable to locate insertion point for Traefik command block")
-    after_env = body.find("\n", marker_index + len(marker))
-    while after_env != -1 and body.startswith("      - ", after_env + 1):
-        after_env = body.find("\n", after_env + 1)
-    command_header = "    command:\n"
-    body = body[: after_env + 1] + command_header + body[after_env + 1 :]
-    insert_at = after_env + 1 + len(command_header)
-    command_items = ""
+    insert_idx = section_end(service_lines, env_idx)
+    service_lines[insert_idx:insert_idx] = ["    command:\n"]
+    command_idx = insert_idx
+
+command_end = section_end(service_lines, command_idx)
+command_items = service_lines[command_idx + 1 : command_end]
+existing_command_flags = set()
+for line in command_items:
+    match = re.match(r"^ {6}- '?([^'\n]+)'?\s*$", line)
+    if match:
+        existing_command_flags.add(match.group(1))
 
 for flag in required_flags:
-    if flag not in body:
-        command_items += f"      - '{flag}'\n"
+    if flag not in existing_command_flags:
+        command_items.append(f"      - '{flag}'\n")
 
-if command_match:
-    body = body[:command_match.start("items")] + command_items + body[command_match.end("items"):]
-else:
-    body = body[:insert_at] + command_items + body[insert_at:]
-
-path.write_text(text[:service_match.start("body")] + body + text[service_match.end("body"):])
+service_lines = service_lines[: command_idx + 1] + command_items + service_lines[command_end:]
+lines = lines[: service_start + 1] + service_lines + lines[service_end:]
+path.write_text("".join(lines))
 PY
 }
 

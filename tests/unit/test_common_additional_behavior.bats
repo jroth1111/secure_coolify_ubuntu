@@ -1033,7 +1033,9 @@ EOF
   assert_output --partial "/data/coolify/proxy/.env"
   assert_output --partial "certificatesResolvers.${PRIVATE_TLS_RESOLVER}.acme.dnsChallenge.provider=cloudflare"
   assert_output --partial "reconcile_private_tls_compose() {"
-  assert_output --partial 'service_match = re.search(r"(?ms)^  traefik:\n(?P<body>(?:    .*\n|\n)*)", text)'
+  assert_output --partial 'service_start = next((idx for idx, line in enumerate(lines) if re.match(r"^  traefik:\s*$", line)), None)'
+  assert_output --partial 'resolver_flag_pattern = re.compile(rf"^ {{6}}- '\''?--certificatesresolvers\.{re.escape(resolver)}\..*'\''?\s*$")'
+  assert_output --partial 'existing_command_flags = set()'
   assert_output --partial "Traefik service block not found in docker-compose.yml"
   assert_output --partial 'default_redirect_file="${dynamic_dir}/default_redirect_503.yaml"'
   assert_output --partial 'coolify_dynamic_file="${dynamic_dir}/coolify.yaml"'

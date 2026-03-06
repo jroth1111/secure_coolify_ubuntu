@@ -1331,6 +1331,10 @@ EOF
 services:
   traefik:
     command:
+      - '--certificatesresolvers.privatedns.acme.dnschallenge=true'
+      - '--certificatesresolvers.privatedns.acme.dnschallenge.provider=cloudflare'
+      - '--certificatesresolvers.privatedns.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53'
+      - '--certificatesresolvers.privatedns.acme.email=coolify-admin@example.com'
       - '--certificatesresolvers.privatedns.acme.storage=/traefik/acme.json'
 EOF
 
@@ -1430,6 +1434,7 @@ EOF
   local json
   json="$(emit_validate_results_json)"
   assert_json_check_status "${json}" "cloudflared: public letsencrypt resolver removed" "PASS"
+  assert_json_check_status "${json}" "cloudflared: private TLS resolver present in Traefik command" "PASS"
   assert_json_check_status "${json}" "cloudflared: catchall route avoids public letsencrypt" "PASS"
   assert_json_check_status "${json}" "cloudflared: generated Coolify HTTPS routers disabled" "PASS"
   assert_json_check_status "${json}" "cloudflared: dashboard host served TLS cert" "PASS"
@@ -1592,10 +1597,11 @@ EOF
   cloudflared_check
   local json
   json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "cloudflared: private TLS resolver present in Traefik command" "FAIL"
   assert_json_check_status "${json}" "cloudflared: dashboard host served TLS cert" "FAIL"
   assert_json_check_status "${json}" "cloudflared: websocket host served TLS cert" "FAIL"
   assert_json_check_status "${json}" "cloudflared: private dashboard HTTPS health verified" "FAIL"
-  assert_json_fail_count "${json}" "3"
+  assert_json_fail_count "${json}" "4"
 
   rm -rf "${tempdir}"
 }

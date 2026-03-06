@@ -2338,6 +2338,47 @@ cloudflared_check() {
       else
         record "PASS" "cloudflared: public letsencrypt resolver removed"
       fi
+
+      local private_tls_resolver traefik_command_block private_resolver_flag_fail
+      private_tls_resolver="$(awk '
+        $0 ~ /^    coolify-private-(dashboard|realtime|terminal)-https:[[:space:]]*$/ { in_router=1; next }
+        in_router && /^[[:space:]]*certResolver:[[:space:]]*/ {
+          gsub(/^[[:space:]]*certResolver:[[:space:]]*/, "", $0)
+          print
+          exit
+        }
+        in_router && /^    [a-zA-Z0-9_-]+:[[:space:]]*$/ { in_router=0 }
+      ' "${private_route_file}" 2>/dev/null || true)"
+      [[ -n "${private_tls_resolver}" ]] || private_tls_resolver="privatedns"
+
+      traefik_command_block="$(awk '
+        /^  traefik:[[:space:]]*$/ { in_service=1; next }
+        in_service && /^  [a-zA-Z0-9_-]+:[[:space:]]*$/ { exit }
+        in_service && /^    command:[[:space:]]*$/ { in_command=1; next }
+        in_command && /^    [a-zA-Z0-9_-]+:[[:space:]]*$/ { exit }
+        in_command { print }
+      ' "${proxy_compose_file}" 2>/dev/null || true)"
+
+      private_resolver_flag_fail=0
+      local required_private_resolver_flag
+      for required_private_resolver_flag in \
+        "--certificatesresolvers.${private_tls_resolver}.acme.dnschallenge=true" \
+        "--certificatesresolvers.${private_tls_resolver}.acme.dnschallenge.provider=cloudflare" \
+        "--certificatesresolvers.${private_tls_resolver}.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53" \
+        "--certificatesresolvers.${private_tls_resolver}.acme.email=" \
+        "--certificatesresolvers.${private_tls_resolver}.acme.storage=/traefik/acme.json"; do
+        if ! grep -Fq -- "${required_private_resolver_flag}" <<< "${traefik_command_block}"; then
+          private_resolver_flag_fail=1
+          break
+        fi
+      done
+
+      if [[ "${private_resolver_flag_fail}" -eq 0 ]]; then
+        record "PASS" "cloudflared: private TLS resolver present in Traefik command"
+      else
+        record "FAIL" "cloudflared: private TLS resolver present in Traefik command" \
+          "missing ${private_tls_resolver} ACME flags in traefik command block of ${proxy_compose_file}"
+      fi
     else
       record "FAIL" "cloudflared: proxy compose file" "missing ${proxy_compose_file}"
     fi
