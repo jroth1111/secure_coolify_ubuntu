@@ -274,6 +274,74 @@ EOF
   assert_success
 }
 
+@test "setup: phase4 local scripts receive required env on bash -s side" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    DEPLOY_MODE="tunnel"
+    DOMAIN="coolify.vps.example.com"
+    APP_DOMAIN="vps.example.com"
+    CF_ZONE_NAME="example.com"
+    CF_ACCOUNT_ID="account-123"
+    CF_API_TOKEN="dns-token"
+    TUNNEL_ID="tunnel-123"
+    TUNNEL_SECRET="secret-123"
+    TS_IP="100.64.0.25"
+    tmpdir="$(mktemp -d)"
+    SCRIPT_DIR="${tmpdir}"
+    cat > "${tmpdir}/configure_coolify_binding.sh" <<'\''EOF'\''
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "${tmpdir}/configure_coolify_binding.sh"
+    sleep() { :; }
+    coolify_set_wildcard_domain_script() { cat <<'\''EOF'\'' 
+[[ "${APP_DOMAIN}" == "vps.example.com" ]]
+EOF
+    }
+    coolify_reconcile_instance_settings_script() { cat <<'\''EOF'\'' 
+[[ "${DEPLOY_MODE}" == "tunnel" ]]
+[[ "${DOMAIN}" == "coolify.vps.example.com" ]]
+EOF
+    }
+    coolify_reconcile_pusher_env_script() { cat <<'\''EOF'\'' 
+[[ "${DEPLOY_MODE}" == "tunnel" ]]
+[[ "${DOMAIN}" == "coolify.vps.example.com" ]]
+EOF
+    }
+    coolify_configure_cloudflared_script() { cat <<'\''EOF'\'' 
+[[ "${TUNNEL_ID}" == "tunnel-123" ]]
+[[ "${TUNNEL_SECRET}" == "secret-123" ]]
+[[ "${CF_ACCOUNT_ID}" == "account-123" ]]
+[[ "${DOMAIN}" == "coolify.vps.example.com" ]]
+[[ "${APP_DOMAIN}" == "vps.example.com" ]]
+[[ "${CF_ZONE_NAME}" == "example.com" ]]
+EOF
+    }
+    coolify_configure_private_dashboard_routes_script() { cat <<'\''EOF'\'' 
+[[ "${DOMAIN}" == "coolify.vps.example.com" ]]
+[[ "${PRIVATE_TLS_RESOLVER}" == "privatedns" ]]
+EOF
+    }
+    coolify_configure_private_tls_dns_script() { cat <<'\''EOF'\'' 
+[[ "${CF_DNS_API_TOKEN}" == "dns-token" ]]
+[[ "${CF_ZONE_NAME}" == "example.com" ]]
+[[ "${PRIVATE_TLS_RESOLVER}" == "privatedns" ]]
+EOF
+    }
+    coolify_mark_bind_dashboard_state_script() { echo true; }
+    coolify_install_binding_guard_script() { echo true; }
+    coolify_install_cloudflared_script() { echo true; }
+    coolify_remove_private_dashboard_routes_script() { echo true; }
+    cf_create_tunnel() { :; }
+    cf_delete_host_records() { :; }
+    cf_upsert_a_record() { :; }
+    cf_upsert_cname() { :; }
+
+    phase4_binding_dns
+  '
+  assert_success
+}
+
 @test "setup: gate E requires operator laptop verification" {
   run bash -c '
     source "'"${SETUP_SCRIPT}"'"
@@ -325,6 +393,16 @@ EOF
   assert_success
   assert_output --partial "curl http://203.0.113.10:8000 fails"
   assert_output --partial "curl http://203.0.113.10 fails"
+}
+
+@test "setup: operator-only gates refuse AUTO_YES shortcuts" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    AUTO_YES="true"
+    pause_for_operator "verify from laptop"
+  '
+  assert_failure
+  assert_output --partial "Operator confirmation required: verify from laptop"
 }
 
 @test "setup: final validation is executed" {

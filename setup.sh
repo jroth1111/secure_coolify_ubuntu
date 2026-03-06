@@ -66,8 +66,10 @@ setup_exit_trap() {
 }
 
 pause_for_operator() {
-  if is_true "${AUTO_YES}"; then return 0; fi
   local msg="$1"
+  if is_true "${AUTO_YES}"; then
+    die "Operator confirmation required: ${msg}. Re-run setup.sh interactively or use deploy.sh."
+  fi
   printf '\n  \033[1;33m⏸  %s\033[0m\n' "${msg}"
   printf '  Press Enter when ready...'
   read -r
@@ -271,21 +273,20 @@ phase1_harden() {
   local tunnel_flag="false"
   [[ "${DEPLOY_MODE}" == "tunnel" ]] && tunnel_flag="true"
 
-  # Write env file (avoids quoting issues with pubkey)
-  cat > "${deploy_env_file}" <<EOF
-ADMIN_USER=${ADMIN_USER}
-ADMIN_PUBKEY="${ADMIN_PUBKEY}"
-DOMAIN=${DOMAIN}
-TAILSCALE_CIDR=100.64.0.0/10
-SSH_PORT=22
-TUNNEL_MODE=${tunnel_flag}
-SWAP_SIZE=${SWAP_SIZE}
-TIMEZONE=${SERVER_TIMEZONE}
-INSTALL_TAILSCALE=true
-TAILSCALE_AUTH_KEY=${TAILSCALE_AUTH_KEY}
-TAILSCALE_DIRECT_WAN=${TAILSCALE_DIRECT_WAN}
-BIND_DASHBOARD_TO_TAILSCALE=false
-EOF
+  {
+    printf 'ADMIN_USER="%s"\n' "${ADMIN_USER//\"/\\\"}"
+    printf 'ADMIN_PUBKEY="%s"\n' "${ADMIN_PUBKEY//\"/\\\"}"
+    printf 'DOMAIN="%s"\n' "${DOMAIN//\"/\\\"}"
+    printf 'TAILSCALE_CIDR="100.64.0.0/10"\n'
+    printf 'SSH_PORT="22"\n'
+    printf 'TUNNEL_MODE="%s"\n' "${tunnel_flag//\"/\\\"}"
+    printf 'SWAP_SIZE="%s"\n' "${SWAP_SIZE//\"/\\\"}"
+    printf 'TIMEZONE="%s"\n' "${SERVER_TIMEZONE//\"/\\\"}"
+    printf 'INSTALL_TAILSCALE="true"\n'
+    printf 'TAILSCALE_AUTH_KEY="%s"\n' "${TAILSCALE_AUTH_KEY//\"/\\\"}"
+    printf 'TAILSCALE_DIRECT_WAN="%s"\n' "${TAILSCALE_DIRECT_WAN//\"/\\\"}"
+    printf 'BIND_DASHBOARD_TO_TAILSCALE="false"\n'
+  } > "${deploy_env_file}"
   chmod 600 "${deploy_env_file}"
   pass "Environment file written"
 
@@ -427,30 +428,32 @@ phase4_binding_dns() {
       coolify_install_binding_guard_script
     } | bash -s
   }
-  phase4_set_wildcard_domain() { APP_DOMAIN="${APP_DOMAIN}" coolify_set_wildcard_domain_script | bash -s; }
+  phase4_set_wildcard_domain() {
+    coolify_set_wildcard_domain_script | env APP_DOMAIN="${APP_DOMAIN}" bash -s
+  }
   phase4_reconcile_instance_settings() {
-    DEPLOY_MODE="${DEPLOY_MODE}" DOMAIN="${DOMAIN}" coolify_reconcile_instance_settings_script | bash -s
+    coolify_reconcile_instance_settings_script \
+      | env DEPLOY_MODE="${DEPLOY_MODE}" DOMAIN="${DOMAIN}" bash -s
   }
   phase4_reconcile_pusher_env() {
-    DEPLOY_MODE="${DEPLOY_MODE}" TS_IP="${TS_IP}" DOMAIN="${DOMAIN}" coolify_reconcile_pusher_env_script | bash -s
+    coolify_reconcile_pusher_env_script \
+      | env DEPLOY_MODE="${DEPLOY_MODE}" DOMAIN="${DOMAIN}" bash -s
   }
   phase4_install_cloudflared() { coolify_install_cloudflared_script | bash -s; }
   phase4_configure_cloudflared() {
-    TUNNEL_ID="${TUNNEL_ID}" \
-    TUNNEL_SECRET="${TUNNEL_SECRET}" \
-    CF_ACCOUNT_ID="${CF_ACCOUNT_ID}" \
-    DOMAIN="${DOMAIN}" \
-    APP_DOMAIN="${APP_DOMAIN}" \
-    CF_ZONE_NAME="${CF_ZONE_NAME}" \
-      coolify_configure_cloudflared_script | bash -s
+    coolify_configure_cloudflared_script \
+      | env TUNNEL_ID="${TUNNEL_ID}" TUNNEL_SECRET="${TUNNEL_SECRET}" \
+          CF_ACCOUNT_ID="${CF_ACCOUNT_ID}" DOMAIN="${DOMAIN}" APP_DOMAIN="${APP_DOMAIN}" \
+          CF_ZONE_NAME="${CF_ZONE_NAME}" bash -s
   }
   phase4_stop_cloudflared() { systemctl stop cloudflared 2>/dev/null || true; }
   phase4_configure_private_routes() {
-    DOMAIN="${DOMAIN}" PRIVATE_TLS_RESOLVER="privatedns" coolify_configure_private_dashboard_routes_script | bash -s
+    coolify_configure_private_dashboard_routes_script \
+      | env DOMAIN="${DOMAIN}" PRIVATE_TLS_RESOLVER="privatedns" bash -s
   }
   phase4_configure_private_tls() {
-    CF_DNS_API_TOKEN="${CF_API_TOKEN}" CF_ZONE_NAME="${CF_ZONE_NAME}" PRIVATE_TLS_RESOLVER="privatedns" \
-      coolify_configure_private_tls_dns_script | bash -s
+    coolify_configure_private_tls_dns_script \
+      | env CF_DNS_API_TOKEN="${CF_API_TOKEN}" CF_ZONE_NAME="${CF_ZONE_NAME}" PRIVATE_TLS_RESOLVER="privatedns" bash -s
   }
   phase4_remove_private_routes() {
     coolify_remove_private_dashboard_routes_script | bash -s
