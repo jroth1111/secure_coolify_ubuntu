@@ -132,6 +132,7 @@ If the state file shows `tunnel_mode=true`, the server uses **Cloudflare Tunnel*
 - The `live-restore` Docker option keeps containers running during Docker daemon restarts.
 - The `docker-user-hardening.service` runs at boot to reapply DOCKER-USER rules after Docker starts.
 - **daemon.json ownership:** Hardening owns `log-driver`, `log-opts`, `live-restore`, `default-ipc-mode`, `storage-driver`, and `default-ulimits`; Coolify may add `default-address-pools`.
-- **Docker trust boundary:** named `docker` group members are not allowed. Validation treats any named member as a failure because Docker socket access is root-equivalent.
+- **Docker trust boundary:** named `docker` group members are not allowed. Validation treats any named member as a failure because Docker socket access is root-equivalent, even if the Docker socket is temporarily absent.
 - **Strict Docker SSH CIDRs:** `STRICT_DOCKER_SSH_CIDRS=true` may temporarily use compatibility ranges before Docker exists, but after Docker install the sync service must replace them with discovered bridge CIDRs. Final validation fails if broad fallback CIDRs (`10.0.0.0/8`, `172.16.0.0/12`) remain.
+- **Privileged containers:** privileged containers are denied by default. Allow only explicitly approved names via `ALLOWED_PRIVILEGED_CONTAINERS` / `allowed_privileged_containers` when the workload is intentionally root-equivalent.
 - **Intentional daemon omissions:** the project does not force `no-new-privileges`, `userns-remap`, `icc=false`, or `userland-proxy=false` because those settings break supported Coolify workloads and host integration paths.

@@ -64,6 +64,7 @@ STRICT_DOCKER_SSH_CIDRS="${STRICT_DOCKER_SSH_CIDRS:-true}"
 INSECURE_ENV="${INSECURE_ENV:-false}"
 DOCKER_NPROC_HARD="${DOCKER_NPROC_HARD:-8192}"
 DOCKER_NPROC_SOFT="${DOCKER_NPROC_SOFT:-4096}"
+ALLOWED_PRIVILEGED_CONTAINERS="${ALLOWED_PRIVILEGED_CONTAINERS:-}"
 
 OS_VERSION=""
 DOCKER_PRESENT="false"
@@ -131,6 +132,7 @@ Optional:
   --compat-docker-ssh-cidrs   Use broad compatibility ranges (10.0.0.0/8, 172.16.0.0/12)
   --docker-nproc-hard <num>   Docker default nproc hard limit (default: 8192)
   --docker-nproc-soft <num>   Docker default nproc soft limit (default: 4096)
+  --allowed-privileged-containers <csv> Comma-separated privileged container names allowed by policy
   --bind-dashboard-to-tailscale Bind Coolify dashboard to Tailscale IP only (split-horizon)
   --install-tailscale           Install Tailscale if not present (requires --tailscale-auth-key or interactive)
   --tailscale-auth-key <key>    Tailscale auth key for non-interactive setup (use with --install-tailscale)
@@ -211,7 +213,7 @@ unescape_backslash_sequences() {
 
 env_file_key_supported() {
   case "$1" in
-    ADMIN_USER|ADMIN_PUBKEY|TAILSCALE_CIDR|SSH_PORT|WAN_IFACE|ENABLE_AUTO_REBOOT|AUTO_REBOOT_TIME|UPDATE_PROFILE|JOURNAL_RETENTION|JOURNAL_MAX_USE|TUNNEL_MODE|SWAP_SIZE|TIMEZONE|DRY_RUN|FORCE|UPGRADE_MAIL|BIND_DASHBOARD_TO_TAILSCALE|INSTALL_TAILSCALE|TAILSCALE_AUTH_KEY|TAILSCALE_DIRECT_WAN|STRICT_DOCKER_SSH_CIDRS|INSECURE_ENV|DOCKER_NPROC_HARD|DOCKER_NPROC_SOFT)
+    ADMIN_USER|ADMIN_PUBKEY|TAILSCALE_CIDR|SSH_PORT|WAN_IFACE|ENABLE_AUTO_REBOOT|AUTO_REBOOT_TIME|UPDATE_PROFILE|JOURNAL_RETENTION|JOURNAL_MAX_USE|TUNNEL_MODE|SWAP_SIZE|TIMEZONE|DRY_RUN|FORCE|UPGRADE_MAIL|BIND_DASHBOARD_TO_TAILSCALE|INSTALL_TAILSCALE|TAILSCALE_AUTH_KEY|TAILSCALE_DIRECT_WAN|STRICT_DOCKER_SSH_CIDRS|INSECURE_ENV|DOCKER_NPROC_HARD|DOCKER_NPROC_SOFT|ALLOWED_PRIVILEGED_CONTAINERS)
       return 0
       ;;
     *)
@@ -224,7 +226,7 @@ set_env_file_value() {
   local key="$1"
   local value="$2"
   case "${key}" in
-    ADMIN_USER|ADMIN_PUBKEY|TAILSCALE_CIDR|SSH_PORT|WAN_IFACE|ENABLE_AUTO_REBOOT|AUTO_REBOOT_TIME|UPDATE_PROFILE|JOURNAL_RETENTION|JOURNAL_MAX_USE|TUNNEL_MODE|SWAP_SIZE|TIMEZONE|DRY_RUN|FORCE|UPGRADE_MAIL|BIND_DASHBOARD_TO_TAILSCALE|INSTALL_TAILSCALE|TAILSCALE_AUTH_KEY|TAILSCALE_DIRECT_WAN|STRICT_DOCKER_SSH_CIDRS|INSECURE_ENV|DOCKER_NPROC_HARD|DOCKER_NPROC_SOFT)
+    ADMIN_USER|ADMIN_PUBKEY|TAILSCALE_CIDR|SSH_PORT|WAN_IFACE|ENABLE_AUTO_REBOOT|AUTO_REBOOT_TIME|UPDATE_PROFILE|JOURNAL_RETENTION|JOURNAL_MAX_USE|TUNNEL_MODE|SWAP_SIZE|TIMEZONE|DRY_RUN|FORCE|UPGRADE_MAIL|BIND_DASHBOARD_TO_TAILSCALE|INSTALL_TAILSCALE|TAILSCALE_AUTH_KEY|TAILSCALE_DIRECT_WAN|STRICT_DOCKER_SSH_CIDRS|INSECURE_ENV|DOCKER_NPROC_HARD|DOCKER_NPROC_SOFT|ALLOWED_PRIVILEGED_CONTAINERS)
       printf -v "${key}" '%s' "${value}"
       ;;
     *)
@@ -412,6 +414,11 @@ parse_args() {
       --docker-nproc-soft)
         require_value "$1" "${2:-}"
         DOCKER_NPROC_SOFT="$2"
+        shift 2
+        ;;
+      --allowed-privileged-containers)
+        require_value "$1" "${2:-}"
+        ALLOWED_PRIVILEGED_CONTAINERS="$2"
         shift 2
         ;;
       --swap-size)
@@ -2778,6 +2785,7 @@ strict_docker_ssh_cidrs=${STRICT_DOCKER_SSH_CIDRS}
 docker_ssh_cidrs=${cidr_csv}
 docker_nproc_hard=${DOCKER_NPROC_HARD}
 docker_nproc_soft=${DOCKER_NPROC_SOFT}
+allowed_privileged_containers=${ALLOWED_PRIVILEGED_CONTAINERS}
 tailscale_direct_wan=${TAILSCALE_DIRECT_WAN}
 bind_dashboard_to_tailscale=${BIND_DASHBOARD_TO_TAILSCALE}
 install_tailscale=${INSTALL_TAILSCALE}

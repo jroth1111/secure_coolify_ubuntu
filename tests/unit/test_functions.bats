@@ -1319,6 +1319,12 @@ allowusers testadmin"
   assert_output --partial "balanced"
 }
 
+@test "parse_args: --allowed-privileged-containers sets value" {
+  run bash -c 'source "'"${SCRIPT}"'" && parse_args --allowed-privileged-containers coolify-proxy,forgejo-dind && echo "${ALLOWED_PRIVILEGED_CONTAINERS}"'
+  assert_success
+  assert_output "coolify-proxy,forgejo-dind"
+}
+
 @test "parse_args: --help exits 0 and prints usage" {
   run bash -c 'source "'"${SCRIPT}"'" && parse_args --help'
   assert_success

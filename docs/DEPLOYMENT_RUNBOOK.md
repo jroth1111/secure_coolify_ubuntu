@@ -313,8 +313,9 @@ If Docker was absent during Phase 1, `bootstrap_hardening.sh` installs the polic
 - **Drift detection:** The reconcile functions warn if hardening keys were changed (e.g., by a Coolify update)
 
 **Docker Trust Boundary:**
-- The `docker` group must have no named members. Docker socket access is root-equivalent, so validation fails if any named account is present in the group.
+- The `docker` group must have no named members. Docker socket access is root-equivalent, so validation fails if any named account is present in the group, even if `/var/run/docker.sock` is temporarily absent.
 - `STRICT_DOCKER_SSH_CIDRS=true` may use compatibility bridge ranges during Phase 1 when Docker is not installed yet. After Phase 3, `docker-ssh-cidr-sync.service` must narrow the SSH/UFW rules to discovered bridge CIDRs; final validation fails if broad fallback ranges remain.
+- Privileged containers are denied by default. If a workload intentionally needs `HostConfig.Privileged=true`, declare the exact approved container names with `ALLOWED_PRIVILEGED_CONTAINERS=<comma-separated names>` before hardening so the state file records `allowed_privileged_containers`.
 - The hardening policy intentionally does not force `no-new-privileges`, `userns-remap`, `icc=false`, or `userland-proxy=false`. Those settings break supported Coolify behaviors such as host Docker socket access, internal service networking, and common DinD-style workloads.
 
 ### 3.2 Gate D: Restart and Verify DOCKER-USER Hardening

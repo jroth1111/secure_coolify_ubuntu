@@ -3,6 +3,45 @@
 
 load '../helpers'
 
+start_fake_unix_socket() {
+  local sock_path="$1"
+  python3 - "${sock_path}" <<'PY' &
+import os
+import socket
+import sys
+import time
+
+path = sys.argv[1]
+try:
+    os.unlink(path)
+except FileNotFoundError:
+    pass
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.bind(path)
+sock.listen(1)
+time.sleep(30)
+PY
+  local pid=$!
+  for _ in $(seq 1 50); do
+    [[ -S "${sock_path}" ]] && break
+    sleep 0.1
+  done
+  if [[ ! -S "${sock_path}" ]]; then
+    kill "${pid}" 2>/dev/null || true
+    wait "${pid}" 2>/dev/null || true
+    return 1
+  fi
+  printf '%s\n' "${pid}"
+}
+
+stop_fake_unix_socket() {
+  local pid="${1:-}"
+  [[ -n "${pid}" ]] || return 0
+  kill "${pid}" 2>/dev/null || true
+  wait "${pid}" 2>/dev/null || true
+}
+
 setup() {
   source_validate_script
   reset_validate_runtime
@@ -51,6 +90,7 @@ wan_iface=eth0
 tailscale_direct_wan=true
 update_profile=balanced
 timezone=Australia/Melbourne
+allowed_privileged_containers=coolify-proxy,forgejo-dind
 STATE
 
   STATE_FILE="${state}"
@@ -62,6 +102,7 @@ STATE
   [ "${TAILSCALE_DIRECT_WAN}" = "true" ]
   [ "${UPDATE_PROFILE}" = "balanced" ]
   [ "${CONFIGURED_TIMEZONE}" = "Australia/Melbourne" ]
+  [ "${ALLOWED_PRIVILEGED_CONTAINERS}" = "coolify-proxy,forgejo-dind" ]
 
   rm -f "${state}"
 }
@@ -753,9 +794,10 @@ EOF
 }
 
 @test "docker_trust_boundary_check: records PASS when socket ownership and boundaries are sane" {
-  if [[ ! -S "/var/run/docker.sock" ]]; then
-    skip "/var/run/docker.sock unavailable in test environment"
-  fi
+  local sock_dir sock_pid
+  sock_dir="$(mktemp -d)"
+  DOCKER_SOCK="${sock_dir}/docker.sock"
+  sock_pid="$(start_fake_unix_socket "${DOCKER_SOCK}")"
 
   ADMIN_USER="alice"
 
@@ -767,7 +809,7 @@ EOF
   }
 
   stat() {
-    if [[ "${2:-}" == "/var/run/docker.sock" ]]; then
+    if [[ "${2:-}" == "${DOCKER_SOCK}" ]]; then
       case "${1:-}" in
         -c)
           case "${3:-}" in
@@ -807,12 +849,17 @@ EOF
   assert_json_check_status "${json}" "docker-trust: socket owner is root" "PASS"
   assert_json_check_status "${json}" "docker-trust: docker group has no named members" "PASS"
   assert_json_check_status "${json}" "docker-trust: admin user not in docker group" "PASS"
+  assert_json_check_status "${json}" "docker-trust: privileged containers allowlist" "PASS"
+
+  stop_fake_unix_socket "${sock_pid}"
+  rm -rf "${sock_dir}"
 }
 
 @test "docker_trust_boundary_check: fails when docker group has named members" {
-  if [[ ! -S "/var/run/docker.sock" ]]; then
-    skip "/var/run/docker.sock unavailable in test environment"
-  fi
+  local sock_dir sock_pid
+  sock_dir="$(mktemp -d)"
+  DOCKER_SOCK="${sock_dir}/docker.sock"
+  sock_pid="$(start_fake_unix_socket "${DOCKER_SOCK}")"
 
   ADMIN_USER="alice"
 
@@ -824,7 +871,7 @@ EOF
   }
 
   stat() {
-    if [[ "${2:-}" == "/var/run/docker.sock" ]]; then
+    if [[ "${2:-}" == "${DOCKER_SOCK}" ]]; then
       case "${1:-}" in
         -c)
           case "${3:-}" in
@@ -863,6 +910,72 @@ EOF
   assert_json_check_status "${json}" "docker-trust: docker group has no named members" "FAIL"
   assert_json_check_status "${json}" "docker-trust: admin user not in docker group" "FAIL"
   assert_json_fail_count "${json}" "2"
+
+  stop_fake_unix_socket "${sock_pid}"
+  rm -rf "${sock_dir}"
+}
+
+@test "docker_trust_boundary_check: fails when privileged containers are not allowlisted" {
+  local sock_dir sock_pid
+  sock_dir="$(mktemp -d)"
+  DOCKER_SOCK="${sock_dir}/docker.sock"
+  sock_pid="$(start_fake_unix_socket "${DOCKER_SOCK}")"
+
+  ADMIN_USER="alice"
+  ALLOWED_PRIVILEGED_CONTAINERS="coolify-proxy"
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  stat() {
+    if [[ "${2:-}" == "${DOCKER_SOCK}" ]]; then
+      case "${1:-}" in
+        -c)
+          case "${3:-}" in
+            %a) echo 660 ;;
+            %U) echo root ;;
+            %G) echo docker ;;
+          esac
+          return 0
+          ;;
+      esac
+    fi
+    command stat "$@"
+  }
+
+  getent() {
+    if [[ "${1:-}" == "group" && "${2:-}" == "docker" ]]; then
+      echo "docker:x:999:"
+      return 0
+    fi
+    command getent "$@"
+  }
+
+  docker() {
+    if [[ "${1:-}" == "ps" && "${2:-}" == "-q" ]]; then
+      printf 'cid-1\ncid-2\n'
+      return 0
+    fi
+    if [[ "${1:-}" == "inspect" ]]; then
+      printf '/coolify-proxy\n/rogue-service\n'
+      return 0
+    fi
+    return 0
+  }
+
+  docker_trust_boundary_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-trust: privileged containers allowlist" "FAIL"
+  assert_json_check_detail_contains "${json}" "docker-trust: privileged containers allowlist" "rogue-service"
+  assert_json_fail_count "${json}" "1"
+
+  stop_fake_unix_socket "${sock_pid}"
+  rm -rf "${sock_dir}"
 }
 
 @test "docker_user_check: fails fast when iptables is unavailable" {
