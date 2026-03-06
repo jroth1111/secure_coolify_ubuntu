@@ -1810,7 +1810,7 @@ rm -f "${tmp}"
 echo "PUSHER env updated for mode=${mode}"
 docker compose -f /data/coolify/source/docker-compose.yml \
                -f /data/coolify/source/docker-compose.prod.yml \
-               up -d --no-deps coolify
+               up -d --no-deps coolify >/dev/null
 EOF
 }
 
@@ -2040,7 +2040,7 @@ scrub_default_redirect_public_resolver
 scrub_coolify_public_https_routers
 
 if docker compose -f "${compose_file}" config >/dev/null 2>&1; then
-  docker compose -f "${compose_file}" up -d
+  docker compose -f "${compose_file}" up -d >/dev/null
 else
   echo "Invalid Traefik compose generated at ${compose_file}" >&2
   exit 1
@@ -2259,6 +2259,41 @@ resolve_app_domain() {
 
 # print_deployment_summary — Print completion banner and next-steps block.
 # Uses globals: SERVER_IP, TS_IP, ADMIN_USER, DEPLOY_MODE, DOMAIN, CF_ZONE_NAME, APP_DOMAIN, TUNNEL_ID, SERVER_TIMEZONE
+summary_box_print_prefixed_text() {
+  local first_prefix="$1" continuation_prefix="$2" text="$3"
+  local width=59 prefix available chunk
+  prefix="${first_prefix}"
+
+  while :; do
+    available=$(( width - ${#prefix} ))
+    if (( ${#text} <= available )); then
+      printf '│ %s%-*s│\n' "${prefix}" "${available}" "${text}"
+      return 0
+    fi
+
+    chunk="${text:0:available}"
+    if [[ "${chunk}" == *" "* && "${text:available:1}" != " " ]]; then
+      chunk="${chunk% *}"
+    fi
+    [[ -n "${chunk}" ]] || chunk="${text:0:available}"
+
+    printf '│ %s%-*s│\n' "${prefix}" "${available}" "${chunk}"
+    text="${text:${#chunk}}"
+    text="${text## }"
+    prefix="${continuation_prefix}"
+  done
+}
+
+summary_box_print_field() {
+  local label="$1" value="$2" prefix
+  printf -v prefix '  %-16s: ' "${label}"
+  summary_box_print_prefixed_text "${prefix}" "                    " "${value}"
+}
+
+summary_box_print_continuation() {
+  summary_box_print_prefixed_text "                    " "                    " "$1"
+}
+
 print_deployment_summary() {
   local dashboard_url
   if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
@@ -2271,29 +2306,29 @@ print_deployment_summary() {
   printf '┌─────────────────────────────────────────────────────────────┐\n'
   printf '│                    DEPLOYMENT COMPLETE                      │\n'
   printf '├─────────────────────────────────────────────────────────────┤\n'
-  printf '│  Server Public IP : %-40s│\n' "${SERVER_IP}"
-  printf '│  Tailscale IP     : %-40s│\n' "${TS_IP}"
-  printf '│  Admin User       : %-40s│\n' "${ADMIN_USER}"
-  printf '│  Deploy Mode      : %-40s│\n' "${DEPLOY_MODE}"
-  printf '│  Domain           : %-40s│\n' "${DOMAIN}"
-  printf '│  Server Timezone  : %-40s│\n' "${SERVER_TIMEZONE}"
-  printf '│  Dashboard URL    : %-40s│\n' "${dashboard_url}"
-  printf '│  SSH Access       : ssh %-36s│\n' "${ADMIN_USER}@${TS_IP}"
+  summary_box_print_field "Server Public IP" "${SERVER_IP}"
+  summary_box_print_field "Tailscale IP" "${TS_IP}"
+  summary_box_print_field "Admin User" "${ADMIN_USER}"
+  summary_box_print_field "Deploy Mode" "${DEPLOY_MODE}"
+  summary_box_print_field "Domain" "${DOMAIN}"
+  summary_box_print_field "Server Timezone" "${SERVER_TIMEZONE}"
+  summary_box_print_field "Dashboard URL" "${dashboard_url}"
+  summary_box_print_field "SSH Access" "ssh ${ADMIN_USER}@${TS_IP}"
   printf '├─────────────────────────────────────────────────────────────┤\n'
   if [[ "${DEPLOY_MODE}" == "standard" ]]; then
-    printf '│  DNS              : A %-38s│\n' "${DOMAIN} → ${SERVER_IP}"
-    printf '│  Wildcard DNS     : A *.%-36s│\n' "${APP_DOMAIN}"
+    summary_box_print_field "DNS" "A ${DOMAIN} -> ${SERVER_IP}"
+    summary_box_print_field "Wildcard DNS" "A *.${APP_DOMAIN}"
     [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]] \
-      && printf '│                   + A *.%-36s│\n' "${CF_ZONE_NAME}"
+      && summary_box_print_continuation "+ A *.${CF_ZONE_NAME}"
   else
-    printf '│  DNS              : A %-38s│\n' "${DOMAIN} → ${TS_IP} (DNS-only)"
-    printf '│                   + A %-36s│\n' "ws.${DOMAIN} → ${TS_IP} (DNS-only)"
-    printf '│  Wildcard DNS     : CNAME *.%-32s│\n' "${APP_DOMAIN}"
+    summary_box_print_field "DNS" "A ${DOMAIN} -> ${TS_IP} (DNS-only)"
+    summary_box_print_continuation "+ A ws.${DOMAIN} -> ${TS_IP} (DNS-only)"
+    summary_box_print_field "Wildcard DNS" "CNAME *.${APP_DOMAIN}"
     [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]] \
-      && printf '│                   + CNAME *.%-32s│\n' "${CF_ZONE_NAME}"
-    printf '│  Tunnel ID        : %-40s│\n' "${TUNNEL_ID}"
-    printf '│  Public Dashboard : %-40s│\n' "blocked (Tailscale-only)"
-    printf '│  Public WebSocket : %-40s│\n' "blocked (Tailscale-only)"
+      && summary_box_print_continuation "+ CNAME *.${CF_ZONE_NAME}"
+    summary_box_print_field "Tunnel ID" "${TUNNEL_ID}"
+    summary_box_print_field "Public Dashboard" "blocked (Tailscale-only)"
+    summary_box_print_field "Public WebSocket" "blocked (Tailscale-only)"
   fi
   printf '└─────────────────────────────────────────────────────────────┘\n'
   printf '\n'
@@ -2316,12 +2351,12 @@ print_deployment_summary() {
   log "       (required for app subdomains to route through Traefik)"
   log ""
   log "  4. Wildcard Domain is already set to http://${APP_DOMAIN} (done automatically)."
-  log "       New apps will get  http://appname.${APP_DOMAIN}"
+  log "       New apps will get http://appname.${APP_DOMAIN}"
   log "       If an app already has a sslip.io URL: App > Settings > Domains > update it."
   log ""
-  log "  5. For each app deployment in Coolify:"
-  log "       Use http:// domain (not https://) — Cloudflare proxy adds TLS."
-  log "       Example:  http://myapp.${APP_DOMAIN}"
+  log "  5. For each app deployment behind the wildcard route:"
+  log "       Use http:// for the app's Coolify domain entry; Cloudflare adds TLS at the edge."
+  log "       Example: http://myapp.${APP_DOMAIN}"
   log ""
   log "  6. Deploy your first app — it gets a subdomain + Cloudflare SSL automatically."
 }

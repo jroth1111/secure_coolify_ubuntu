@@ -433,6 +433,7 @@ setup() {
   assert_output --partial "PUSHER_PORT=443"
   assert_output --partial "PUSHER_SCHEME=https"
   assert_output --partial "install -m 0600"
+  assert_output --partial "up -d --no-deps coolify >/dev/null"
 }
 
 @test "coolify_set_wildcard_domain_script: emits DB update with ON_ERROR_STOP" {
@@ -471,6 +472,33 @@ setup() {
   assert_success
   assert_output --partial "DEPLOYMENT COMPLETE"
   assert_output --partial "http://100.64.0.10:8000"
+}
+
+@test "print_deployment_summary: preserves summary box width for long tunnel domains" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    SERVER_IP="203.0.113.10"
+    TS_IP="100.64.0.10"
+    ADMIN_USER="alice"
+    DEPLOY_MODE="tunnel"
+    DOMAIN="vps.megastyleapartments-super-long-environment-name.example.com.au"
+    CF_ZONE_NAME="example.com.au"
+    APP_DOMAIN="example.com.au"
+    TUNNEL_ID="tunnel-1234"
+    SERVER_TIMEZONE="Australia/Melbourne"
+    log() { printf "%s\n" "$*"; }
+
+    print_deployment_summary
+  '
+  assert_success
+  OUTPUT="${output}" python3 - <<'PY'
+import os
+lines = os.environ["OUTPUT"].splitlines()
+box = [line for line in lines if line[:1] in ("┌", "├", "│", "└")]
+assert box, "no summary box lines found"
+widths = {len(line) for line in box}
+assert len(widths) == 1, widths
+PY
 }
 
 @test "report_validation_result: passes when fail count is zero and fails otherwise" {
@@ -868,6 +896,9 @@ setup() {
   assert_output --partial "Dashboard URL    : https://vps.example.com"
   assert_output --partial "Open https://vps.example.com and create your Coolify admin account."
   assert_output --partial "Private dashboard/websocket TLS is already configured for https://vps.example.com and wss://ws.vps.example.com."
+  assert_output --partial "For each app deployment behind the wildcard route:"
+  assert_output --partial "Use http:// for the app's Coolify domain entry; Cloudflare adds TLS at the edge."
+  refute_output --partial "New apps will get  http://appname.example.com"
   refute_output --partial "fallback http://100.64.0.10:8000"
   refute_output --partial "Cloudflare SSL mode"
 }
@@ -927,4 +958,5 @@ EOF
   assert_output --partial 'Public Coolify HTTPS routers remained in ${coolify_dynamic_file}'
   assert_output --partial 'Public letsencrypt resolver remained in ${default_redirect_file}'
   assert_output --partial "--api.insecure=false"
+  assert_output --partial 'docker compose -f "${compose_file}" up -d >/dev/null'
 }
