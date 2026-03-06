@@ -443,7 +443,7 @@ EOF
         echo "302"
       elif [[ "${url}" == "http://ws.${DOMAIN}" ]]; then
         echo "302"
-      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
+      elif [[ "${url}" == "https://${DOMAIN}/api/v1/health" ]]; then
         echo "200"
       elif [[ "${url}" == "http://${SERVER_IP}" ]]; then
         echo "000"

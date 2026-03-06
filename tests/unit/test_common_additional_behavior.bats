@@ -501,6 +501,38 @@ assert len(widths) == 1, widths
 PY
 }
 
+@test "summary_box_print_prefixed_text: formats text with label and indent" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    log() { printf "%s\n" "$*"; }
+    summary_box_print_prefixed_text "Label" "  " "Value"
+  '
+  assert_success
+  assert_output --partial "Label"
+  assert_output --partial "Value"
+}
+
+@test "summary_box_print_field: formats field with label prefix" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    log() { printf "%s\n" "$*"; }
+    summary_box_print_field "Field Name" "Field Value"
+  '
+  assert_success
+  assert_output --partial "Field Name"
+  assert_output --partial "Field Value"
+}
+
+@test "summary_box_print_continuation: formats continuation line with indent" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    log() { printf "%s\n" "$*"; }
+    summary_box_print_continuation "+ additional info"
+  '
+  assert_success
+  assert_output --partial "+ additional info"
+}
+
 @test "report_validation_result: passes when fail count is zero and fails otherwise" {
   run report_validation_result "Gate X" '{"fail":0,"checks":[]}' "boom"
   assert_success
