@@ -1019,6 +1019,263 @@ EOF
   rm -rf "${sock_dir}"
 }
 
+@test "cloudflared_check: fails when tunnel proxy still references public letsencrypt" {
+  local tempdir config_file private_route_file compose_file redirect_file coolify_env_file
+  tempdir="$(mktemp -d)"
+  config_file="${tempdir}/config.yml"
+  private_route_file="${tempdir}/coolify-private-dashboard.yaml"
+  compose_file="${tempdir}/docker-compose.yml"
+  redirect_file="${tempdir}/default_redirect_503.yaml"
+  coolify_env_file="${tempdir}/coolify.env"
+
+  cat > "${config_file}" <<'EOF'
+tunnel: test-tunnel
+ingress:
+  - hostname: "vps.example.com"
+    service: http://localhost:80
+  - hostname: "ws.vps.example.com"
+    service: http_status:404
+  - hostname: "vps.example.com"
+    service: http_status:404
+  - service: http_status:404
+EOF
+
+  cat > "${private_route_file}" <<'EOF'
+http:
+  middlewares:
+    coolify-private-force-https:
+      redirectScheme:
+        scheme: https
+  routers:
+    coolify-private-dashboard-http:
+      rule: "Host(`vps.example.com`)"
+      service: noop@internal
+      middlewares:
+        - coolify-private-force-https
+    coolify-private-dashboard-https:
+      rule: "Host(`vps.example.com`)"
+      tls:
+        certResolver: privatedns
+    coolify-private-realtime-http:
+      rule: "Host(`ws.vps.example.com`)"
+      service: noop@internal
+      middlewares:
+        - coolify-private-force-https
+    coolify-private-realtime-https:
+      rule: "Host(`ws.vps.example.com`)"
+      tls: {}
+    coolify-private-terminal-http:
+      rule: "Host(`ws.vps.example.com`) && PathPrefix(`/terminal/ws`)"
+      service: noop@internal
+      middlewares:
+        - coolify-private-force-https
+    coolify-private-terminal-https:
+      rule: "Host(`ws.vps.example.com`) && PathPrefix(`/terminal/ws`)"
+      tls: {}
+EOF
+
+  cat > "${compose_file}" <<'EOF'
+services:
+  traefik:
+    command:
+      - '--certificatesresolvers.letsencrypt.acme.storage=/traefik/acme.json'
+EOF
+
+  cat > "${redirect_file}" <<'EOF'
+http:
+  routers:
+    catchall:
+      tls:
+        certResolver: letsencrypt
+EOF
+
+  cat > "${coolify_env_file}" <<'EOF'
+PUSHER_HOST=ws.vps.example.com
+PUSHER_PORT=443
+PUSHER_SCHEME=https
+EOF
+
+  TUNNEL_MODE="true"
+  TAILSCALE_IP=""
+  CLOUDFLARED_CONFIG_FILE="${config_file}"
+  COOLIFY_PRIVATE_ROUTE_FILE="${private_route_file}"
+  COOLIFY_PROXY_COMPOSE_FILE="${compose_file}"
+  COOLIFY_PROXY_DEFAULT_REDIRECT_FILE="${redirect_file}"
+  COOLIFY_ENV_FILE="${coolify_env_file}"
+
+  systemctl() {
+    if [[ "${1:-}" == "list-unit-files" ]]; then
+      echo "cloudflared.service enabled"
+      return 0
+    fi
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "is-active" ]]; then
+      echo "active"
+      return 0
+    fi
+    return 0
+  }
+
+  command() {
+    if [[ "${1:-}" == "-v" ]]; then
+      case "${2:-}" in
+        cloudflared|sysctl) return 0 ;;
+        getent|dig) return 1 ;;
+      esac
+    fi
+    builtin command "$@"
+  }
+
+  sysctl() {
+    if [[ "${1:-}" == "-n" && "${2:-}" == "net.ipv4.ping_group_range" ]]; then
+      echo "0 2147483647"
+      return 0
+    fi
+    command sysctl "$@"
+  }
+
+  pgrep() { return 1; }
+
+  cloudflared_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "cloudflared: public letsencrypt resolver removed" "FAIL"
+  assert_json_check_status "${json}" "cloudflared: catchall route avoids public letsencrypt" "FAIL"
+  assert_json_fail_count "${json}" "2"
+
+  rm -rf "${tempdir}"
+}
+
+@test "cloudflared_check: passes when tunnel proxy avoids public letsencrypt drift" {
+  local tempdir config_file private_route_file compose_file redirect_file coolify_env_file
+  tempdir="$(mktemp -d)"
+  config_file="${tempdir}/config.yml"
+  private_route_file="${tempdir}/coolify-private-dashboard.yaml"
+  compose_file="${tempdir}/docker-compose.yml"
+  redirect_file="${tempdir}/default_redirect_503.yaml"
+  coolify_env_file="${tempdir}/coolify.env"
+
+  cat > "${config_file}" <<'EOF'
+tunnel: test-tunnel
+ingress:
+  - hostname: "vps.example.com"
+    service: http://localhost:80
+  - hostname: "ws.vps.example.com"
+    service: http_status:404
+  - hostname: "vps.example.com"
+    service: http_status:404
+  - service: http_status:404
+EOF
+
+  cat > "${private_route_file}" <<'EOF'
+http:
+  middlewares:
+    coolify-private-force-https:
+      redirectScheme:
+        scheme: https
+  routers:
+    coolify-private-dashboard-http:
+      rule: "Host(`vps.example.com`)"
+      service: noop@internal
+      middlewares:
+        - coolify-private-force-https
+    coolify-private-dashboard-https:
+      rule: "Host(`vps.example.com`)"
+      tls:
+        certResolver: privatedns
+    coolify-private-realtime-http:
+      rule: "Host(`ws.vps.example.com`)"
+      service: noop@internal
+      middlewares:
+        - coolify-private-force-https
+    coolify-private-realtime-https:
+      rule: "Host(`ws.vps.example.com`)"
+      tls: {}
+    coolify-private-terminal-http:
+      rule: "Host(`ws.vps.example.com`) && PathPrefix(`/terminal/ws`)"
+      service: noop@internal
+      middlewares:
+        - coolify-private-force-https
+    coolify-private-terminal-https:
+      rule: "Host(`ws.vps.example.com`) && PathPrefix(`/terminal/ws`)"
+      tls: {}
+EOF
+
+  cat > "${compose_file}" <<'EOF'
+services:
+  traefik:
+    command:
+      - '--certificatesresolvers.privatedns.acme.storage=/traefik/acme.json'
+EOF
+
+  cat > "${redirect_file}" <<'EOF'
+http:
+  routers:
+    catchall:
+      priority: -1000
+EOF
+
+  cat > "${coolify_env_file}" <<'EOF'
+PUSHER_HOST=ws.vps.example.com
+PUSHER_PORT=443
+PUSHER_SCHEME=https
+EOF
+
+  TUNNEL_MODE="true"
+  TAILSCALE_IP=""
+  CLOUDFLARED_CONFIG_FILE="${config_file}"
+  COOLIFY_PRIVATE_ROUTE_FILE="${private_route_file}"
+  COOLIFY_PROXY_COMPOSE_FILE="${compose_file}"
+  COOLIFY_PROXY_DEFAULT_REDIRECT_FILE="${redirect_file}"
+  COOLIFY_ENV_FILE="${coolify_env_file}"
+
+  systemctl() {
+    if [[ "${1:-}" == "list-unit-files" ]]; then
+      echo "cloudflared.service enabled"
+      return 0
+    fi
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "is-active" ]]; then
+      echo "active"
+      return 0
+    fi
+    return 0
+  }
+
+  command() {
+    if [[ "${1:-}" == "-v" ]]; then
+      case "${2:-}" in
+        cloudflared|sysctl) return 0 ;;
+        getent|dig) return 1 ;;
+      esac
+    fi
+    builtin command "$@"
+  }
+
+  sysctl() {
+    if [[ "${1:-}" == "-n" && "${2:-}" == "net.ipv4.ping_group_range" ]]; then
+      echo "0 2147483647"
+      return 0
+    fi
+    command sysctl "$@"
+  }
+
+  pgrep() { return 1; }
+
+  cloudflared_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "cloudflared: public letsencrypt resolver removed" "PASS"
+  assert_json_check_status "${json}" "cloudflared: catchall route avoids public letsencrypt" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  rm -rf "${tempdir}"
+}
+
 @test "docker_user_check: fails fast when iptables is unavailable" {
   command() {
     if [[ "$1" == "-v" && "$2" == "iptables" ]]; then

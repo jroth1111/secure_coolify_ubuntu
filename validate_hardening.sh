@@ -2137,7 +2137,7 @@ cloudflared_check() {
   fi
 
   # Config file checks
-  local config_file="/etc/cloudflared/config.yml"
+  local config_file="${CLOUDFLARED_CONFIG_FILE:-/etc/cloudflared/config.yml}"
   if [[ ! -f "${config_file}" ]]; then
     record "FAIL" "cloudflared: config file" "${config_file} not found"
     return
@@ -2223,7 +2223,13 @@ cloudflared_check() {
     fi
 
     local private_route_file
-    private_route_file="/data/coolify/proxy/dynamic/coolify-private-dashboard.yaml"
+    local proxy_compose_file
+    local default_redirect_file
+    local coolify_env_file
+    private_route_file="${COOLIFY_PRIVATE_ROUTE_FILE:-/data/coolify/proxy/dynamic/coolify-private-dashboard.yaml}"
+    proxy_compose_file="${COOLIFY_PROXY_COMPOSE_FILE:-/data/coolify/proxy/docker-compose.yml}"
+    default_redirect_file="${COOLIFY_PROXY_DEFAULT_REDIRECT_FILE:-/data/coolify/proxy/dynamic/default_redirect_503.yaml}"
+    coolify_env_file="${COOLIFY_ENV_FILE:-/data/coolify/source/.env}"
     if [[ -f "${private_route_file}" ]]; then
       record "PASS" "cloudflared: private dashboard route file present"
     else
@@ -2307,9 +2313,30 @@ cloudflared_check() {
       fi
     fi
 
+    if [[ -f "${proxy_compose_file}" ]]; then
+      if grep -Eq 'certificatesresolvers\.letsencrypt\.' "${proxy_compose_file}"; then
+        record "FAIL" "cloudflared: public letsencrypt resolver removed" \
+          "found public letsencrypt resolver flags in ${proxy_compose_file}"
+      else
+        record "PASS" "cloudflared: public letsencrypt resolver removed"
+      fi
+    else
+      record "FAIL" "cloudflared: proxy compose file" "missing ${proxy_compose_file}"
+    fi
+
+    if [[ -f "${default_redirect_file}" ]]; then
+      if grep -Eq '^[[:space:]]*certResolver:[[:space:]]*letsencrypt[[:space:]]*$' "${default_redirect_file}"; then
+        record "FAIL" "cloudflared: catchall route avoids public letsencrypt" \
+          "found public letsencrypt resolver in ${default_redirect_file}"
+      else
+        record "PASS" "cloudflared: catchall route avoids public letsencrypt"
+      fi
+    else
+      record "PASS" "cloudflared: catchall route avoids public letsencrypt"
+    fi
+
     if [[ -n "${dashboard_host}" ]]; then
-      local coolify_env_file expected_pusher_host actual_pusher_host actual_pusher_port actual_pusher_scheme
-      coolify_env_file="/data/coolify/source/.env"
+      local expected_pusher_host actual_pusher_host actual_pusher_port actual_pusher_scheme
       expected_pusher_host="ws.${dashboard_host}"
       if [[ -f "${coolify_env_file}" ]]; then
         actual_pusher_host="$(awk -F= '/^PUSHER_HOST=/{print $2; exit}' "${coolify_env_file}" | tr -d '"' || true)"

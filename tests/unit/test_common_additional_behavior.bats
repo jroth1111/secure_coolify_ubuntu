@@ -762,4 +762,8 @@ EOF
   assert_output --partial "CF_DNS_API_TOKEN is required"
   assert_output --partial "/data/coolify/proxy/.env"
   assert_output --partial "certificatesResolvers.${PRIVATE_TLS_RESOLVER}.acme.dnsChallenge.provider=cloudflare"
+  assert_output --partial 'sed -i "/certificatesresolvers\.letsencrypt\./d" "${compose_file}"'
+  assert_output --partial 'default_redirect_file="${dynamic_dir}/default_redirect_503.yaml"'
+  assert_output --partial 'text = text.replace("      tls:\n        certResolver: letsencrypt\n", "")'
+  assert_output --partial "--api.insecure=false"
 }

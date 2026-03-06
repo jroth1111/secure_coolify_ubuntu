@@ -1724,6 +1724,8 @@ set -Eeuo pipefail
 proxy_dir="/data/coolify/proxy"
 compose_file="${proxy_dir}/docker-compose.yml"
 env_file="${proxy_dir}/.env"
+dynamic_dir="${proxy_dir}/dynamic"
+default_redirect_file="${dynamic_dir}/default_redirect_503.yaml"
 
 [[ -f "${compose_file}" ]] || { echo "Missing ${compose_file}" >&2; exit 1; }
 install -d -m 0700 "${proxy_dir}"
@@ -1736,6 +1738,10 @@ chmod 0600 "${env_file}"
 # Remove token-specific environment overrides so env_file values are effective.
 sed -i "/^[[:space:]]*-[[:space:]]*CLOUDFLARE_DNS_API_TOKEN=.*/d" "${compose_file}"
 sed -i "/^[[:space:]]*-[[:space:]]*CF_DNS_API_TOKEN=.*/d" "${compose_file}"
+
+# Tunnel mode uses the private DNS-01 resolver only; strip any public ACME resolver
+# flags so wildcard catchalls do not trigger public challenge noise.
+sed -i "/certificatesresolvers\\.letsencrypt\\./d" "${compose_file}"
 
 # Ensure Traefik service has env_file reference.
 if ! grep -q "^[[:space:]]*-[[:space:]]*/data/coolify/proxy/.env[[:space:]]*$" "${compose_file}"; then
@@ -1753,7 +1759,11 @@ ensure_compose_flag() {
   if grep -Fq -- "${flag}" "${compose_file}"; then
     return 0
   fi
-  sed -i "/--certificatesresolvers\\.letsencrypt\\.acme\\.storage=\\/traefik\\/acme\\.json/a\\      - '${flag}'" "${compose_file}"
+  if grep -Fq -- "--api.insecure=false" "${compose_file}"; then
+    sed -i "/--api\\.insecure=false/i\\      - '${flag}'" "${compose_file}"
+  else
+    sed -i "/^[[:space:]]*command:[[:space:]]*$/a\\      - '${flag}'" "${compose_file}"
+  fi
 }
 
 ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.dnschallenge=true"
@@ -1761,6 +1771,20 @@ ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.dnscha
 ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53"
 ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.email=coolify-admin@${CF_ZONE_NAME}"
 ensure_compose_flag "--certificatesresolvers.${PRIVATE_TLS_RESOLVER}.acme.storage=/traefik/acme.json"
+
+# Coolify regenerates this catchall file with a public resolver; remove it in
+# tunnel mode so wildcard traffic cannot trigger public ACME flows.
+if [[ -f "${default_redirect_file}" ]]; then
+  python3 - "${default_redirect_file}" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+text = text.replace("      tls:\n        certResolver: letsencrypt\n", "")
+path.write_text(text)
+PY
+fi
 
 if docker compose -f "${compose_file}" config >/dev/null 2>&1; then
   docker compose -f "${compose_file}" up -d
