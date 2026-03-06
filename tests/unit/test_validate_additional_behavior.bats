@@ -1044,9 +1044,19 @@ EOF
   chmod 755 "${sync_script}"
 
   STRICT_DOCKER_SSH_CIDRS="true"
+  DOCKER_SSH_CIDRS="172.20.0.0/16"
   DOCKER_SSH_CIDR_SYNC_SCRIPT="${sync_script}"
   DOCKER_SSH_CIDR_SYNC_SERVICE="docker-ssh-cidr-sync.service"
   DOCKER_SSH_CIDR_SYNC_TIMER="docker-ssh-cidr-sync.timer"
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  docker() { return 0; }
 
   systemctl() {
     if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "docker-ssh-cidr-sync.timer" ]]; then
@@ -1069,7 +1079,56 @@ EOF
   assert_json_check_status "${json}" "docker-ssh-cidr-sync: CIDR normalization" "PASS"
   assert_json_check_status "${json}" "docker-ssh-cidr-sync: timer active" "PASS"
   assert_json_check_status "${json}" "docker-ssh-cidr-sync: service completed successfully" "PASS"
+  assert_json_check_status "${json}" "docker-ssh-cidr-sync: compatibility fallback cleared" "PASS"
   assert_json_fail_count "${json}" "0"
+
+  rm -f "${sync_script}"
+}
+
+@test "docker_ssh_cidr_sync_check: fails when strict mode still uses broad compatibility CIDRs after Docker install" {
+  local sync_script
+  sync_script="$(mktemp)"
+  cat > "${sync_script}" <<'EOF'
+#!/usr/bin/env bash
+normalize_cidr() { :; }
+EOF
+  chmod 755 "${sync_script}"
+
+  STRICT_DOCKER_SSH_CIDRS="true"
+  DOCKER_SSH_CIDRS="10.0.0.0/8,172.16.0.0/12"
+  DOCKER_SSH_CIDR_SYNC_SCRIPT="${sync_script}"
+  DOCKER_SSH_CIDR_SYNC_SERVICE="docker-ssh-cidr-sync.service"
+  DOCKER_SSH_CIDR_SYNC_TIMER="docker-ssh-cidr-sync.timer"
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  docker() { return 0; }
+
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "docker-ssh-cidr-sync.timer" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "show" && "${2:-}" == "docker-ssh-cidr-sync.service" && "${3:-}" == "--property=ActiveState" ]]; then
+      echo inactive
+      return 0
+    fi
+    if [[ "${1:-}" == "show" && "${2:-}" == "docker-ssh-cidr-sync.service" && "${3:-}" == "--property=Result" ]]; then
+      echo success
+      return 0
+    fi
+    return 1
+  }
+
+  docker_ssh_cidr_sync_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-ssh-cidr-sync: compatibility fallback cleared" "FAIL"
+  assert_json_fail_count "${json}" "1"
 
   rm -f "${sync_script}"
 }

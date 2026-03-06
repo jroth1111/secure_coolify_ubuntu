@@ -655,16 +655,40 @@ docker_ssh_cidr_sync_check() {
   active_state="$(systemctl show "${DOCKER_SSH_CIDR_SYNC_SERVICE}" --property=ActiveState --value 2>/dev/null || echo "unknown")"
   if [[ "${active_state}" == "active" || "${active_state}" == "activating" ]]; then
     record "PASS" "docker-ssh-cidr-sync: service has run (${active_state})"
-    return
+  else
+    # Oneshot services are expected to go inactive after successful completion.
+    result="$(systemctl show "${DOCKER_SSH_CIDR_SYNC_SERVICE}" --property=Result --value 2>/dev/null || echo "unknown")"
+    if [[ "${result}" == "success" ]]; then
+      record "PASS" "docker-ssh-cidr-sync: service completed successfully"
+    else
+      record "FAIL" "docker-ssh-cidr-sync: service result" \
+        "result=${result} — inspect: journalctl -u ${DOCKER_SSH_CIDR_SYNC_SERVICE}"
+    fi
   fi
 
-  # Oneshot services are expected to go inactive after successful completion.
-  result="$(systemctl show "${DOCKER_SSH_CIDR_SYNC_SERVICE}" --property=Result --value 2>/dev/null || echo "unknown")"
-  if [[ "${result}" == "success" ]]; then
-    record "PASS" "docker-ssh-cidr-sync: service completed successfully"
-  else
-    record "FAIL" "docker-ssh-cidr-sync: service result" \
-      "result=${result} — inspect: journalctl -u ${DOCKER_SSH_CIDR_SYNC_SERVICE}"
+  if command -v docker >/dev/null 2>&1; then
+    local cidr
+    local -a compat_cidrs=()
+    local -A seen_compat=()
+
+    while IFS= read -r cidr; do
+      cidr="${cidr//[[:space:]]/}"
+      case "${cidr}" in
+        10.0.0.0/8|172.16.0.0/12)
+          if [[ -z "${seen_compat[${cidr}]:-}" ]]; then
+            compat_cidrs+=("${cidr}")
+            seen_compat["${cidr}"]=1
+          fi
+          ;;
+      esac
+    done < <(printf '%s\n' "${DOCKER_SSH_CIDRS:-10.0.0.0/8,172.16.0.0/12}" | tr ',' '\n')
+
+    if (( ${#compat_cidrs[@]} > 0 )); then
+      record "FAIL" "docker-ssh-cidr-sync: compatibility fallback cleared" \
+        "strict mode still includes broad fallback CIDRs after Docker install: $(IFS=,; echo "${compat_cidrs[*]}")"
+    else
+      record "PASS" "docker-ssh-cidr-sync: compatibility fallback cleared"
+    fi
   fi
 }
 
