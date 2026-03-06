@@ -339,6 +339,25 @@ phase2_gates() {
     systemctl start docker-ssh-cidr-sync.service 2>/dev/null || true
   fi
 
+  local wait_attempt wait_max_attempts=12 wait_delay=5 synced_val wait_logged=0
+  for (( wait_attempt=1; wait_attempt<=wait_max_attempts; wait_attempt++ )); do
+    synced_val="$(timedatectl show --property=NTPSynchronized --value 2>/dev/null | tr -d '[:space:]' || true)"
+    if [[ "${synced_val}" == "yes" ]]; then
+      (( wait_logged == 1 )) && pass "Gate C pre-check: timesync synchronized"
+      break
+    fi
+    [[ -n "${synced_val}" ]] || break
+    if (( wait_logged == 0 )); then
+      log "Gate C pre-check: waiting for system clock synchronization..."
+      wait_logged=1
+    fi
+    (( wait_attempt < wait_max_attempts )) || break
+    sleep "${wait_delay}"
+  done
+  if (( wait_logged == 1 )) && [[ "${synced_val:-}" != "yes" ]]; then
+    warn "Gate C pre-check: timesync still not synchronized after $((wait_max_attempts * wait_delay))s; continuing to validator retries."
+  fi
+
   log "Gate C: Running validate_hardening.sh..."
   local validate_json gate_c_fail attempt max_attempts=6 delay=10
   for (( attempt=1; attempt<=max_attempts; attempt++ )); do

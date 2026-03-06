@@ -270,6 +270,61 @@ EOF
   assert_success
 }
 
+@test "deploy: gate C waits for timesync before validation" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    TS_IP="100.64.0.25"
+    ADMIN_USER="coolifyadmin"
+    timesync_file="$(mktemp)"
+    echo 0 > "${timesync_file}"
+    validate_file="$(mktemp)"
+    echo 0 > "${validate_file}"
+
+    sleep() { :; }
+    ssh_admin() {
+      [[ "$1" == "echo ok" ]] && { echo ok; return 0; }
+      [[ "$1" == "whoami" ]] && { echo "${ADMIN_USER}"; return 0; }
+      return 0
+    }
+    ssh_admin_sudo() {
+      if [[ "$1" == "test -f /run/reboot-required" ]]; then
+        return 1
+      fi
+      if [[ "$1" == "docker version >/dev/null 2>&1" ]]; then
+        return 1
+      fi
+      if [[ "$1" == "timedatectl show --property=NTPSynchronized --value 2>/dev/null || true" ]]; then
+        attempt="$(cat "${timesync_file}")"
+        attempt=$((attempt + 1))
+        echo "${attempt}" > "${timesync_file}"
+        if (( attempt < 2 )); then
+          echo no
+        else
+          echo yes
+        fi
+        return 0
+      fi
+      if [[ "$1" == *"validate_hardening.sh --json"* ]]; then
+        validate_calls="$(cat "${validate_file}")"
+        validate_calls=$((validate_calls + 1))
+        echo "${validate_calls}" > "${validate_file}"
+        echo "{\"fail\":0,\"checks\":[]}"
+        return 0
+      fi
+      return 0
+    }
+    sync_companion_scripts() { :; }
+    report_validation_result() { :; }
+
+    phase2_gates
+    [[ "$(cat "${timesync_file}")" -eq 2 ]]
+    [[ "$(cat "${validate_file}")" -eq 1 ]]
+  '
+  assert_success
+  assert_output --partial "Gate C pre-check: waiting for system clock synchronization..."
+  assert_output --partial "Gate C pre-check: timesync synchronized"
+}
+
 @test "deploy: gate D validates service active and managed rules" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"

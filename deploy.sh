@@ -548,6 +548,29 @@ gate_c_failures_are_transient() {
   ' >/dev/null 2>&1 <<< "${json}"
 }
 
+wait_for_gate_c_timesync_remote() {
+  local max_attempts="${1:-12}" delay="${2:-5}"
+  local attempt synced_val waited=0
+
+  for (( attempt=1; attempt<=max_attempts; attempt++ )); do
+    synced_val="$(ssh_admin_sudo 'timedatectl show --property=NTPSynchronized --value 2>/dev/null || true' 2>/dev/null | tr -d '[:space:]')"
+    if [[ "${synced_val}" == "yes" ]]; then
+      (( waited == 1 )) && pass "Gate C pre-check: timesync synchronized"
+      return 0
+    fi
+    [[ -n "${synced_val}" ]] || break
+    if (( waited == 0 )); then
+      log "Gate C pre-check: waiting for system clock synchronization..."
+      waited=1
+    fi
+    (( attempt < max_attempts )) || break
+    sleep "${delay}"
+  done
+
+  (( waited == 1 )) && warn "Gate C pre-check: timesync still not synchronized after $((max_attempts * delay))s; continuing to validator retries."
+  return 1
+}
+
 phase2_gates() {
   step "2/5" "Gate checks (SSH transition to admin@tailscale)"
 
@@ -617,6 +640,7 @@ phase2_gates() {
     ssh_admin_sudo 'systemctl enable --now docker-user-hardening.service 2>/dev/null || true'
     ssh_admin_sudo 'systemctl start docker-ssh-cidr-sync.service 2>/dev/null || true'
   fi
+  wait_for_gate_c_timesync_remote 12 5 || true
 
   # Gate C: Validation passes
   log "Gate C: Running validate_hardening.sh..."

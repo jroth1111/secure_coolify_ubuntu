@@ -186,6 +186,52 @@ EOF
   assert_success
 }
 
+@test "setup: gate C waits for timesync before validation" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    SCRIPT_DIR="${tmpdir}"
+    cat > "${tmpdir}/validate_hardening.sh" <<EOF
+#!/usr/bin/env bash
+touch "${tmpdir}/validate_called"
+echo "{\"fail\":0,\"checks\":[]}"
+EOF
+    chmod +x "${tmpdir}/validate_hardening.sh"
+    TS_IP="100.64.0.25"
+    ADMIN_USER="coolifyadmin"
+    pause_for_operator() { :; }
+    docker() { return 1; }
+    tmphome="$(mktemp -d)"
+    mkdir -p "${tmphome}/.ssh"
+    getent() { echo "coolifyadmin:x:1001:1001::${tmphome}:/bin/bash"; }
+    timesync_file="$(mktemp)"
+    echo 0 > "${timesync_file}"
+    timedatectl() {
+      if [[ "$1" == "show" && "$2" == "--property=NTPSynchronized" && "$3" == "--value" ]]; then
+        attempt="$(cat "${timesync_file}")"
+        attempt=$((attempt + 1))
+        echo "${attempt}" > "${timesync_file}"
+        if (( attempt < 2 )); then
+          echo no
+        else
+          echo yes
+        fi
+        return 0
+      fi
+      return 0
+    }
+    sleep() { :; }
+    report_validation_result() { :; }
+
+    phase2_gates
+    [[ "$(cat "${timesync_file}")" -eq 2 ]]
+    [[ -f "${tmpdir}/validate_called" ]]
+  '
+  assert_success
+  assert_output --partial "Gate C pre-check: waiting for system clock synchronization..."
+  assert_output --partial "Gate C pre-check: timesync synchronized"
+}
+
 @test "setup: gate D validates service active and managed rules" {
   run bash -c '
     source "'"${SETUP_SCRIPT}"'"
