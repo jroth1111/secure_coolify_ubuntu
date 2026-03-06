@@ -396,7 +396,7 @@ EOF
     coolify_install_cloudflared_script() { echo true; }
     coolify_remove_private_dashboard_routes_script() { echo true; }
     cf_create_tunnel() { :; }
-    cf_delete_host_records() { :; }
+    cf_delete_conflicting_host_records() { :; }
     cf_upsert_a_record() { :; }
     cf_upsert_cname() { :; }
 
@@ -429,7 +429,7 @@ EOF
         echo "302"
       elif [[ "${url}" == "http://ws.${DOMAIN}" ]]; then
         echo "302"
-      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
+      elif [[ "${url}" == "https://${DOMAIN}/api/v1/health" ]]; then
         echo "200"
       else
         echo "000"
@@ -492,7 +492,7 @@ EOF
         echo "302"
       elif [[ "${url}" == "http://ws.${DOMAIN}" ]]; then
         echo "302"
-      elif [[ "${url}" == "https://${DOMAIN}" ]]; then
+      elif [[ "${url}" == "https://${DOMAIN}/api/v1/health" ]]; then
         echo "200"
       else
         echo "000"

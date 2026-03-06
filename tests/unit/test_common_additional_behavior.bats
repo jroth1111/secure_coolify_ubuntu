@@ -394,13 +394,19 @@ setup() {
   assert_output --partial "required permissions"
 }
 
-@test "DNS record helpers: delete host records and validate private A records" {
+@test "DNS record helpers: delete conflicting host records and validate private A records" {
   run bash -c '
     source "'"${COMMON_LIB}"'"
     CF_ZONE_ID="zone-123"
     cf_expect_success() { :; }
+    deleted=""
     cf_api() {
       local method="$1" endpoint="$2"
+      if [[ "${method}" == "DELETE" ]]; then
+        deleted+="${endpoint}"$'\''\n'\''
+        echo "{\"success\":true}"
+        return 0
+      fi
       if [[ "${method}" == "GET" && "${endpoint}" == *"dns_records?type=A"* ]]; then
         echo "{\"success\":true,\"result\":[{\"id\":\"a1\",\"content\":\"100.64.0.10\",\"proxied\":false}]}"
         return 0
@@ -411,8 +417,10 @@ setup() {
       fi
       echo "{\"success\":true}"
     }
-    cf_delete_host_records "app.example.com"
+    cf_delete_conflicting_host_records "app.example.com"
     cf_assert_private_tailscale_a_record "app.example.com" "100.64.0.10"
+    grep -q '/zones/zone-123/dns_records/x1' <<< "${deleted}"
+    ! grep -q '/zones/zone-123/dns_records/a1' <<< "${deleted}"
   '
   assert_success
 }
@@ -641,7 +649,7 @@ setup() {
     configure_private_tls_calls=0
     configure_private_routes_calls=0
     remove_private_routes_calls=0
-    deleted_hosts=""
+    conflicting_hosts=""
     a_records=""
     cname_records=""
 
@@ -658,7 +666,7 @@ setup() {
     configure_private_tls() { configure_private_tls_calls=$((configure_private_tls_calls + 1)); }
     remove_private_routes() { remove_private_routes_calls=$((remove_private_routes_calls + 1)); }
     cf_create_tunnel() { create_tunnel_calls=$((create_tunnel_calls + 1)); }
-    cf_delete_host_records() { deleted_hosts+="$1"$'"'"'\n'"'"'; }
+    cf_delete_conflicting_host_records() { conflicting_hosts+="$1"$'"'"'\n'"'"'; }
     cf_upsert_a_record() { a_records+="$1|$2|$3"$'"'"'\n'"'"'; }
     cf_upsert_cname() { cname_records+="$1|$2"$'"'"'\n'"'"'; }
 
@@ -680,8 +688,8 @@ setup() {
     [[ "${configure_private_routes_calls}" -eq 1 ]]
     [[ "${configure_private_tls_calls}" -eq 1 ]]
     [[ "${remove_private_routes_calls}" -eq 0 ]]
-    grep -q "^coolify.vps.example.com$" <<< "${deleted_hosts}"
-    grep -q "^ws.coolify.vps.example.com$" <<< "${deleted_hosts}"
+    grep -q "^coolify.vps.example.com$" <<< "${conflicting_hosts}"
+    grep -q "^ws.coolify.vps.example.com$" <<< "${conflicting_hosts}"
     grep -q "^coolify.vps.example.com|100.64.0.25|false$" <<< "${a_records}"
     grep -q "^ws.coolify.vps.example.com|100.64.0.25|false$" <<< "${a_records}"
     grep -q "^\\*.vps.example.com|tunnel-1234.cfargotunnel.com$" <<< "${cname_records}"

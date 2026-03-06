@@ -1765,19 +1765,19 @@ entries:
   function: cf_assert_private_tailscale_a_record
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::DNS record helpers:
-    delete host records and validate private A records'
+    delete conflicting host records and validate private A records'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::DNS record helpers: delete host
-    records and validate private A records'
+  - 'tests/unit/test_common_additional_behavior.bats::DNS record helpers: delete
+    conflicting host records and validate private A records'
 - id: LS-COM-037
   script_path: lib/coolify-common.sh
-  function: cf_delete_host_records
+  function: cf_delete_conflicting_host_records
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::DNS record helpers:
-    delete host records and validate private A records'
+    delete conflicting host records and validate private A records'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::DNS record helpers: delete host
-    records and validate private A records'
+  - 'tests/unit/test_common_additional_behavior.bats::DNS record helpers: delete
+    conflicting host records and validate private A records'
 - id: LS-COM-038
   script_path: lib/coolify-common.sh
   function: cf_expect_probe_authorized_or_validation_error

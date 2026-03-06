@@ -700,17 +700,17 @@ cf_upsert_cname() {
   fi
 }
 
-cf_delete_host_records() {
+cf_delete_conflicting_host_records() {
   local name="$1"
   local type existing record_id resp
 
-  for type in A AAAA CNAME; do
+  for type in AAAA CNAME; do
     existing="$(cf_api GET "/zones/${CF_ZONE_ID}/dns_records?type=${type}&name=${name}")"
     while IFS= read -r record_id; do
       [[ -n "${record_id}" ]] || continue
       resp="$(cf_api DELETE "/zones/${CF_ZONE_ID}/dns_records/${record_id}")"
       cf_expect_success "Cloudflare ${type} record delete (${name})" "${resp}"
-      log "Deleted ${type} record: ${name} (${record_id})"
+      log "Deleted conflicting ${type} record: ${name} (${record_id})"
     done < <(printf '%s' "${existing}" | jq -r '.result[]?.id // empty')
   done
 }
@@ -979,9 +979,10 @@ coolify_phase4_binding_dns_shared() {
   "${configure_private_tls_fn}" || die "Failed to configure trusted private TLS for dashboard/realtime routes."
   pass "Trusted private TLS configured for ${DOMAIN} and ws.${DOMAIN}"
 
-  # Ensure exact host records are rebuilt as DNS-only Tailscale records on every run.
-  cf_delete_host_records "${DOMAIN}"
-  cf_delete_host_records "ws.${DOMAIN}"
+  # Ensure exact host records converge to DNS-only Tailscale A records without
+  # deleting matching A records on every rerun.
+  cf_delete_conflicting_host_records "${DOMAIN}"
+  cf_delete_conflicting_host_records "ws.${DOMAIN}"
   cf_upsert_a_record "${DOMAIN}" "${TS_IP}" "false"
   pass "DNS host A record configured: ${DOMAIN} → ${TS_IP} (DNS-only)"
   cf_upsert_a_record "ws.${DOMAIN}" "${TS_IP}" "false"
