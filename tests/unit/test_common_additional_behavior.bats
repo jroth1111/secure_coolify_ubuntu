@@ -279,8 +279,22 @@ setup() {
   run coolify_install_binding_guard_script
   assert_success
   assert_output --partial "/usr/local/sbin/coolify-binding-guard.sh"
+  assert_output --partial "delete_non_tailscale_rule_numbers() {"
+  assert_output --partial 'ufw --force delete "${rule_number}"'
   assert_output --partial "coolify-binding-guard.timer"
   assert_output --partial "systemctl enable --now coolify-binding-guard.timer"
+}
+
+@test "coolify_tunnel_name: incorporates full domain and deterministic hash" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    DOMAIN="vps1.internal.example.org"
+    name="$(coolify_tunnel_name)"
+    printf "%s\n" "${name}"
+    [[ "${#name}" -le 63 ]]
+  '
+  assert_success
+  assert_regex '^coolify-vps1-internal-example-org-[0-9a-f]{12}$'
 }
 
 @test "collect_common_inputs: preserves pre-populated values without prompting" {
@@ -668,7 +682,7 @@ setup() {
   assert_success
 }
 
-@test "coolify_phase5_verify_shared: rejects unhealthy dashboard HTTP codes on Tailscale" {
+@test "coolify_phase5_verify_shared: rejects auth-only dashboard HTTP codes on Tailscale" {
   run bash -c '
     source "'"${COMMON_LIB}"'"
     DEPLOY_MODE="standard"
@@ -679,7 +693,7 @@ setup() {
     curl() {
       local url="${@: -1}"
       if [[ "${url}" == "http://${TS_IP}:8000" ]]; then
-        echo "404"
+        echo "401"
       else
         echo "000"
       fi

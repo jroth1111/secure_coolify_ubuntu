@@ -604,6 +604,12 @@ cf_upsert_a_record() {
   if [[ -n "${record_id}" ]]; then
     resp="$(cf_api PUT "/zones/${CF_ZONE_ID}/dns_records/${record_id}" "${body}")"
     cf_expect_success "Cloudflare A record update (${name})" "${resp}"
+    while IFS= read -r duplicate_id; do
+      [[ -n "${duplicate_id}" ]] || continue
+      resp="$(cf_api DELETE "/zones/${CF_ZONE_ID}/dns_records/${duplicate_id}")"
+      cf_expect_success "Cloudflare duplicate A record delete (${name})" "${resp}"
+      log "Deleted duplicate A record: ${name} (${duplicate_id})"
+    done < <(printf '%s' "${existing}" | jq -r --arg keep "${record_id}" '.result[]?.id | select(. != $keep)')
     log "Updated A record: ${name} → ${ip} (proxied=${proxied})"
   else
     resp="$(cf_api POST "/zones/${CF_ZONE_ID}/dns_records" "${body}")"
@@ -612,31 +618,46 @@ cf_upsert_a_record() {
   fi
 }
 
+coolify_tunnel_name() {
+  local domain_lc slug digest
+  domain_lc="$(printf '%s' "${DOMAIN}" | tr '[:upper:]' '[:lower:]')"
+  slug="$(printf '%s' "${domain_lc}" | tr -cs 'a-z0-9' '-')"
+  slug="${slug#-}"
+  slug="${slug%-}"
+  digest="$(printf '%s' "${domain_lc}" | openssl dgst -sha256 -r | awk '{print substr($1, 1, 12)}')"
+  printf 'coolify-%s-%s' "${slug:0:42}" "${digest}"
+}
+
 cf_create_tunnel() {
   local stop_fn="${1:-}"   # optional: name of function to call to stop cloudflared
-  local tunnel_name="${DOMAIN%%.*}-coolify"
+  local tunnel_name
+  tunnel_name="$(coolify_tunnel_name)"
 
   # Delete any existing tunnel with the same name (idempotent re-run support).
   # Stop cloudflared first so it releases active connections — the CF API rejects DELETE for
   # tunnels with active connections, and the name stays reserved even after a failed delete.
-  local existing_id
-  existing_id="$(cf_tunnel_api GET "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel?name=${tunnel_name}&is_deleted=false" \
-    | jq -r '.result[0].id // empty')"
-  if [[ -n "${existing_id}" ]]; then
+  local existing_ids=()
+  mapfile -t existing_ids < <(
+    cf_tunnel_api GET "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel?name=${tunnel_name}&is_deleted=false" \
+      | jq -r '.result[]?.id // empty'
+  )
+  if (( ${#existing_ids[@]} > 0 )); then
     log "Stopping cloudflared on server to release tunnel connections before delete..."
     [[ -n "${stop_fn}" ]] && "${stop_fn}"
     sleep 3  # Allow connections to close
-    log "Deleting stale tunnel ${tunnel_name} (${existing_id}) before recreating..."
-    local delete_resp delete_ok delete_err
-    delete_resp="$(cf_tunnel_api DELETE "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel/${existing_id}" 2>/dev/null || true)"
-    delete_ok="$(printf '%s' "${delete_resp}" | jq -r '.success // false' 2>/dev/null || echo "false")"
-    if [[ "${delete_ok}" == "true" ]]; then
-      log "Deleted stale tunnel ${existing_id}"
-    else
-      delete_err="$(printf '%s' "${delete_resp}" | jq -r '[.errors[]?.message] | join("; ")' 2>/dev/null || true)"
-      [[ -n "${delete_err}" && "${delete_err}" != "null" ]] || delete_err="unknown"
-      warn "Could not delete stale tunnel ${existing_id} (${delete_err}); proceeding anyway."
-    fi
+    local existing_id delete_resp delete_ok delete_err
+    for existing_id in "${existing_ids[@]}"; do
+      log "Deleting stale tunnel ${tunnel_name} (${existing_id}) before recreating..."
+      delete_resp="$(cf_tunnel_api DELETE "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel/${existing_id}" 2>/dev/null || true)"
+      delete_ok="$(printf '%s' "${delete_resp}" | jq -r '.success // false' 2>/dev/null || echo "false")"
+      if [[ "${delete_ok}" == "true" ]]; then
+        log "Deleted stale tunnel ${existing_id}"
+      else
+        delete_err="$(printf '%s' "${delete_resp}" | jq -r '[.errors[]?.message] | join("; ")' 2>/dev/null || true)"
+        [[ -n "${delete_err}" && "${delete_err}" != "null" ]] || delete_err="unknown"
+        die "Could not delete stale tunnel ${existing_id} (${delete_err}); refusing to reuse reserved tunnel name ${tunnel_name}."
+      fi
+    done
     sleep 2  # Allow CF to release the name
   fi
 
@@ -665,6 +686,12 @@ cf_upsert_cname() {
   if [[ -n "${record_id}" ]]; then
     resp="$(cf_api PUT "/zones/${CF_ZONE_ID}/dns_records/${record_id}" "${body}")"
     cf_expect_success "Cloudflare CNAME update (${name})" "${resp}"
+    while IFS= read -r duplicate_id; do
+      [[ -n "${duplicate_id}" ]] || continue
+      resp="$(cf_api DELETE "/zones/${CF_ZONE_ID}/dns_records/${duplicate_id}")"
+      cf_expect_success "Cloudflare duplicate CNAME delete (${name})" "${resp}"
+      log "Deleted duplicate CNAME: ${name} (${duplicate_id})"
+    done < <(printf '%s' "${existing}" | jq -r --arg keep "${record_id}" '.result[]?.id | select(. != $keep)')
     log "Updated CNAME: ${name} → ${target}"
   else
     resp="$(cf_api POST "/zones/${CF_ZONE_ID}/dns_records" "${body}")"
@@ -1078,7 +1105,7 @@ coolify_http_code_is_success_or_redirect() {
 
 coolify_dashboard_http_code_is_healthy() {
   local code="${1:-000}"
-  coolify_http_code_is_success_or_redirect "${code}" || [[ "${code}" == "401" || "${code}" == "403" ]]
+  coolify_http_code_is_success_or_redirect "${code}"
 }
 
 coolify_phase5_verify_shared() {
@@ -1526,11 +1553,36 @@ LOG_TAG="coolify-binding-guard"
 
 log() { logger -t "${LOG_TAG}" -- "$*"; }
 
+delete_non_tailscale_rule_numbers() {
+  local numbered rules=()
+  numbered="$(ufw status numbered 2>/dev/null || true)"
+  mapfile -t rules < <(
+    awk '
+      BEGIN { IGNORECASE=1 }
+      /\[[[:space:]]*[0-9]+\]/ && /ALLOW IN/ && /(8000|6001|6002)(\/tcp)?/ {
+        line=tolower($0)
+        if (index(line, "tailscale0") == 0) {
+          rule=$1
+          gsub(/\[/, "", rule)
+          gsub(/\]/, "", rule)
+          print rule
+        }
+      }
+    ' <<< "${numbered}" | sort -rn
+  )
+  printf '%s\n' "${rules[@]}"
+}
+
 command -v ufw >/dev/null 2>&1 || { log "ufw not found; skipping."; exit 0; }
 ufw_status="$(ufw status 2>/dev/null | head -1)" || true
 [[ "${ufw_status}" == "Status: active" ]] || { log "UFW not active; skipping."; exit 0; }
 
 changed=false
+while IFS= read -r rule_number; do
+  [[ -n "${rule_number}" ]] || continue
+  ufw --force delete "${rule_number}" >/dev/null 2>&1 || true
+  changed=true
+done < <(delete_non_tailscale_rule_numbers)
 if ! ufw status | grep -q "8000.*on ${TAILSCALE_IFACE}"; then
   ufw allow in on "${TAILSCALE_IFACE}" proto tcp to any port 8000 comment "coolify-hardening-dashboard-tailscale" >/dev/null 2>&1 || true
   changed=true

@@ -310,14 +310,40 @@ setup() {
 @test "deploy: cf_create_tunnel extracts tunnel ID from response" {
   run bash -c "
     source '${DEPLOY_SCRIPT}'
-    cf_api() { echo '{\"result\": {\"id\": \"tunnel-abc123\"}}'; }
-    export -f cf_api
+    cf_tunnel_api() {
+      if [[ \"\$1\" == 'GET' && \"\$2\" == /accounts/account123/cfd_tunnel?name=coolify-app-example-com-* ]]; then
+        echo '{\"result\": []}'
+      elif [[ \"\$1\" == 'POST' && \"\$2\" == '/accounts/account123/cfd_tunnel' ]]; then
+        echo '{\"result\": {\"id\": \"tunnel-abc123\"}}'
+      fi
+    }
+    export -f cf_tunnel_api
     CF_ACCOUNT_ID='account123'
     DOMAIN='app.example.com'
     cf_create_tunnel
     echo \"TUNNEL_ID=\${TUNNEL_ID}\"
   "
   assert_output --partial "TUNNEL_ID=tunnel-abc123"
+}
+
+@test "deploy: cf_create_tunnel fails when stale tunnel delete fails" {
+  run bash -c "
+    source '${DEPLOY_SCRIPT}'
+    cf_tunnel_api() {
+      if [[ \"\$1\" == 'GET' && \"\$2\" == /accounts/account123/cfd_tunnel?name=coolify-app-example-com-* ]]; then
+        echo '{\"result\": [{\"id\": \"stale-123\"}]}'
+      elif [[ \"\$1\" == 'DELETE' && \"\$2\" == '/accounts/account123/cfd_tunnel/stale-123' ]]; then
+        echo '{\"success\": false, \"errors\": [{\"message\": \"still connected\"}]}'
+      fi
+    }
+    export -f cf_tunnel_api
+    CF_ACCOUNT_ID='account123'
+    DOMAIN='app.example.com'
+    sleep() { :; }
+    cf_create_tunnel
+  "
+  assert_failure
+  assert_output --partial "refusing to reuse reserved tunnel name"
 }
 
 # ── Gate Logic Tests ──────────────────────────────────────────────────────────
@@ -412,16 +438,18 @@ setup() {
   run bash -c "
     source '${DEPLOY_SCRIPT}'
 
-    # Mock cf_api to return existing record, then verify PUT is called
     call_count=0
+    deleted=''
     cf_api() {
       call_count=\$((call_count + 1))
       if [[ \$call_count -eq 1 ]]; then
-        # First call: GET existing record
-        echo '{\"result\": [{\"id\": \"record123\"}]}'
+        echo '{\"result\": [{\"id\": \"record123\"}, {\"id\": \"record456\"}]}'
       else
-        # Second call: PUT update
-        echo \"METHOD=\$1 ENDPOINT=\$2\" >&2
+        if [[ \"\$1\" == 'DELETE' ]]; then
+          deleted=\"\$2\"
+        else
+          echo \"METHOD=\$1 ENDPOINT=\$2\" >&2
+        fi
         echo '{\"success\": true}'
       fi
     }
@@ -429,6 +457,7 @@ setup() {
 
     CF_ZONE_ID='zone123'
     cf_upsert_a_record 'app.example.com' '192.168.1.1' 'true' 2>&1
+    [[ \"\${deleted}\" == '/zones/zone123/dns_records/record456' ]]
   "
   assert_output --partial "METHOD=PUT"
 }
@@ -463,12 +492,17 @@ setup() {
     source '${DEPLOY_SCRIPT}'
 
     call_count=0
+    deleted=''
     cf_api() {
       call_count=\$((call_count + 1))
       if [[ \$call_count -eq 1 ]]; then
-        echo '{\"result\": [{\"id\": \"cname123\"}]}'
+        echo '{\"result\": [{\"id\": \"cname123\"}, {\"id\": \"cname456\"}]}'
       else
-        echo \"METHOD=\$1\" >&2
+        if [[ \"\$1\" == 'DELETE' ]]; then
+          deleted=\"\$2\"
+        else
+          echo \"METHOD=\$1\" >&2
+        fi
         echo '{\"success\": true}'
       fi
     }
@@ -476,6 +510,7 @@ setup() {
 
     CF_ZONE_ID='zone123'
     cf_upsert_cname 'app.example.com' 'tunnel-id.cfargotunnel.com' 2>&1
+    [[ \"\${deleted}\" == '/zones/zone123/dns_records/cname456' ]]
   "
   assert_output --partial "METHOD=PUT"
 }
