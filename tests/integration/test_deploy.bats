@@ -346,6 +346,38 @@ setup() {
   assert_output --partial "refusing to reuse reserved tunnel name"
 }
 
+@test "deploy: cf_create_tunnel reuses existing tunnel when server credentials match" {
+  run bash -c "
+    source '${DEPLOY_SCRIPT}'
+    post_calls=0
+    delete_calls=0
+    cf_tunnel_api() {
+      if [[ \"\$1\" == 'GET' && \"\$2\" == /accounts/account123/cfd_tunnel?name=coolify-app-example-com-* ]]; then
+        echo '{\"result\": [{\"id\": \"tunnel-existing\"}]}'
+      elif [[ \"\$1\" == 'POST' ]]; then
+        post_calls=\$((post_calls + 1))
+        echo '{\"result\": {\"id\": \"unexpected\"}}'
+      elif [[ \"\$1\" == 'DELETE' ]]; then
+        delete_calls=\$((delete_calls + 1))
+        echo '{\"success\": true}'
+      fi
+    }
+    fetch_existing_tunnel() { printf 'tunnel-existing\tsecret-abc\n'; }
+    export -f cf_tunnel_api fetch_existing_tunnel
+    CF_ACCOUNT_ID='account123'
+    DOMAIN='app.example.com'
+    cf_create_tunnel '' fetch_existing_tunnel
+    echo \"TUNNEL_ID=\${TUNNEL_ID}\"
+    echo \"TUNNEL_SECRET=\${TUNNEL_SECRET}\"
+    [[ \"\${post_calls}\" -eq 0 ]]
+    [[ \"\${delete_calls}\" -eq 0 ]]
+  "
+  assert_success
+  assert_output --partial "Reusing existing tunnel: coolify-app-example-com-"
+  assert_output --partial "TUNNEL_ID=tunnel-existing"
+  assert_output --partial "TUNNEL_SECRET=secret-abc"
+}
+
 # ── Gate Logic Tests ──────────────────────────────────────────────────────────
 
 @test "deploy: verify_docker_user_gate_remote passes when service active and rules present" {

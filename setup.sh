@@ -451,6 +451,20 @@ phase4_binding_dns() {
           CF_ZONE_NAME="${CF_ZONE_NAME}" bash -s
   }
   phase4_stop_cloudflared() { systemctl stop cloudflared 2>/dev/null || true; }
+  phase4_fetch_existing_tunnel() {
+    local config="/etc/cloudflared/config.yml"
+    local tunnel_id creds_path creds_id tunnel_secret
+    [[ -f "${config}" ]] || return 0
+    tunnel_id="$(awk -F': *' '/^tunnel:/ {print $2; exit}' "${config}")"
+    [[ -n "${tunnel_id}" ]] || return 0
+    creds_path="$(awk -F': *' '/^credentials-file:/ {print $2; exit}' "${config}")"
+    [[ -n "${creds_path}" ]] || creds_path="/etc/cloudflared/${tunnel_id}.json"
+    [[ -f "${creds_path}" ]] || return 0
+    creds_id="$(jq -r '.TunnelID // empty' "${creds_path}")"
+    tunnel_secret="$(jq -r '.TunnelSecret // empty' "${creds_path}")"
+    [[ -n "${creds_id}" && "${creds_id}" == "${tunnel_id}" && -n "${tunnel_secret}" ]] || return 0
+    printf '%s\t%s\n' "${creds_id}" "${tunnel_secret}"
+  }
   phase4_configure_private_routes() {
     coolify_configure_private_dashboard_routes_script \
       | env DOMAIN="${DOMAIN}" PRIVATE_TLS_RESOLVER="privatedns" bash -s
@@ -478,6 +492,7 @@ phase4_binding_dns() {
     phase4_install_cloudflared \
     phase4_configure_cloudflared \
     phase4_stop_cloudflared \
+    phase4_fetch_existing_tunnel \
     phase4_configure_private_routes \
     phase4_configure_private_tls \
     phase4_remove_private_routes

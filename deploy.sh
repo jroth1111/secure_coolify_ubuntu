@@ -812,6 +812,22 @@ phase4_binding_dns() {
       | ssh_admin_sudo "TUNNEL_ID=${tunnel_id_q} TUNNEL_SECRET=${tunnel_secret_q} CF_ACCOUNT_ID=${cf_account_id_q} DOMAIN=${domain_q} APP_DOMAIN=${app_domain_q} CF_ZONE_NAME=${cf_zone_name_q} bash -s"
   }
   phase4_stop_cloudflared() { ssh_admin_sudo 'systemctl stop cloudflared 2>/dev/null || true'; }
+  phase4_fetch_existing_tunnel() {
+    ssh_admin_sudo 'bash -s' <<'EOF'
+set -Eeuo pipefail
+config="/etc/cloudflared/config.yml"
+[[ -f "${config}" ]] || exit 0
+tunnel_id="$(awk -F': *' '/^tunnel:/ {print $2; exit}' "${config}")"
+[[ -n "${tunnel_id}" ]] || exit 0
+creds_path="$(awk -F': *' '/^credentials-file:/ {print $2; exit}' "${config}")"
+[[ -n "${creds_path}" ]] || creds_path="/etc/cloudflared/${tunnel_id}.json"
+[[ -f "${creds_path}" ]] || exit 0
+creds_id="$(jq -r '.TunnelID // empty' "${creds_path}")"
+tunnel_secret="$(jq -r '.TunnelSecret // empty' "${creds_path}")"
+[[ -n "${creds_id}" && "${creds_id}" == "${tunnel_id}" && -n "${tunnel_secret}" ]] || exit 0
+printf '%s\t%s\n' "${creds_id}" "${tunnel_secret}"
+EOF
+  }
   phase4_configure_private_routes() {
     local domain_q resolver_q
     domain_q="$(printf '%q' "${DOMAIN}")"
@@ -846,6 +862,7 @@ phase4_binding_dns() {
     phase4_install_cloudflared \
     phase4_configure_cloudflared \
     phase4_stop_cloudflared \
+    phase4_fetch_existing_tunnel \
     phase4_configure_private_routes \
     phase4_configure_private_tls \
     phase4_remove_private_routes
