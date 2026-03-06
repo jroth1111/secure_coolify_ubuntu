@@ -177,16 +177,9 @@ else
   warn "Port 6002 not yet listening (may start later). Check: ss -tlnp | grep 6002"
 fi
 
-# Test that public IP is NOT serving the dashboard (UFW should block it)
-if command -v nc >/dev/null 2>&1; then
-  public_ip="$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')"
-  if [[ -n "${public_ip}" && "${public_ip}" != "${TAILSCALE_IP}" ]]; then
-    if nc -z -w2 "${public_ip}" 8000 2>/dev/null; then
-      log "INFO: Local probe reached ${public_ip}:8000; verify from an external host (Gate E is authoritative)."
-    else
-      log "PASS: Port 8000 not reachable on public IP ${public_ip}"
-    fi
-  fi
+public_ip="$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')"
+if [[ -n "${public_ip}" && "${public_ip}" != "${TAILSCALE_IP}" ]]; then
+  log "INFO: External exposure for ${public_ip}:8000 is validated from an off-host probe (Gate E is authoritative)."
 fi
 
 log "Coolify binding configuration complete."
