@@ -520,7 +520,15 @@ preflight() {
 
 phase1_upload_harden() {
   step "1/5" "Upload scripts & harden server"
-  local bootstrap_cmd="/root/bootstrap_hardening.sh --env-file ${REMOTE_DEPLOY_ENV_PATH} --install-tailscale --force"
+  local bootstrap_cmd bootstrap_cmd_script
+  bootstrap_cmd_script="$(cat <<EOF
+set -Eeuo pipefail
+cleanup() { rm -f -- ${REMOTE_DEPLOY_ENV_PATH@Q}; }
+trap cleanup EXIT
+/root/bootstrap_hardening.sh --env-file ${REMOTE_DEPLOY_ENV_PATH@Q} --install-tailscale --force
+EOF
+)"
+  printf -v bootstrap_cmd 'bash -lc %q' "${bootstrap_cmd_script}"
   local bootstrap_transport="root"
 
   # Upload scripts
@@ -662,8 +670,8 @@ phase1_upload_harden() {
   [[ "${TS_IP}" =~ ${IPV4_RE} ]] || die "Failed to get a valid Tailscale IP from bootstrap output."
   pass "Server Tailscale IP: ${TS_IP}"
 
-  # Note: deploy.env cleanup is deferred to phase2_gates (ssh_admin_sudo after Gate B),
-  # because root SSH via public IP is now blocked by UFW.
+  # deploy.env cleanup is attempted by the remote bootstrap wrapper and retained
+  # as a phase2/EXIT-trap fallback in case the remote session dies mid-transition.
 }
 
 phase1_skipped() {
@@ -700,7 +708,13 @@ gate_c_failures_are_transient() {
     | [ .[] | select(.status=="FAIL") | .check ] as $fails
     | ($fails|length) > 0
       and
-      all($fails[]; . == "timesync: NTPSynchronized")
+      all($fails[];
+        . == "timesync: NTPSynchronized"
+        or . == "fail2ban: active"
+        or . == "fail2ban: sshd jail"
+        or . == "fail2ban: f2b-sshd iptables chain"
+        or . == "docker-user: IPv4"
+      )
   ' >/dev/null 2>&1 <<< "${json}"
 }
 
@@ -886,7 +900,7 @@ phase2_gates() {
       break
     fi
     if (( attempt < max_attempts )) && gate_c_failures_are_transient "${validate_json}"; then
-      log "  Gate C transient failure (timesync not yet synchronized); retrying in ${delay}s (${attempt}/${max_attempts})..."
+      log "  Gate C transient failure (timesync/fail2ban/docker-user not ready yet); retrying in ${delay}s (${attempt}/${max_attempts})..."
       sleep "${delay}"
       continue
     fi

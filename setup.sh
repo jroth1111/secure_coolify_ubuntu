@@ -338,8 +338,27 @@ phase1_harden() {
 
 # ── Phase 2: Gate checks ───────────────────────────────────────────────────
 
+setup_reboot_required_file() {
+  printf '%s\n' "${REBOOT_REQUIRED_FILE:-/run/reboot-required}"
+}
+
+setup_reboot_required_pkgs_file() {
+  printf '%s\n' "${REBOOT_REQUIRED_PKGS_FILE:-/run/reboot-required.pkgs}"
+}
+
 phase2_gates() {
   step "2/5" "Gate checks"
+
+  local reboot_required_file reboot_required_pkgs_file
+  reboot_required_file="$(setup_reboot_required_file)"
+  reboot_required_pkgs_file="$(setup_reboot_required_pkgs_file)"
+
+  if [[ -f "${reboot_required_file}" ]]; then
+    local reboot_pkgs
+    reboot_pkgs="$(tr '\n' ',' < "${reboot_required_pkgs_file}" 2>/dev/null | sed 's/,$//' || true)"
+    fail "Gate B.5: Reboot required before validation (${reboot_pkgs:-unknown packages})"
+    die "Reboot the server, then rerun setup.sh to continue from a clean post-upgrade state."
+  fi
 
   # Gate A: Operator verifies SSH from laptop
   pause_for_operator "From your LAPTOP, verify SSH: ssh ${ADMIN_USER}@${TS_IP} (Tailscale IP)"
@@ -352,13 +371,6 @@ phase2_gates() {
   else
     fail "Gate B: Admin user ${ADMIN_USER} home or .ssh not found"
     die "Gate B failed."
-  fi
-
-  if [[ -f /run/reboot-required ]]; then
-    local reboot_pkgs
-    reboot_pkgs="$(tr '\n' ',' < /run/reboot-required.pkgs 2>/dev/null | sed 's/,$//' || true)"
-    fail "Gate B.5: Reboot required before validation (${reboot_pkgs:-unknown packages})"
-    die "Reboot the server, then rerun setup.sh to continue from a clean post-upgrade state."
   fi
 
   # Gate C: Validation passes
@@ -401,9 +413,9 @@ phase2_gates() {
       break
     fi
     if (( attempt < max_attempts )) \
-      && jq -e '.checks | [ .[] | select(.status=="FAIL") | .check ] as $fails | ($fails|length)>0 and all($fails[]; .=="timesync: NTPSynchronized")' \
+      && jq -e '.checks | [ .[] | select(.status=="FAIL") | .check ] as $fails | ($fails|length)>0 and all($fails[]; .=="timesync: NTPSynchronized" or .=="fail2ban: active" or .=="fail2ban: sshd jail" or .=="fail2ban: f2b-sshd iptables chain" or .=="docker-user: IPv4")' \
         >/dev/null 2>&1 <<< "${validate_json}"; then
-      log "  Gate C transient failure (timesync not yet synchronized); retrying in ${delay}s (${attempt}/${max_attempts})..."
+      log "  Gate C transient failure (timesync/fail2ban/docker-user not ready yet); retrying in ${delay}s (${attempt}/${max_attempts})..."
       sleep "${delay}"
       continue
     fi

@@ -165,6 +165,26 @@ EOF
   assert_output --partial "From your LAPTOP, verify SSH: ssh"
 }
 
+@test "setup: reboot-required stops before operator gate prompt" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    TS_IP="100.64.0.25"
+    ADMIN_USER="coolifyadmin"
+    pause_for_operator() { echo "prompted"; }
+    getent() { echo "coolifyadmin:x:1001:1001::/tmp/unused:/bin/bash"; }
+    tmpdir="$(mktemp -d)"
+    REBOOT_REQUIRED_FILE="${tmpdir}/reboot-required"
+    REBOOT_REQUIRED_PKGS_FILE="${tmpdir}/reboot-required.pkgs"
+    printf "linux-image\n" > "${REBOOT_REQUIRED_PKGS_FILE}"
+    : > "${REBOOT_REQUIRED_FILE}"
+
+    phase2_gates
+  '
+  assert_failure
+  refute_output --partial "prompted"
+  assert_output --partial "Reboot required before validation"
+}
+
 @test "setup: gate B verifies admin user home and ssh directory" {
   run bash -c '
     source "'"${SETUP_SCRIPT}"'"

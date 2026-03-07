@@ -87,15 +87,16 @@ EOF
 
     scp_root() { :; }
     ssh_root() {
-      if [[ "$1" == *"/root/bootstrap_hardening.sh"* ]]; then
-        printf "%s\n" "$1" > "${cmd_file}"
+      printf "%s\n" "$1" >> "${cmd_file}"
+      if [[ "$1" == *"/root/bootstrap_hardening.sh"* && "$1" == *"/root/deploy.env"* && "$1" == *"--install-tailscale --force"* ]]; then
         echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.25"
       fi
       return 0
     }
 
     phase1_upload_harden
-    grep -q -- "--env-file /root/deploy.env --install-tailscale --force" "${cmd_file}"
+    grep -q -- "--env-file" "${cmd_file}"
+    grep -q -- "--install-tailscale --force" "${cmd_file}"
   '
   assert_success
 }
@@ -190,6 +191,13 @@ EOF
         (( reboot_check_calls >= 1 )) && return 0
         return 1
       fi
+      if [[ "$1" == "systemctl is-active --quiet docker-user-hardening.service" ]]; then
+        return 0
+      fi
+      if [[ "$1" == "iptables -S DOCKER-USER" ]]; then
+        printf "%s\n" "-A DOCKER-USER -m comment --comment coolify-hardening-return -j RETURN"
+        return 0
+      fi
       if [[ "$1" == "docker version >/dev/null 2>&1" ]]; then
         return 1
       fi
@@ -208,6 +216,72 @@ EOF
   '
   assert_success
   assert_output --partial "Gate B.5: Reboot completed and reboot-required cleared"
+}
+
+@test "deploy: --ts-ip resume rejects domain drift from phase1 state" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    TS_IP="100.64.0.25"
+    ADMIN_USER="coolifyadmin"
+    DOMAIN="new.example.com"
+    DEPLOY_MODE="tunnel"
+    SKIP_HARDEN="true"
+
+    sleep() { :; }
+    ssh_admin() {
+      case "$1" in
+        "echo ok") echo ok; return 0 ;;
+        "whoami") echo "${ADMIN_USER}"; return 0 ;;
+        *) return 0 ;;
+      esac
+    }
+    ssh_admin_sudo() {
+      if [[ "$1" == "bash -ceu "* ]]; then
+        printf "old.example.com\ttrue\n"
+        return 0
+      fi
+      return 1
+    }
+    sync_operator_known_host_entries() { :; }
+    report_validation_result() { :; }
+
+    phase2_gates
+  '
+  assert_failure
+  assert_output --partial "Resume contract failed: --domain new.example.com does not match phase 1 state (old.example.com)"
+}
+
+@test "deploy: --ts-ip resume rejects mode drift from phase1 state" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    TS_IP="100.64.0.25"
+    ADMIN_USER="coolifyadmin"
+    DOMAIN="vps.example.com"
+    DEPLOY_MODE="standard"
+    SKIP_HARDEN="true"
+
+    sleep() { :; }
+    ssh_admin() {
+      case "$1" in
+        "echo ok") echo ok; return 0 ;;
+        "whoami") echo "${ADMIN_USER}"; return 0 ;;
+        *) return 0 ;;
+      esac
+    }
+    ssh_admin_sudo() {
+      if [[ "$1" == "bash -ceu "* ]]; then
+        printf "vps.example.com\ttrue\n"
+        return 0
+      fi
+      return 1
+    }
+    sync_operator_known_host_entries() { :; }
+    report_validation_result() { :; }
+
+    phase2_gates
+  '
+  assert_failure
+  assert_output --partial "Resume contract failed: --mode standard does not match phase 1 state (tunnel)"
 }
 
 @test "deploy: gate B verifies admin identity" {
@@ -252,11 +326,18 @@ EOF
       return 0
     }
     ssh_admin_sudo() {
+      if [[ "$1" == "test -f /run/reboot-required" ]]; then
+        return 1
+      fi
+      if [[ "$1" == "docker version >/dev/null 2>&1" ]]; then
+        return 1
+      fi
       if [[ "$1" == *"validate_hardening.sh --json"* ]]; then
         printf "seen\n" > "${validate_seen_file}"
         echo "{\"fail\":0,\"checks\":[]}"
+        return 0
       fi
-      return 0
+      return 1
     }
     reconcile_docker_daemon_remote() { :; }
     sync_companion_scripts() { :; }
