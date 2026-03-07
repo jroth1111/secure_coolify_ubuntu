@@ -552,6 +552,8 @@ main() {
   log "  Swap:      ${SWAP_SIZE}"
   log "  Timezone:  ${SERVER_TIMEZONE}"
   log "  Local TZ:  $(local_tz_offset) (logs use UTC)"
+  [[ "${DEPLOY_MODE}" == "tunnel" ]] && log "  Private TLS CA: ${PRIVATE_TLS_CA}"
+  print_private_tls_ca_notice
   is_true "${PREFLIGHT_ONLY}" && log "  Mode:      preflight-only (no server changes)"
   [[ "${CF_TUNNEL_API_TOKEN}" != "${CF_API_TOKEN}" ]] && log "  CF tunnel token: custom"
   confirm "Proceed with deployment?"

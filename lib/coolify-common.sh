@@ -2545,6 +2545,18 @@ resolve_app_domain() {
   log "App subdomain scope: ${APP_DOMAIN_MODE} — new apps at appname.${APP_DOMAIN}"
 }
 
+print_private_tls_ca_notice() {
+  [[ "${DEPLOY_MODE}" == "tunnel" ]] || return 0
+
+  if [[ "${PRIVATE_TLS_CA:-letsencrypt}" == "zerossl" ]]; then
+    warn "Private TLS fallback selected: ZeroSSL"
+    warn "  This deployment will configure Traefik to use ZeroSSL instead of Let's Encrypt for ${DOMAIN} and ws.${DOMAIN}."
+    warn "  Required secrets: ZeroSSL EAB kid + ZeroSSL EAB hmac."
+    warn "  DNS prerequisite: if CAA records exist, they must authorize sectigo.com."
+    warn "  Operational tradeoff: this adds provider-specific ACME/EAB configuration and should only be used when Let's Encrypt is unsuitable or temporarily blocked."
+  fi
+}
+
 # print_deployment_summary — Print completion banner and next-steps block.
 # Uses globals: SERVER_IP, TS_IP, ADMIN_USER, DEPLOY_MODE, DOMAIN, CF_ZONE_NAME, APP_DOMAIN, TUNNEL_ID, SERVER_TIMEZONE
 summary_box_print_prefixed_text() {

@@ -951,6 +951,22 @@ EOF
   refute_output --partial "Cloudflare SSL mode"
 }
 
+@test "print_private_tls_ca_notice: warns clearly when ZeroSSL fallback is selected" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    DEPLOY_MODE="tunnel"
+    PRIVATE_TLS_CA="zerossl"
+    DOMAIN="vps.example.com"
+
+    print_private_tls_ca_notice
+  '
+  assert_success
+  assert_output --partial "WARN Private TLS fallback selected: ZeroSSL"
+  assert_output --partial "use ZeroSSL instead of Let'\''s Encrypt for vps.example.com and ws.vps.example.com"
+  assert_output --partial "Required secrets: ZeroSSL EAB kid + ZeroSSL EAB hmac"
+  assert_output --partial "CAA records exist, they must authorize sectigo.com"
+}
+
 @test "coolify_mark_bind_dashboard_state_script: emits state reconciliation for bind flag" {
   run coolify_mark_bind_dashboard_state_script
   assert_success
