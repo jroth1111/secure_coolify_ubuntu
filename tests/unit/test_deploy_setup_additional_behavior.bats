@@ -443,6 +443,7 @@ EOF
     bootstrap_counter="${tmpdir}/bootstrap-count"
     echo 0 > "${bootstrap_counter}"
     scp_root() { return 0; }
+    ssh_admin() { return 1; }
     ssh_root() {
       if [[ "$1" == "true" || "$1" == chmod\ +x\ /root/* || "$1" == "chmod 600 /root/deploy.env" ]]; then
         return 0
@@ -470,6 +471,78 @@ EOF
     [[ "$(cat "${bootstrap_counter}")" -eq 2 ]]
   '
   assert_success
+}
+
+@test "phase1_upload_harden: promotes retries to admin sudo when root transport is no longer valid" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"${tmpdir}\"" EXIT
+    SCRIPT_DIR="${tmpdir}"
+    for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
+      : > "${tmpdir}/${script}"
+    done
+    SERVER_IP="203.0.113.10"
+    ROOT_SSH_HOST="${SERVER_IP}"
+    ADMIN_USER="alice"
+    ADMIN_PUBKEY="ssh-ed25519 AAAA test@example"
+    PRIVATE_KEY="${tmpdir}/id_ed25519"
+    : > "${PRIVATE_KEY}"
+    TS_IP="100.64.0.10"
+    DEPLOY_MODE="tunnel"
+    DOMAIN="server.example.com"
+    SWAP_SIZE="2G"
+    SERVER_TIMEZONE="UTC"
+    TAILSCALE_AUTH_KEY="tskey-auth-test"
+    TAILSCALE_DIRECT_WAN="false"
+    REMOTE_DEPLOY_ENV_PATH="/root/deploy.env"
+    bootstrap_counter="${tmpdir}/bootstrap-count"
+    admin_counter="${tmpdir}/admin-bootstrap-count"
+    echo 0 > "${bootstrap_counter}"
+    echo 0 > "${admin_counter}"
+    scp_root() { return 0; }
+    ssh_root() {
+      if [[ "$1" == "true" || "$1" == chmod\ +x\ /root/* || "$1" == "chmod 600 /root/deploy.env" ]]; then
+        return 0
+      fi
+      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force"* ]]; then
+        count="$(cat "${bootstrap_counter}")"
+        count=$((count + 1))
+        echo "${count}" > "${bootstrap_counter}"
+        if (( count == 1 )); then
+          echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.10"
+          return 255
+        fi
+        echo "root transport should not be reused after admin promotion" >&2
+        return 99
+      fi
+      return 0
+    }
+    ssh_admin() {
+      if [[ "$1" == "echo ok" ]]; then
+        return 0
+      fi
+      return 1
+    }
+    ssh_admin_sudo() {
+      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force"* ]]; then
+        count="$(cat "${admin_counter}")"
+        count=$((count + 1))
+        echo "${count}" > "${admin_counter}"
+        echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.10"
+        return 0
+      fi
+      return 0
+    }
+    run_with_heartbeat() { local label="$1"; shift; "$@"; }
+    sleep() { :; }
+    phase1_upload_harden
+    [[ "${TS_IP}" == "100.64.0.10" ]]
+    [[ "$(cat "${bootstrap_counter}")" -eq 1 ]]
+    [[ "$(cat "${admin_counter}")" -eq 1 ]]
+  '
+  assert_success
+  assert_output --partial "switching bootstrap retries to alice@100.64.0.10 via sudo"
 }
 
 @test "phase1_upload_harden: uploads DOMAIN in bootstrap env file" {

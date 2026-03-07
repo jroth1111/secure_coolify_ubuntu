@@ -1627,6 +1627,8 @@ EOF
   run systemctl enable --now fail2ban
   if ! is_true "${DRY_RUN}"; then
     run systemctl restart fail2ban
+    wait_for_fail2ban_sshd_jail 15 2 \
+      || die "fail2ban started but the sshd jail did not become active."
   fi
 }
 
@@ -2324,6 +2326,98 @@ detect_docker() {
   fi
 }
 
+docker_daemon_ready() {
+  systemctl is-active --quiet docker.service 2>/dev/null || return 1
+  docker info >/dev/null 2>&1
+}
+
+wait_for_systemd_unit_success() {
+  local unit_name="$1"
+  local attempts="${2:-15}"
+  local delay="${3:-2}"
+  local attempt active_state result
+
+  for (( attempt=1; attempt<=attempts; attempt++ )); do
+    if systemctl is-active --quiet "${unit_name}" 2>/dev/null; then
+      return 0
+    fi
+
+    active_state="$(systemctl show "${unit_name}" --property=ActiveState --value 2>/dev/null || true)"
+    result="$(systemctl show "${unit_name}" --property=Result --value 2>/dev/null || true)"
+    if [[ "${active_state}" == "inactive" && "${result}" == "success" ]]; then
+      return 0
+    fi
+
+    (( attempt < attempts )) || break
+    sleep "${delay}"
+  done
+
+  return 1
+}
+
+wait_for_docker_daemon_ready() {
+  local attempts="${1:-20}"
+  local delay="${2:-2}"
+  local attempt
+
+  [[ "${DOCKER_PRESENT}" == "true" ]] || return 0
+  for (( attempt=1; attempt<=attempts; attempt++ )); do
+    if docker_daemon_ready; then
+      return 0
+    fi
+    (( attempt < attempts )) || break
+    sleep "${delay}"
+  done
+
+  return 1
+}
+
+docker_user_rules_present() {
+  iptables -S DOCKER-USER 2>/dev/null | grep -q "coolify-hardening"
+}
+
+ensure_docker_user_service_applied() {
+  local context="${1:-docker-user-hardening}"
+
+  if [[ "${DOCKER_PRESENT}" != "true" ]]; then
+    return 0
+  fi
+
+  wait_for_docker_daemon_ready 20 2 \
+    || die "${context}: Docker daemon did not become ready."
+  run systemctl start docker-user-hardening.service
+  if is_true "${DRY_RUN}"; then
+    return 0
+  fi
+
+  wait_for_systemd_unit_success "docker-user-hardening.service" 15 2 \
+    || die "${context}: docker-user-hardening.service did not complete successfully."
+  docker_user_rules_present \
+    || die "${context}: DOCKER-USER rules were not applied."
+  DOCKER_RULES_APPLIED="true"
+}
+
+wait_for_fail2ban_sshd_jail() {
+  local attempts="${1:-15}"
+  local delay="${2:-2}"
+  local attempt
+
+  if is_true "${DRY_RUN}"; then
+    return 0
+  fi
+
+  for (( attempt=1; attempt<=attempts; attempt++ )); do
+    if systemctl is-active --quiet fail2ban 2>/dev/null \
+      && fail2ban-client status sshd >/dev/null 2>&1; then
+      return 0
+    fi
+    (( attempt < attempts )) || break
+    sleep "${delay}"
+  done
+
+  return 1
+}
+
 configure_docker_user() {
   install_docker_user_assets
 
@@ -2343,10 +2437,7 @@ configure_docker_user() {
   if [[ "${DOCKER_PRESENT}" == "true" ]]; then
     # Docker CLI may exist while docker.service is not yet installed/available.
     if [[ "${docker_service_present}" == "true" ]]; then
-      run systemctl start docker-user-hardening.service || warn "docker-user-hardening.service could not be started; start after Docker is ready."
-      if systemctl is-active --quiet docker-user-hardening.service 2>/dev/null; then
-        DOCKER_RULES_APPLIED="true"
-      fi
+      ensure_docker_user_service_applied "Docker hardening"
     else
       warn "Docker CLI detected but docker.service is not present; DOCKER-USER enable/start deferred."
     fi
@@ -3396,6 +3487,8 @@ EOF
   run systemctl daemon-reload
   run systemctl enable --now docker-ssh-cidr-sync.timer
   run systemctl start docker-ssh-cidr-sync.service
+  wait_for_systemd_unit_success "docker-ssh-cidr-sync.service" 15 2 \
+    || die "docker-ssh-cidr-sync.service did not complete successfully."
   log "docker-ssh-cidr-sync.timer enabled (strict Docker SSH CIDR auto-reconcile)."
 }
 
@@ -3410,6 +3503,8 @@ main() {
   detect_os
   check_disk_space
 
+  ssh_session_safety_gate
+
   log "Configuring system timezone (${TIMEZONE})."
   configure_timezone
 
@@ -3420,7 +3515,6 @@ main() {
   ensure_timesync
 
   detect_wan_iface
-  ssh_session_safety_gate
   ensure_packages
   ensure_bootloader_embed_safety
   configure_networkd_wait_online
@@ -3480,7 +3574,7 @@ main() {
     log "Restarting Docker (deferred from daemon.json update, DOCKER-USER rules already applied)."
     run systemctl restart docker
     if [[ "${DOCKER_PRESENT}" == "true" ]]; then
-      run systemctl start docker-user-hardening.service
+      ensure_docker_user_service_applied "Docker restart"
     fi
     rm -f "${DOCKER_DAEMON_JSON}".bak.*
   fi

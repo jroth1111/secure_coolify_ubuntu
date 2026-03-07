@@ -520,6 +520,8 @@ preflight() {
 
 phase1_upload_harden() {
   step "1/5" "Upload scripts & harden server"
+  local bootstrap_cmd="/root/bootstrap_hardening.sh --env-file ${REMOTE_DEPLOY_ENV_PATH} --install-tailscale --force"
+  local bootstrap_transport="root"
 
   # Upload scripts
   local scripts=(bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh)
@@ -534,6 +536,15 @@ phase1_upload_harden() {
       || die "Failed to set execute bit on /root/${script}"
   done
   pass "Scripts uploaded"
+
+  # We have just opened a burst of short-lived root password-auth sessions for upload/chmod.
+  # Some providers intermittently wobble on the first immediately-following long SSH command,
+  # even though root password auth is otherwise valid. Re-probe the transport here before
+  # placing secrets on the server so a failing transport does not strand deploy.env remotely.
+  if ! retry_root_transport "Pre-bootstrap root SSH probe to ${SERVER_IP}" ssh_root 'true'; then
+    die "Root SSH probe failed after companion upload burst; refusing to upload deploy.env or start bootstrap_hardening.sh."
+  fi
+  pass "Root SSH probe succeeded before deploy env upload"
 
   # Write env file on server (avoids quoting issues with SSH pubkey)
   local tunnel_flag="false"
@@ -566,31 +577,49 @@ phase1_upload_harden() {
   DEPLOY_ENV_REMOTE_PENDING="true"
   pass "Environment file written"
 
-  # We have just opened a burst of short-lived root password-auth sessions for upload/chmod.
-  # Some providers intermittently wobble on the first immediately-following long SSH command,
-  # even though root password auth is otherwise valid. Re-probe the transport here so the
-  # bootstrap run starts only after root auth is stable again.
-  if ! retry_root_transport "Pre-bootstrap root SSH probe to ${SERVER_IP}" ssh_root 'true'; then
-    die "Root SSH probe failed after companion upload burst; refusing to start bootstrap_hardening.sh."
-  fi
-  pass "Root SSH probe succeeded before bootstrap"
-
   # Run hardening, streaming output to terminal while capturing it for TS_IP extraction.
   # bootstrap_hardening.sh emits HARDEN_RESULT_TAILSCALE_IP as soon as Tailscale is
-  # verified, and again at the end. If the public root path dies after that point,
-  # phase 1 can retry the same bootstrap command against root@TS_IP with password auth.
+  # verified, and again at the end. Retries pivot to root@TS_IP first, then to
+  # admin@TS_IP via sudo once root password auth is no longer a valid recovery path.
   log "Running bootstrap_hardening.sh (this may take a few minutes)..."
   local harden_tmp bootstrap_attempt bootstrap_rc
   harden_tmp="$(mktemp)" || die "Failed to create temp file for hardening output"
   bootstrap_rc=0
 
+  bootstrap_remote_exec() {
+    if [[ "${bootstrap_transport}" == "admin" ]]; then
+      ssh_admin_sudo "${bootstrap_cmd}"
+    else
+      ssh_root "${bootstrap_cmd}"
+    fi
+  }
+
+  bootstrap_remote_tail_log() {
+    if [[ "${bootstrap_transport}" == "admin" ]]; then
+      ssh_admin_sudo 'tail -n 50 /var/log/bootstrap-hardening.log 2>/dev/null || true'
+    else
+      ssh_root 'tail -n 50 /var/log/bootstrap-hardening.log 2>/dev/null || true'
+    fi
+  }
+
+  promote_bootstrap_transport_to_admin() {
+    [[ "${bootstrap_transport}" == "admin" ]] && return 0
+    [[ "${TS_IP:-}" =~ ${IPV4_RE} ]] || return 1
+    if ssh_admin 'echo ok' >/dev/null 2>&1; then
+      bootstrap_transport="admin"
+      log "Phase 1 fallback: switching bootstrap retries to ${ADMIN_USER}@${TS_IP} via sudo"
+      return 0
+    fi
+    return 1
+  }
+
   # Capture stdout/stderr while preserving failure semantics from the SSH command.
   # Emit heartbeat lines so the operator sees progress even when apt/tee is quiet.
   for bootstrap_attempt in 1 2 3; do
     if run_with_heartbeat \
-      "bootstrap_hardening.sh on ${SERVER_IP} (attempt ${bootstrap_attempt}/3)" \
+      "bootstrap_hardening.sh via ${bootstrap_transport}@${ROOT_SSH_HOST:-${TS_IP:-${SERVER_IP}}} (attempt ${bootstrap_attempt}/3)" \
       stream_command_output "${harden_tmp}" \
-      ssh_root "/root/bootstrap_hardening.sh --env-file ${REMOTE_DEPLOY_ENV_PATH} --install-tailscale --force"; then
+      bootstrap_remote_exec; then
       bootstrap_rc=0
       break
     else
@@ -605,7 +634,11 @@ phase1_upload_harden() {
         fi
       fi
       if (( bootstrap_rc == 255 && bootstrap_attempt < 3 )); then
-        warn "bootstrap_hardening.sh SSH transport/auth failed on attempt ${bootstrap_attempt}/3; retrying in 3s."
+        if promote_bootstrap_transport_to_admin; then
+          warn "bootstrap_hardening.sh SSH transport failed on attempt ${bootstrap_attempt}/3; retrying via admin sudo in 3s."
+        else
+          warn "bootstrap_hardening.sh SSH transport/auth failed on attempt ${bootstrap_attempt}/3; retrying in 3s."
+        fi
         sleep 3
         continue
       fi
@@ -617,7 +650,7 @@ phase1_upload_harden() {
     warn "bootstrap_hardening.sh failed. Last 50 lines of captured output:"
     tail -n 50 "${harden_tmp}" || true
     warn "Attempting to fetch remote /var/log/bootstrap-hardening.log tail (best effort)..."
-    ssh_root 'tail -n 50 /var/log/bootstrap-hardening.log 2>/dev/null || true' || true
+    bootstrap_remote_tail_log || true
     rm -f "${harden_tmp}"
     die "bootstrap_hardening.sh failed. Check server logs: /var/log/bootstrap-hardening.log"
   fi
