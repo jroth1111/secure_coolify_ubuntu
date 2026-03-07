@@ -424,6 +424,90 @@ setup() {
   assert_success
 }
 
+@test "cf_upsert_a_record: deletes conflicting CNAME and AAAA records before creating" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    CF_ZONE_ID="zone-123"
+    deleted=""
+    posted=""
+    cf_expect_success() { :; }
+    log() { :; }
+    cf_api() {
+      local method="$1" endpoint="$2" body="${3:-}"
+      case "${method}|${endpoint}" in
+        GET*\?type=AAAA\&name=app.example.com)
+          echo "{\"success\":true,\"result\":[{\"id\":\"aaaa-1\"}]}"
+          ;;
+        GET*\?type=CNAME\&name=app.example.com)
+          echo "{\"success\":true,\"result\":[{\"id\":\"cname-1\"}]}"
+          ;;
+        GET*\?type=A\&name=app.example.com)
+          echo "{\"success\":true,\"result\":[]}"
+          ;;
+        DELETE*)
+          deleted+="${endpoint}"$'\''\n'\''
+          echo "{\"success\":true}"
+          ;;
+        POST*)
+          posted="${body}"
+          echo "{\"success\":true}"
+          ;;
+        *)
+          echo "{\"success\":true,\"result\":[]}"
+          ;;
+      esac
+    }
+    cf_upsert_a_record "app.example.com" "203.0.113.10" "true"
+    grep -q "/zones/zone-123/dns_records/aaaa-1" <<< "${deleted}"
+    grep -q "/zones/zone-123/dns_records/cname-1" <<< "${deleted}"
+    grep -q '"'"'"type":"A"'"'"' <<< "${posted}"
+    grep -q '"'"'"content":"203.0.113.10"'"'"' <<< "${posted}"
+  '
+  assert_success
+}
+
+@test "cf_upsert_cname: deletes conflicting A and AAAA records before creating" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    CF_ZONE_ID="zone-123"
+    deleted=""
+    posted=""
+    cf_expect_success() { :; }
+    log() { :; }
+    cf_api() {
+      local method="$1" endpoint="$2" body="${3:-}"
+      case "${method}|${endpoint}" in
+        GET*\?type=A\&name=\*.example.com)
+          echo "{\"success\":true,\"result\":[{\"id\":\"a-1\"}]}"
+          ;;
+        GET*\?type=AAAA\&name=\*.example.com)
+          echo "{\"success\":true,\"result\":[{\"id\":\"aaaa-1\"}]}"
+          ;;
+        GET*\?type=CNAME\&name=\*.example.com)
+          echo "{\"success\":true,\"result\":[]}"
+          ;;
+        DELETE*)
+          deleted+="${endpoint}"$'\''\n'\''
+          echo "{\"success\":true}"
+          ;;
+        POST*)
+          posted="${body}"
+          echo "{\"success\":true}"
+          ;;
+        *)
+          echo "{\"success\":true,\"result\":[]}"
+          ;;
+      esac
+    }
+    cf_upsert_cname "*.example.com" "tunnel.example.com"
+    grep -q "/zones/zone-123/dns_records/a-1" <<< "${deleted}"
+    grep -q "/zones/zone-123/dns_records/aaaa-1" <<< "${deleted}"
+    grep -q '"'"'"type":"CNAME"'"'"' <<< "${posted}"
+    grep -q '"'"'"content":"tunnel.example.com"'"'"' <<< "${posted}"
+  '
+  assert_success
+}
+
 @test "coolify_reconcile_pusher_env_script: emits PUSHER mode reconciliation script" {
   run coolify_reconcile_pusher_env_script
   assert_success
@@ -647,6 +731,8 @@ PY
     configure_private_tls_calls=0
     configure_private_routes_calls=0
     remove_private_routes_calls=0
+    restore_public_tls_calls=0
+    stop_calls=0
     a_records=""
 
     coolify_env_exists() { wait_checks=$((wait_checks + 1)); return 0; }
@@ -657,11 +743,12 @@ PY
     reconcile_pusher() { pusher_calls=$((pusher_calls + 1)); }
     install_cloudflared() { return 0; }
     configure_cloudflared() { return 0; }
-    stop_cloudflared() { return 0; }
+    stop_cloudflared() { stop_calls=$((stop_calls + 1)); }
     fetch_existing_tunnel() { return 0; }
     configure_private_routes() { configure_private_routes_calls=$((configure_private_routes_calls + 1)); }
     configure_private_tls() { configure_private_tls_calls=$((configure_private_tls_calls + 1)); }
     remove_private_routes() { remove_private_routes_calls=$((remove_private_routes_calls + 1)); }
+    restore_public_tls() { restore_public_tls_calls=$((restore_public_tls_calls + 1)); }
     cf_upsert_a_record() { a_records+="$1|$2|$3"$'"'"'\n'"'"'; }
     cf_create_tunnel() { echo "unexpected tunnel" >&2; return 1; }
     cf_upsert_cname() { echo "unexpected cname" >&2; return 1; }
@@ -670,7 +757,7 @@ PY
       coolify_env_exists configure_binding mark_binding_state set_wildcard_domain reconcile_instance_settings reconcile_pusher \
       install_cloudflared configure_cloudflared stop_cloudflared \
       fetch_existing_tunnel \
-      configure_private_routes configure_private_tls remove_private_routes
+      configure_private_routes configure_private_tls remove_private_routes restore_public_tls
 
     [[ "${wait_checks}" -eq 1 ]]
     [[ "${bind_calls}" -eq 1 ]]
@@ -680,7 +767,9 @@ PY
     [[ "${pusher_calls}" -eq 1 ]]
     [[ "${configure_private_tls_calls}" -eq 0 ]]
     [[ "${configure_private_routes_calls}" -eq 0 ]]
+    [[ "${stop_calls}" -eq 1 ]]
     [[ "${remove_private_routes_calls}" -eq 1 ]]
+    [[ "${restore_public_tls_calls}" -eq 1 ]]
     grep -q "^coolify.vps.example.com|203.0.113.10|true$" <<< "${a_records}"
     grep -q "^\\*.vps.example.com|203.0.113.10|true$" <<< "${a_records}"
     grep -q "^\\*.example.com|203.0.113.10|true$" <<< "${a_records}"
@@ -711,6 +800,7 @@ PY
     configure_private_tls_calls=0
     configure_private_routes_calls=0
     remove_private_routes_calls=0
+    restore_public_tls_calls=0
     conflicting_hosts=""
     a_records=""
     cname_records=""
@@ -728,6 +818,7 @@ PY
     configure_private_routes() { configure_private_routes_calls=$((configure_private_routes_calls + 1)); }
     configure_private_tls() { configure_private_tls_calls=$((configure_private_tls_calls + 1)); }
     remove_private_routes() { remove_private_routes_calls=$((remove_private_routes_calls + 1)); }
+    restore_public_tls() { restore_public_tls_calls=$((restore_public_tls_calls + 1)); }
     cf_create_tunnel() {
       create_tunnel_calls=$((create_tunnel_calls + 1))
       create_tunnel_fetch_arg="${2:-}"
@@ -740,7 +831,7 @@ PY
       coolify_env_exists configure_binding mark_binding_state set_wildcard_domain reconcile_instance_settings reconcile_pusher \
       install_cloudflared configure_cloudflared stop_cloudflared \
       fetch_existing_tunnel \
-      configure_private_routes configure_private_tls remove_private_routes
+      configure_private_routes configure_private_tls remove_private_routes restore_public_tls
 
     [[ "${wait_checks}" -eq 1 ]]
     [[ "${bind_calls}" -eq 1 ]]
@@ -756,6 +847,7 @@ PY
     [[ "${configure_private_routes_calls}" -eq 1 ]]
     [[ "${configure_private_tls_calls}" -eq 1 ]]
     [[ "${remove_private_routes_calls}" -eq 0 ]]
+    [[ "${restore_public_tls_calls}" -eq 0 ]]
     grep -q "^coolify.vps.example.com$" <<< "${conflicting_hosts}"
     grep -q "^ws.coolify.vps.example.com$" <<< "${conflicting_hosts}"
     grep -q "^coolify.vps.example.com|100.64.0.25|false$" <<< "${a_records}"
@@ -1051,11 +1143,14 @@ EOF
   assert_output --partial 'ZEROSSL_EAB_KID is required when PRIVATE_TLS_CA=zerossl'
   assert_output --partial 'Unsupported PRIVATE_TLS_CA: ${PRIVATE_TLS_CA}'
   assert_output --partial "/data/coolify/proxy/.env"
+  assert_output --partial '/data/coolify/proxy/dynamic/.coolify-private-dashboard.backup'
+  assert_output --partial '/data/coolify/proxy/dynamic/.coolify-private-dashboard.absent'
   assert_output --partial "certificatesResolvers.${PRIVATE_TLS_RESOLVER}.acme.dnsChallenge.provider=cloudflare"
   assert_output --partial "reconcile_private_tls_compose() {"
   assert_output --partial 'service_start = next((idx for idx, line in enumerate(lines) if re.match(r"^  traefik:\s*$", line)), None)'
   assert_output --partial 'resolver_flag_pattern = re.compile(rf"^ {{6}}- '\''?--certificatesresolvers\.{re.escape(resolver)}\..*'\''?\s*$")'
   assert_output --partial 'existing_command_flags = set()'
+  assert_output --partial 'rollback_private_route_file() {'
   assert_output --partial 'private_tls_ca = sys.argv[4]'
   assert_output --partial 'zerossl_ca_server = sys.argv[5]'
   assert_output --partial 'f"--certificatesresolvers.{resolver}.acme.caserver={zerossl_ca_server}"'
@@ -1070,7 +1165,7 @@ EOF
   assert_output --partial 'text = text.replace("      tls:\n        certResolver: letsencrypt\n", "")'
   assert_output --partial 'for _ in $(seq 1 30); do'
   assert_output --partial 'Public Coolify HTTPS routers remained in ${coolify_dynamic_file}'
-  assert_output --partial 'Public letsencrypt resolver remained in ${default_redirect_file}'
+  assert_output --partial 'Public Traefik HTTPS routes/resolvers remained in ${dynamic_dir}'
   assert_output --partial 'dashboard_code_insecure="$(curl -k -s -o /dev/null -w '\''%{http_code}'\'' --max-time 10 \'
   assert_output --partial 'probe_private_tls_host() {'
   assert_output --partial "Private TLS certificates ready for \${host} and \${ws_host}"
@@ -1080,4 +1175,19 @@ EOF
   assert_output --partial 'Timed out waiting for trusted private TLS on ${ws_host}; verified=${ws_code:-000}, insecure=${ws_code_insecure:-000}'
   assert_output --partial "--api.insecure=false"
   assert_output --partial 'docker compose -f "${compose_file}" up -d >/dev/null'
+}
+
+@test "coolify_restore_public_dashboard_tls_script: emits public TLS restoration script" {
+  run coolify_restore_public_dashboard_tls_script
+  assert_success
+  assert_output --partial 'DOMAIN is required'
+  assert_output --partial 'CF_ZONE_NAME is required'
+  assert_output --partial 'reconcile_public_tls_compose() {'
+  assert_output --partial '--certificatesresolvers.letsencrypt.acme.httpchallenge=true'
+  assert_output --partial '--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=http'
+  assert_output --partial 'coolify-public-dashboard'
+  assert_output --partial 'coolify-realtime-wss'
+  assert_output --partial 'coolify-terminal-wss'
+  assert_output --partial 'rm -f "${private_route_file}" "${private_route_backup_file}" "${private_route_absent_marker}" "${env_file}"'
+  assert_output --partial 'Public dashboard TLS restored for ${DOMAIN}'
 }

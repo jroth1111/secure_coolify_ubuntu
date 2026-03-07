@@ -983,7 +983,9 @@ phase4_binding_dns() {
     coolify_configure_cloudflared_script \
       | ssh_admin_sudo "TUNNEL_ID=${tunnel_id_q} TUNNEL_SECRET=${tunnel_secret_q} CF_ACCOUNT_ID=${cf_account_id_q} DOMAIN=${domain_q} APP_DOMAIN=${app_domain_q} CF_ZONE_NAME=${cf_zone_name_q} bash -s"
   }
-  phase4_stop_cloudflared() { ssh_admin_sudo 'systemctl stop cloudflared 2>/dev/null || true'; }
+  phase4_stop_cloudflared() {
+    ssh_admin_sudo 'systemctl disable --now cloudflared 2>/dev/null || systemctl stop cloudflared 2>/dev/null || true'
+  }
   phase4_fetch_existing_tunnel() {
     ssh_admin_sudo 'bash -s' <<'EOF'
 set -Eeuo pipefail
@@ -1023,6 +1025,14 @@ EOF
   phase4_remove_private_routes() {
     coolify_remove_private_dashboard_routes_script | ssh_admin_sudo 'bash -s'
   }
+  phase4_restore_public_tls() {
+    local domain_q cf_zone_name_q resolver_q
+    domain_q="$(printf '%q' "${DOMAIN}")"
+    cf_zone_name_q="$(printf '%q' "${CF_ZONE_NAME}")"
+    resolver_q="$(printf '%q' "$(private_tls_resolver_name)")"
+    coolify_restore_public_dashboard_tls_script \
+      | ssh_admin_sudo "DOMAIN=${domain_q} CF_ZONE_NAME=${cf_zone_name_q} PRIVATE_TLS_RESOLVER=${resolver_q} bash -s"
+  }
 
   # Contract anchors kept for tests/docs:
   # mode="${DEPLOY_MODE}"
@@ -1042,7 +1052,8 @@ EOF
     phase4_fetch_existing_tunnel \
     phase4_configure_private_routes \
     phase4_configure_private_tls \
-    phase4_remove_private_routes
+    phase4_remove_private_routes \
+    phase4_restore_public_tls
 }
 
 # ── Phase 5: Verification ─────────────────────────────────────────────────

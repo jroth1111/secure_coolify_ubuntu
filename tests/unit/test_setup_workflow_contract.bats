@@ -347,6 +347,8 @@ EOF
     coolify_set_wildcard_domain_script() { echo "true"; }
     coolify_reconcile_instance_settings_script() { echo "true"; }
     coolify_reconcile_pusher_env_script() { echo "true"; }
+    coolify_remove_private_dashboard_routes_script() { echo "true"; }
+    coolify_restore_public_dashboard_tls_script() { echo "true"; }
     cf_upsert_a_record() { calls+="$1|$2|$3"$'\''\n'\''; }
 
     phase4_binding_dns

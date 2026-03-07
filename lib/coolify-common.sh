@@ -663,9 +663,26 @@ cf_expect_success() {
   fi
 }
 
+cf_delete_dns_records_by_type() {
+  local name="$1"
+  shift || true
+  local type existing record_id resp
+
+  for type in "$@"; do
+    existing="$(cf_api GET "/zones/${CF_ZONE_ID}/dns_records?type=${type}&name=${name}")"
+    while IFS= read -r record_id; do
+      [[ -n "${record_id}" ]] || continue
+      resp="$(cf_api DELETE "/zones/${CF_ZONE_ID}/dns_records/${record_id}")"
+      cf_expect_success "Cloudflare ${type} record delete (${name})" "${resp}"
+      log "Deleted conflicting ${type} record: ${name} (${record_id})"
+    done < <(printf '%s' "${existing}" | jq -r '.result[]?.id // empty')
+  done
+}
+
 cf_upsert_a_record() {
   local name="$1" ip="$2" proxied="${3:-true}"
   local existing
+  cf_delete_dns_records_by_type "${name}" AAAA CNAME
   existing="$(cf_api GET "/zones/${CF_ZONE_ID}/dns_records?type=A&name=${name}")"
   local record_id record_content record_proxied needs_update="true"
   record_id="$(printf '%s' "${existing}" | jq -r '.result[0].id // empty')"
@@ -796,6 +813,7 @@ cf_create_tunnel() {
 cf_upsert_cname() {
   local name="$1" target="$2"
   local existing
+  cf_delete_dns_records_by_type "${name}" A AAAA
   existing="$(cf_api GET "/zones/${CF_ZONE_ID}/dns_records?type=CNAME&name=${name}")"
   local record_id record_content record_proxied needs_update="true"
   record_id="$(printf '%s' "${existing}" | jq -r '.result[0].id // empty')"
@@ -833,17 +851,7 @@ cf_upsert_cname() {
 
 cf_delete_conflicting_host_records() {
   local name="$1"
-  local type existing record_id resp
-
-  for type in AAAA CNAME; do
-    existing="$(cf_api GET "/zones/${CF_ZONE_ID}/dns_records?type=${type}&name=${name}")"
-    while IFS= read -r record_id; do
-      [[ -n "${record_id}" ]] || continue
-      resp="$(cf_api DELETE "/zones/${CF_ZONE_ID}/dns_records/${record_id}")"
-      cf_expect_success "Cloudflare ${type} record delete (${name})" "${resp}"
-      log "Deleted conflicting ${type} record: ${name} (${record_id})"
-    done < <(printf '%s' "${existing}" | jq -r '.result[]?.id // empty')
-  done
+  cf_delete_dns_records_by_type "${name}" AAAA CNAME
 }
 
 cf_assert_private_tailscale_a_record() {
@@ -1006,6 +1014,7 @@ coolify_phase3_docker_coolify_shared() {
 #   configure_private_routes_fn()
 #   configure_private_tls_fn()
 #   remove_private_routes_fn()
+#   restore_public_tls_fn()
 coolify_phase4_binding_dns_shared() {
   local coolify_env_exists_fn="$1"
   local configure_binding_fn="$2"
@@ -1020,6 +1029,7 @@ coolify_phase4_binding_dns_shared() {
   local configure_private_routes_fn="${11}"
   local configure_private_tls_fn="${12}"
   local remove_private_routes_fn="${13}"
+  local restore_public_tls_fn="${14}"
 
   step "4/5" "Configure dashboard binding & DNS"
 
@@ -1066,6 +1076,18 @@ coolify_phase4_binding_dns_shared() {
   fi
 
   if [[ "${DEPLOY_MODE}" == "standard" ]]; then
+    log "Stopping cloudflared for standard mode..."
+    "${stop_cloudflared_fn}" || die "Failed to stop cloudflared for standard mode."
+    pass "cloudflared stopped for standard mode"
+
+    # Standard mode must not keep tunnel-private dashboard routes.
+    "${remove_private_routes_fn}" || die "Failed to remove private-only dashboard routes."
+    pass "Private dashboard routes removed for standard mode"
+
+    log "Restoring public dashboard HTTPS routes and Traefik resolver..."
+    "${restore_public_tls_fn}" || die "Failed to restore public dashboard HTTPS routes for standard mode."
+    pass "Public dashboard HTTPS routes restored for standard mode"
+
     # Standard mode: A records pointing to server public IP (proxied)
     log "Configuring DNS: A record ${DOMAIN} → ${SERVER_IP} (proxied)..."
     cf_upsert_a_record "${DOMAIN}" "${SERVER_IP}" "true"
@@ -1081,10 +1103,6 @@ coolify_phase4_binding_dns_shared() {
       cf_upsert_a_record "${apex_wildcard}" "${SERVER_IP}" "true"
       pass "DNS wildcard A record configured: ${apex_wildcard} → ${SERVER_IP}"
     fi
-
-    # Standard mode must not keep tunnel-private dashboard routes.
-    "${remove_private_routes_fn}" || die "Failed to remove private-only dashboard routes."
-    pass "Private dashboard routes removed for standard mode"
     return 0
   fi
 
@@ -2005,7 +2023,17 @@ set -Eeuo pipefail
 
 dynamic_dir="/data/coolify/proxy/dynamic"
 route_file="${dynamic_dir}/coolify-private-dashboard.yaml"
+route_backup_file="${dynamic_dir}/.coolify-private-dashboard.backup"
+route_absent_marker="${dynamic_dir}/.coolify-private-dashboard.absent"
 mkdir -p "${dynamic_dir}"
+
+if [[ -f "${route_file}" ]]; then
+  cp -f "${route_file}" "${route_backup_file}"
+  rm -f "${route_absent_marker}"
+else
+  rm -f "${route_backup_file}"
+  : > "${route_absent_marker}"
+fi
 
 cat > "${route_file}" <<CFG
 # This file is managed by secure_coolify_ubuntu.
@@ -2115,9 +2143,34 @@ env_file="${proxy_dir}/.env"
 dynamic_dir="${proxy_dir}/dynamic"
 default_redirect_file="${dynamic_dir}/default_redirect_503.yaml"
 coolify_dynamic_file="${dynamic_dir}/coolify.yaml"
+private_route_file="${dynamic_dir}/coolify-private-dashboard.yaml"
+private_route_backup_file="${dynamic_dir}/.coolify-private-dashboard.backup"
+private_route_absent_marker="${dynamic_dir}/.coolify-private-dashboard.absent"
 
 [[ -f "${compose_file}" ]] || { echo "Missing ${compose_file}" >&2; exit 1; }
 install -d -m 0700 "${proxy_dir}"
+
+rollback_private_route_file() {
+  if [[ -f "${private_route_backup_file}" ]]; then
+    mv -f "${private_route_backup_file}" "${private_route_file}"
+    rm -f "${private_route_absent_marker}"
+  elif [[ -f "${private_route_absent_marker}" ]]; then
+    rm -f "${private_route_file}" "${private_route_absent_marker}"
+  fi
+}
+
+cleanup_private_tls_dns_script() {
+  local rc=$?
+  if (( rc == 0 )); then
+    rm -f "${private_route_backup_file}" "${private_route_absent_marker}"
+  else
+    rollback_private_route_file || true
+  fi
+  return "${rc}"
+}
+
+trap cleanup_private_tls_dns_script EXIT
+
 cat > "${env_file}" <<ENV
 CLOUDFLARE_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
 CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
@@ -2269,10 +2322,20 @@ path.write_text(text)
 PY
 }
 
+public_router_state_is_clean() {
+  ! grep -Eq '^[[:space:]]*certResolver:[[:space:]]*letsencrypt[[:space:]]*$' "${default_redirect_file}" 2>/dev/null \
+    && ! grep -Eq '^[[:space:]]*coolify-(https|realtime-wss|terminal-wss):[[:space:]]*$|^[[:space:]]*certresolver:[[:space:]]*letsencrypt[[:space:]]*$' "${coolify_dynamic_file}" 2>/dev/null
+}
+
+enforce_private_router_scrub() {
+  scrub_default_redirect_public_resolver
+  scrub_coolify_public_https_routers
+  public_router_state_is_clean
+}
+
 # Coolify regenerates this catchall file with a public resolver; remove it in
 # tunnel mode so wildcard traffic cannot trigger public ACME flows.
-scrub_default_redirect_public_resolver
-scrub_coolify_public_https_routers
+enforce_private_router_scrub || true
 
 if docker compose -f "${compose_file}" config >/dev/null 2>&1; then
   docker compose -f "${compose_file}" up -d >/dev/null
@@ -2282,22 +2345,14 @@ else
 fi
 
 for _ in $(seq 1 30); do
-  scrub_default_redirect_public_resolver
-  scrub_coolify_public_https_routers
-  if ! grep -Eq '^[[:space:]]*certResolver:[[:space:]]*letsencrypt[[:space:]]*$' "${default_redirect_file}" 2>/dev/null \
-    && ! grep -Eq '^[[:space:]]*coolify-(https|realtime-wss|terminal-wss):[[:space:]]*$|^[[:space:]]*certresolver:[[:space:]]*letsencrypt[[:space:]]*$' "${coolify_dynamic_file}" 2>/dev/null; then
+  if enforce_private_router_scrub; then
     break
   fi
   sleep 1
 done
 
-if grep -Eq '^[[:space:]]*certResolver:[[:space:]]*letsencrypt[[:space:]]*$' "${default_redirect_file}" 2>/dev/null; then
-  echo "Public letsencrypt resolver remained in ${default_redirect_file}" >&2
-  exit 1
-fi
-
-if grep -Eq '^[[:space:]]*coolify-(https|realtime-wss|terminal-wss):[[:space:]]*$|^[[:space:]]*certresolver:[[:space:]]*letsencrypt[[:space:]]*$' "${coolify_dynamic_file}" 2>/dev/null; then
-  echo "Public Coolify HTTPS routers remained in ${coolify_dynamic_file}" >&2
+if ! public_router_state_is_clean; then
+  echo "Public Traefik HTTPS routes/resolvers remained in ${dynamic_dir}" >&2
   exit 1
 fi
 
@@ -2352,8 +2407,10 @@ wait_for_private_tls_ready() {
   host="${DOMAIN}"
   ws_host="ws.${DOMAIN}"
   for (( attempt=1; attempt<=attempts; attempt++ )); do
+    enforce_private_router_scrub || true
     if probe_private_tls_host "dashboard" "${host}" "/api/v1/health" '^2[0-9][0-9]$' \
-      && probe_private_tls_host "ws" "${ws_host}" "/" '^[234][0-9][0-9]$'; then
+      && probe_private_tls_host "ws" "${ws_host}" "/" '^[234][0-9][0-9]$' \
+      && public_router_state_is_clean; then
       echo "Private TLS certificates ready for ${host} and ${ws_host} (dashboard=${dashboard_code}, websocket=${ws_code})."
       return 0
     fi
@@ -2378,8 +2435,266 @@ wait_for_private_tls_ready() {
 }
 
 wait_for_private_tls_ready
+enforce_private_router_scrub || true
+if ! public_router_state_is_clean; then
+  echo "Public Coolify HTTPS routers remained in ${coolify_dynamic_file}" >&2
+  exit 1
+fi
 
 echo "Private TLS DNS challenge configured for resolver '${PRIVATE_TLS_RESOLVER}'."
+EOF
+}
+
+# coolify_restore_public_dashboard_tls_script — Emit host-side script to remove
+# tunnel-private proxy state and restore public dashboard HTTPS routing.
+coolify_restore_public_dashboard_tls_script() {
+  cat <<'EOF'
+set -Eeuo pipefail
+: "${DOMAIN:?DOMAIN is required}"
+: "${CF_ZONE_NAME:?CF_ZONE_NAME is required}"
+: "${PRIVATE_TLS_RESOLVER:=privatedns}"
+
+proxy_dir="/data/coolify/proxy"
+compose_file="${proxy_dir}/docker-compose.yml"
+env_file="${proxy_dir}/.env"
+dynamic_dir="${proxy_dir}/dynamic"
+default_redirect_file="${dynamic_dir}/default_redirect_503.yaml"
+coolify_dynamic_file="${dynamic_dir}/coolify.yaml"
+private_route_file="${dynamic_dir}/coolify-private-dashboard.yaml"
+private_route_backup_file="${dynamic_dir}/.coolify-private-dashboard.backup"
+private_route_absent_marker="${dynamic_dir}/.coolify-private-dashboard.absent"
+
+[[ -f "${compose_file}" ]] || { echo "Missing ${compose_file}" >&2; exit 1; }
+install -d -m 0700 "${dynamic_dir}"
+
+reconcile_public_tls_compose() {
+  python3 - "${compose_file}" "${PRIVATE_TLS_RESOLVER}" "${CF_ZONE_NAME}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+private_resolver = sys.argv[2]
+zone = sys.argv[3]
+env_path = "/data/coolify/proxy/.env"
+required_flags = [
+    "--certificatesresolvers.letsencrypt.acme.httpchallenge=true",
+    "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=http",
+    f"--certificatesresolvers.letsencrypt.acme.email=coolify-admin@{zone}",
+    "--certificatesresolvers.letsencrypt.acme.storage=/traefik/acme.json",
+]
+
+text = path.read_text()
+lines = text.splitlines(keepends=True)
+
+service_start = next((idx for idx, line in enumerate(lines) if re.match(r"^  traefik:\s*$", line)), None)
+if service_start is None:
+    raise SystemExit("Traefik service block not found in docker-compose.yml")
+
+service_end = service_start + 1
+while service_end < len(lines) and not re.match(r"^  [A-Za-z0-9_-]+:\s*$", lines[service_end]):
+    service_end += 1
+
+service_lines = lines[service_start + 1 : service_end]
+
+def find_section(block_lines, key):
+    prefix = f"    {key}:"
+    for idx, line in enumerate(block_lines):
+        if line.startswith(prefix):
+            return idx
+    return None
+
+def section_end(block_lines, start_idx):
+    idx = start_idx + 1
+    while idx < len(block_lines):
+        if re.match(r"^    [A-Za-z0-9_-]+:\s*$", block_lines[idx]):
+            break
+        idx += 1
+    return idx
+
+scrubbed_service_lines = []
+private_flag_pattern = re.compile(rf"^ {{6}}- '?--certificatesresolvers\.{re.escape(private_resolver)}\..*'?\s*$")
+for line in service_lines:
+    if re.match(r"^ {6}- (?:CLOUDFLARE_DNS_API_TOKEN|CF_DNS_API_TOKEN)=.*$", line):
+        continue
+    if private_flag_pattern.match(line):
+        continue
+    scrubbed_service_lines.append(line)
+service_lines = scrubbed_service_lines
+
+env_idx = find_section(service_lines, "env_file")
+if env_idx is not None:
+    env_end = section_end(service_lines, env_idx)
+    env_items = [line for line in service_lines[env_idx + 1 : env_end] if line.strip() != f"- {env_path}"]
+    if env_items:
+        service_lines = service_lines[: env_idx + 1] + env_items + service_lines[env_end:]
+    else:
+        service_lines = service_lines[:env_idx] + service_lines[env_end:]
+
+command_idx = find_section(service_lines, "command")
+if command_idx is None:
+    insert_idx = 0
+    for idx, line in enumerate(service_lines):
+        if re.match(r"^    (image|container_name|restart):", line):
+            insert_idx = idx + 1
+            break
+    service_lines[insert_idx:insert_idx] = ["    command:\n"]
+    command_idx = insert_idx
+
+command_end = section_end(service_lines, command_idx)
+command_items = service_lines[command_idx + 1 : command_end]
+existing_command_flags = set()
+for line in command_items:
+    match = re.match(r"^ {6}- '?([^'\n]+)'?\s*$", line)
+    if match:
+        existing_command_flags.add(match.group(1))
+
+for flag in required_flags:
+    if flag not in existing_command_flags:
+        command_items.append(f"      - '{flag}'\n")
+
+service_lines = service_lines[: command_idx + 1] + command_items + service_lines[command_end:]
+lines = lines[: service_start + 1] + service_lines + lines[service_end:]
+path.write_text("".join(lines))
+PY
+}
+
+reconcile_public_redirect_file() {
+  python3 - "${default_redirect_file}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text() if path.exists() else "http:\n  routers:\n    catchall:\n      priority: -1000\n"
+
+if not re.search(r"(?m)^http:\s*$", text):
+    text = "http:\n  routers:\n    catchall:\n      priority: -1000\n"
+elif not re.search(r"(?m)^  routers:\s*$", text):
+    if not text.endswith("\n"):
+        text += "\n"
+    text += "  routers:\n    catchall:\n      priority: -1000\n"
+elif not re.search(r"(?m)^    catchall:\s*$", text):
+    text = re.sub(r"(?m)^  routers:\s*$", "  routers:\n    catchall:\n      priority: -1000\n", text, count=1)
+
+pattern = re.compile(r"(?ms)^(    catchall:\n)(.*?)(?=^    [A-Za-z0-9_-]+:\s*$|^  [A-Za-z0-9_-]+:\s*$|\Z)")
+match = pattern.search(text)
+if match is None:
+    raise SystemExit("Unable to reconcile catchall router in default_redirect_503.yaml")
+
+body = match.group(2)
+body = re.sub(r"(?ms)^      tls:\n(?:        .*\n)*", "", body)
+if body and not body.endswith("\n"):
+    body += "\n"
+body += "      tls:\n        certResolver: letsencrypt\n"
+text = text[:match.start()] + match.group(1) + body + text[match.end():]
+path.write_text(text)
+PY
+}
+
+reconcile_public_dashboard_routes() {
+  python3 - "${coolify_dynamic_file}" "${DOMAIN}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+domain = sys.argv[2]
+text = path.read_text() if path.exists() else "http:\n"
+
+if not re.search(r"(?m)^http:\s*$", text):
+    if text and not text.endswith("\n"):
+        text += "\n"
+    text += "http:\n"
+
+for router_name in ("coolify-https", "coolify-realtime-wss", "coolify-terminal-wss"):
+    pattern = rf"(?ms)^    {router_name}:\n(?:      .*\n|        .*\n)*"
+    text = re.sub(pattern, "", text)
+
+for service_name in ("coolify-public-dashboard", "coolify-public-realtime", "coolify-public-terminal"):
+    pattern = rf"(?ms)^    {service_name}:\n(?:      .*\n|        .*\n|          .*\n)*"
+    text = re.sub(pattern, "", text)
+
+def ensure_http_section(section: str) -> None:
+    global text
+    if re.search(rf"(?m)^  {section}:\s*$", text):
+        return
+    if not text.endswith("\n"):
+        text += "\n"
+    text += f"  {section}:\n"
+
+def append_section_block(section: str, block: str) -> None:
+    global text
+    pattern = re.compile(rf"(?ms)^(  {section}:\n)(.*?)(?=^  [A-Za-z0-9_-]+:\s*$|\Z)")
+    match = pattern.search(text)
+    if match is None:
+        raise SystemExit(f"Missing http.{section} section in coolify.yaml")
+    body = match.group(2)
+    if body and not body.endswith("\n"):
+        body += "\n"
+    body += block
+    text = text[:match.start()] + match.group(1) + body + text[match.end():]
+
+ensure_http_section("routers")
+ensure_http_section("services")
+
+router_block = f"""    coolify-https:
+      entryPoints:
+        - https
+      rule: "Host(`{domain}`)"
+      service: coolify-public-dashboard
+      tls:
+        certResolver: letsencrypt
+    coolify-realtime-wss:
+      entryPoints:
+        - https
+      rule: "Host(`{domain}`) && PathPrefix(`/app/`)"
+      service: coolify-public-realtime
+      tls:
+        certResolver: letsencrypt
+    coolify-terminal-wss:
+      entryPoints:
+        - https
+      rule: "Host(`{domain}`) && PathPrefix(`/terminal/ws`)"
+      service: coolify-public-terminal
+      priority: 100
+      tls:
+        certResolver: letsencrypt
+"""
+
+service_block = """    coolify-public-dashboard:
+      loadBalancer:
+        servers:
+          - url: http://coolify:8080
+    coolify-public-realtime:
+      loadBalancer:
+        servers:
+          - url: http://coolify-realtime:6001
+    coolify-public-terminal:
+      loadBalancer:
+        servers:
+          - url: http://coolify-realtime:6002
+"""
+
+append_section_block("routers", router_block)
+append_section_block("services", service_block)
+path.write_text(text)
+PY
+}
+
+reconcile_public_tls_compose
+reconcile_public_redirect_file
+reconcile_public_dashboard_routes
+rm -f "${private_route_file}" "${private_route_backup_file}" "${private_route_absent_marker}" "${env_file}"
+
+if docker compose -f "${compose_file}" config >/dev/null 2>&1; then
+  docker compose -f "${compose_file}" up -d >/dev/null
+else
+  echo "Invalid Traefik compose generated at ${compose_file}" >&2
+  exit 1
+fi
+
+echo "Public dashboard TLS restored for ${DOMAIN}"
 EOF
 }
 
@@ -2389,8 +2704,10 @@ coolify_remove_private_dashboard_routes_script() {
   cat <<'EOF'
 set -Eeuo pipefail
 route_file="/data/coolify/proxy/dynamic/coolify-private-dashboard.yaml"
-if [[ -f "${route_file}" ]]; then
-  rm -f "${route_file}"
+route_backup_file="/data/coolify/proxy/dynamic/.coolify-private-dashboard.backup"
+route_absent_marker="/data/coolify/proxy/dynamic/.coolify-private-dashboard.absent"
+if [[ -f "${route_file}" || -f "${route_backup_file}" || -f "${route_absent_marker}" ]]; then
+  rm -f "${route_file}" "${route_backup_file}" "${route_absent_marker}"
   echo "Removed private dashboard routes: ${route_file}"
 else
   echo "Private dashboard routes already absent: ${route_file}"

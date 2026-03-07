@@ -483,7 +483,9 @@ phase4_binding_dns() {
           CF_ACCOUNT_ID="${CF_ACCOUNT_ID}" DOMAIN="${DOMAIN}" APP_DOMAIN="${APP_DOMAIN}" \
           CF_ZONE_NAME="${CF_ZONE_NAME}" bash -s
   }
-  phase4_stop_cloudflared() { systemctl stop cloudflared 2>/dev/null || true; }
+  phase4_stop_cloudflared() {
+    systemctl disable --now cloudflared 2>/dev/null || systemctl stop cloudflared 2>/dev/null || true
+  }
   phase4_fetch_existing_tunnel() {
     local config="/etc/cloudflared/config.yml"
     local tunnel_id creds_path creds_id tunnel_secret
@@ -509,6 +511,10 @@ phase4_binding_dns() {
   phase4_remove_private_routes() {
     coolify_remove_private_dashboard_routes_script | bash -s
   }
+  phase4_restore_public_tls() {
+    coolify_restore_public_dashboard_tls_script \
+      | env DOMAIN="${DOMAIN}" CF_ZONE_NAME="${CF_ZONE_NAME}" PRIVATE_TLS_RESOLVER="$(private_tls_resolver_name)" bash -s
+  }
 
   # Contract anchors kept for tests/docs:
   # sed '/^PUSHER_HOST=/d; /^PUSHER_PORT=/d; /^PUSHER_SCHEME=/d'
@@ -528,7 +534,8 @@ phase4_binding_dns() {
     phase4_fetch_existing_tunnel \
     phase4_configure_private_routes \
     phase4_configure_private_tls \
-    phase4_remove_private_routes
+    phase4_remove_private_routes \
+    phase4_restore_public_tls
 }
 
 # ── Phase 5: Verification ─────────────────────────────────────────────────
