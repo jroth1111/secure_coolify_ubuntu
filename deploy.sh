@@ -704,6 +704,36 @@ gate_c_failures_are_transient() {
   ' >/dev/null 2>&1 <<< "${json}"
 }
 
+assert_resume_phase1_contract_remote() {
+  is_true "${SKIP_HARDEN}" || return 0
+
+  local state_line state_domain state_tunnel_mode expected_tunnel_mode
+  expected_tunnel_mode="false"
+  [[ "${DEPLOY_MODE}" == "tunnel" ]] && expected_tunnel_mode="true"
+
+  state_line="$(ssh_admin_sudo 'bash -ceu '"'"'
+    state_file="/var/lib/bootstrap-hardening/state"
+    [[ -f "${state_file}" ]] || exit 4
+    # shellcheck disable=SC1090
+    source "${state_file}"
+    printf "%s\t%s\n" "${domain:-}" "${tunnel_mode:-}"
+  '"'" 2>/dev/null || true)"
+
+  [[ -n "${state_line}" ]] || die "Resume contract failed: phase 1 state is unavailable on the server. Run a fresh deploy instead of --ts-ip."
+
+  IFS=$'\t' read -r state_domain state_tunnel_mode <<< "${state_line}"
+  [[ -n "${state_domain}" ]] || die "Resume contract failed: phase 1 state does not contain a domain. Run a fresh deploy instead of --ts-ip."
+  [[ -n "${state_tunnel_mode}" ]] || state_tunnel_mode="false"
+
+  if [[ "${state_domain}" != "${DOMAIN}" ]]; then
+    die "Resume contract failed: --domain ${DOMAIN} does not match phase 1 state (${state_domain}). Run a fresh deploy."
+  fi
+
+  if [[ "${state_tunnel_mode}" != "${expected_tunnel_mode}" ]]; then
+    die "Resume contract failed: --mode ${DEPLOY_MODE} does not match phase 1 state ($( [[ "${state_tunnel_mode}" == "true" ]] && printf 'tunnel' || printf 'standard' )). Run a fresh deploy."
+  fi
+}
+
 wait_for_gate_c_timesync_remote() {
   local max_attempts="${1:-12}" delay="${2:-5}"
   local attempt synced_val waited=0
@@ -725,6 +755,48 @@ wait_for_gate_c_timesync_remote() {
 
   (( waited == 1 )) && warn "Gate C pre-check: timesync still not synchronized after $((max_attempts * delay))s; continuing to validator retries."
   return 1
+}
+
+verify_post_reboot_services_remote() {
+  local gate_label="${1:-Gate B.5}"
+
+  if ssh_admin_sudo 'systemctl is-active --quiet tailscaled.service'; then
+    pass "${gate_label}: tailscaled.service is active"
+  else
+    fail "${gate_label}: tailscaled.service is not active"
+    die "${gate_label} failed: tailscaled.service is not active after reboot."
+  fi
+
+  if ssh_admin_sudo 'ufw status 2>/dev/null | grep -q "^Status: active$"'; then
+    pass "${gate_label}: UFW remains active"
+  else
+    fail "${gate_label}: UFW is not active"
+    die "${gate_label} failed: UFW is not active after reboot."
+  fi
+
+  if ssh_admin_sudo 'systemctl is-active --quiet fail2ban.service'; then
+    pass "${gate_label}: fail2ban.service is active"
+  else
+    fail "${gate_label}: fail2ban.service is not active"
+    die "${gate_label} failed: fail2ban.service is not active after reboot."
+  fi
+
+  if ssh_admin_sudo 'fail2ban-client status sshd >/dev/null 2>&1'; then
+    pass "${gate_label}: fail2ban sshd jail is active"
+  else
+    fail "${gate_label}: fail2ban sshd jail is not active"
+    die "${gate_label} failed: fail2ban sshd jail is not active after reboot."
+  fi
+
+  if ssh_admin_sudo 'test "$(systemctl show docker.service --property=LoadState --value 2>/dev/null)" = loaded'; then
+    if ssh_admin_sudo 'systemctl is-active --quiet docker.service'; then
+      pass "${gate_label}: docker.service is active"
+    else
+      fail "${gate_label}: docker.service is not active"
+      die "${gate_label} failed: docker.service is not active after reboot."
+    fi
+    verify_docker_user_gate_remote "${gate_label}"
+  fi
 }
 
 phase2_gates() {
@@ -751,6 +823,8 @@ phase2_gates() {
     die "Gate B failed."
   fi
 
+  assert_resume_phase1_contract_remote
+
   # If package upgrades during hardening require a reboot, perform it here before Gate C.
   if ssh_admin_sudo 'test -f /run/reboot-required' >/dev/null 2>&1; then
     local reboot_pkgs reboot_drop_attempt
@@ -770,6 +844,7 @@ phase2_gates() {
     if wait_for_admin_ssh_or_die "Gate B.5 reboot wait" 36 10; then
       if ssh_admin_sudo 'test ! -f /run/reboot-required' >/dev/null 2>&1; then
         pass "Gate B.5: Reboot completed and reboot-required cleared"
+        verify_post_reboot_services_remote "Gate B.5"
       else
         die "Gate B.5 failed: server came back but /run/reboot-required still present."
       fi
