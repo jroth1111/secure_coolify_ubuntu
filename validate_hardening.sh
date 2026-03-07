@@ -2751,8 +2751,27 @@ coolify_instance_settings_check() {
     return
   fi
 
-  if ! docker ps --filter "name=coolify-db" --filter "status=running" --format "{{.Names}}" 2>/dev/null | grep -q "coolify-db"; then
+  if ! docker ps --filter "name=coolify-db" --filter "status=running" --format "{{.Names}}" 2>/dev/null | grep -qx "coolify-db"; then
     record "FAIL" "coolify: instance settings query" "coolify-db container is not running"
+    return
+  fi
+
+  local pg_ready="false" attempt
+  for (( attempt=1; attempt<=15; attempt++ )); do
+    if docker exec -i coolify-db sh -ceu '
+      IFS= read -r PGPASSWORD
+      export PGPASSWORD
+      pg_isready -U "$1" -d "$2" >/dev/null 2>&1
+    ' _ "${db_user}" "${db_name}" <<< "${db_pass}" >/dev/null 2>&1; then
+      pg_ready="true"
+      break
+    fi
+    (( attempt < 15 )) || break
+    sleep 2
+  done
+
+  if [[ "${pg_ready}" != "true" ]]; then
+    record "FAIL" "coolify: instance settings query" "coolify-db is running but PostgreSQL is not ready"
     return
   fi
 

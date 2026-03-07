@@ -1833,11 +1833,27 @@ db_pass="$(grep -m1 '^DB_PASSWORD=' "${coolify_env}" | cut -d= -f2- || true)"
 db_user="${db_user:-coolify}"
 db_name="${db_name:-coolify}"
 [[ -n "${db_pass}" ]] || { echo "DB_PASSWORD missing in ${coolify_env}" >&2; exit 1; }
-# Verify coolify-db container is running before attempting docker exec
-if ! docker ps --filter "name=coolify-db" --filter "status=running" --format "{{.Names}}" 2>/dev/null | grep -q "coolify-db"; then
+if ! docker ps --filter "name=coolify-db" --filter "status=running" --format "{{.Names}}" 2>/dev/null | grep -qx "coolify-db"; then
   echo "coolify-db container is not running" >&2
   exit 1
 fi
+wait_for_coolify_postgres() {
+  local attempts="${1:-30}" delay="${2:-2}" attempt
+  for (( attempt=1; attempt<=attempts; attempt++ )); do
+    if docker exec -i coolify-db sh -ceu '
+      IFS= read -r PGPASSWORD
+      export PGPASSWORD
+      pg_isready -U "$1" -d "$2" >/dev/null 2>&1
+    ' _ "${db_user}" "${db_name}" <<< "${db_pass}"; then
+      return 0
+    fi
+    (( attempt < attempts )) || break
+    sleep "${delay}"
+  done
+  echo "coolify-db is running but PostgreSQL is not ready yet" >&2
+  exit 1
+}
+wait_for_coolify_postgres
 sql="$(cat <<SQL
 DO \$\$
 DECLARE
@@ -1890,10 +1906,27 @@ db_pass="$(grep -m1 '^DB_PASSWORD=' "${coolify_env}" | cut -d= -f2- || true)"
 db_user="${db_user:-coolify}"
 db_name="${db_name:-coolify}"
 [[ -n "${db_pass}" ]] || { echo "DB_PASSWORD missing in ${coolify_env}" >&2; exit 1; }
-if ! docker ps --filter "name=coolify-db" --filter "status=running" --format "{{.Names}}" 2>/dev/null | grep -q "coolify-db"; then
+if ! docker ps --filter "name=coolify-db" --filter "status=running" --format "{{.Names}}" 2>/dev/null | grep -qx "coolify-db"; then
   echo "coolify-db container is not running" >&2
   exit 1
 fi
+wait_for_coolify_postgres() {
+  local attempts="${1:-30}" delay="${2:-2}" attempt
+  for (( attempt=1; attempt<=attempts; attempt++ )); do
+    if docker exec -i coolify-db sh -ceu '
+      IFS= read -r PGPASSWORD
+      export PGPASSWORD
+      pg_isready -U "$1" -d "$2" >/dev/null 2>&1
+    ' _ "${db_user}" "${db_name}" <<< "${db_pass}"; then
+      return 0
+    fi
+    (( attempt < attempts )) || break
+    sleep "${delay}"
+  done
+  echo "coolify-db is running but PostgreSQL is not ready yet" >&2
+  exit 1
+}
+wait_for_coolify_postgres
 sql_fqdn=""
 if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
   sql_fqdn=""
@@ -2470,6 +2503,7 @@ fi
 cat > /etc/cloudflared/config.yml <<CFG
 tunnel: ${TUNNEL_ID}
 credentials-file: /etc/cloudflared/${TUNNEL_ID}.json
+metrics: 127.0.0.1:2000
 
 ingress:
   - hostname: ${DOMAIN}
@@ -2483,6 +2517,18 @@ CFG
 
 cloudflared service install 2>/dev/null || true
 systemctl enable --now cloudflared
+for attempt in $(seq 1 30); do
+  if systemctl is-active --quiet cloudflared 2>/dev/null \
+    && curl -sf --max-time 3 http://127.0.0.1:2000/ready >/dev/null 2>&1; then
+    exit 0
+  fi
+  (( attempt < 30 )) || break
+  sleep 2
+done
+
+echo "cloudflared service did not reach a ready state on 127.0.0.1:2000/ready" >&2
+journalctl -u cloudflared -n 20 --no-pager >&2 || true
+exit 1
 EOF
 }
 
