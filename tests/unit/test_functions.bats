@@ -452,6 +452,35 @@ EOF
   rm -rf "${stub_dir}"
 }
 
+@test "ensure_packages: installs fail2ban separately with autostart suppression" {
+  local stub_dir
+  stub_dir="$(mktemp -d)"
+
+  cat > "${stub_dir}/dpkg-query" <<'EOF'
+#!/usr/bin/env bash
+pkg="${@: -1}"
+if [[ "${pkg}" == "fail2ban" ]]; then
+  echo "dpkg-query: no packages found matching ${pkg}" >&2
+  exit 1
+fi
+echo "install ok installed"
+exit 0
+EOF
+
+  chmod +x "${stub_dir}/dpkg-query"
+
+  run env PATH="${stub_dir}:${PATH}" bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="true"
+    ensure_packages
+  '
+  assert_success
+  assert_output --partial "Installing required package: fail2ban (service autostart suppressed until managed config is written)"
+  assert_output --partial "apt-get install -y --no-install-recommends fail2ban"
+
+  rm -rf "${stub_dir}"
+}
+
 @test "require_commands: dry-run only requires base command set" {
   run /bin/bash -c '
     source "'"${SCRIPT}"'"

@@ -671,6 +671,7 @@ ssh_session_safety_gate() {
 ensure_packages() {
   local packages
   local missing=()
+  local fail2ban_missing="false"
   packages=(
     curl
     jq
@@ -682,7 +683,6 @@ ensure_packages() {
     apt-listchanges
     openssh-server
     iptables
-    fail2ban
   )
 
   for pkg in "${packages[@]}"; do
@@ -691,12 +691,61 @@ ensure_packages() {
     fi
   done
 
+  if ! dpkg-query -W -f='${Status}' fail2ban 2>/dev/null | grep -q "install ok installed"; then
+    fail2ban_missing="true"
+  fi
+
   if ((${#missing[@]} > 0)); then
     log "Installing required packages: ${missing[*]}"
     retry_apt_update
     run_apt_command env DEBIAN_FRONTEND=noninteractive PYTHONWARNINGS=ignore::SyntaxWarning \
       apt-get install -y --no-install-recommends "${missing[@]}"
   fi
+
+  if [[ "${fail2ban_missing}" == "true" ]]; then
+    install_fail2ban_without_autostart
+  fi
+}
+
+install_fail2ban_without_autostart() {
+  local policy_rc_d="/usr/sbin/policy-rc.d"
+  local policy_backup=""
+  local policy_restore="false"
+  local install_rc=0
+
+  log "Installing required package: fail2ban (service autostart suppressed until managed config is written)"
+  retry_apt_update
+
+  if is_true "${DRY_RUN}"; then
+    run_apt_command env DEBIAN_FRONTEND=noninteractive PYTHONWARNINGS=ignore::SyntaxWarning \
+      apt-get install -y --no-install-recommends fail2ban
+    return 0
+  fi
+
+  if [[ -e "${policy_rc_d}" ]]; then
+    policy_backup="$(mktemp "${policy_rc_d}.bootstrap-hardening.XXXXXX")"
+    cp -a "${policy_rc_d}" "${policy_backup}"
+    policy_restore="true"
+  fi
+
+  write_file "${policy_rc_d}" "0755" "root" "root" <<'EOF'
+#!/usr/bin/env bash
+exit 101
+EOF
+
+  if ! run_apt_command env DEBIAN_FRONTEND=noninteractive PYTHONWARNINGS=ignore::SyntaxWarning \
+    apt-get install -y --no-install-recommends fail2ban; then
+    install_rc=$?
+  fi
+
+  if [[ "${policy_restore}" == "true" ]]; then
+    cp -a "${policy_backup}" "${policy_rc_d}"
+    rm -f "${policy_backup}"
+  else
+    rm -f "${policy_rc_d}"
+  fi
+
+  (( install_rc == 0 )) || return "${install_rc}"
 }
 
 ensure_system_group() {
