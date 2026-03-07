@@ -846,6 +846,66 @@ EOF
   assert_success
 }
 
+@test "main: applies Docker hardening before UFW when Docker is already present" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    tmp="$(mktemp)"
+    parse_args() { :; }
+    require_root() { :; }
+    setup_logging() { :; }
+    warn_on_state_version_mismatch() { :; }
+    validate_inputs() { :; }
+    detect_os() { :; }
+    check_disk_space() { :; }
+    ssh_session_safety_gate() { :; }
+    configure_timezone() { :; }
+    normalize_private_hosts_file() { :; }
+    ensure_timesync() { :; }
+    detect_wan_iface() { :; }
+    ensure_packages() { :; }
+    ensure_bootloader_embed_safety() { :; }
+    configure_networkd_wait_online() { :; }
+    configure_cron_extra_opts() { :; }
+    ensure_power_group() { :; }
+    apply_system_package_updates() { :; }
+    require_commands() { :; }
+    ensure_tailscaled_notify_access() { :; }
+    verify_tailscale_iface() { :; }
+    ensure_tailscale_ssh_disabled() { :; }
+    detect_docker() { DOCKER_PRESENT="true"; }
+    discover_docker_ssh_cidrs() { :; }
+    configure_swap() { :; }
+    disable_unused_services() { :; }
+    configure_banner() { :; }
+    ensure_admin_access() { :; }
+    configure_ssh() { :; }
+    configure_auditd() { :; }
+    configure_apport() { :; }
+    configure_sysctl() { :; }
+    configure_docker_daemon() { echo docker-daemon; }
+    configure_docker_user() { echo docker-user; }
+    configure_ufw() { echo ufw; }
+    configure_rsyslog_targets() { :; }
+    configure_fail2ban() { :; }
+    configure_journald() { :; }
+    configure_unattended_upgrades() { :; }
+    configure_hardening_validation_timer() { :; }
+    configure_coolify_binding() { :; }
+    configure_coolify_binding_watchdog() { :; }
+    write_state() { :; }
+    configure_docker_ssh_cidr_sync_timer() { :; }
+    run_post_checks() { :; }
+    generate_report() { :; }
+    get_tailscale_ip() { DETECTED_TAILSCALE_IP="100.64.0.10"; }
+    main > "${tmp}"
+    docker_user_line="$(grep -n "^docker-user$" "${tmp}" | head -n1 | cut -d: -f1)"
+    ufw_line="$(grep -n "^ufw$" "${tmp}" | head -n1 | cut -d: -f1)"
+    [[ -n "${docker_user_line}" && -n "${ufw_line}" ]]
+    (( docker_user_line < ufw_line ))
+  '
+  assert_success
+}
+
 @test "apply_system_package_updates: dry-run reports full-upgrade plan" {
   run bash -c '
     source "'"${SCRIPT}"'"

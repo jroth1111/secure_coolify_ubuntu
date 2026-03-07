@@ -3558,17 +3558,17 @@ main() {
   log "Applying sysctl kernel hardening."
   configure_sysctl
 
-  log "Applying UFW baseline."
-  configure_ufw
-
-  log "Applying rsyslog target/logrotate safety."
-  configure_rsyslog_targets
-
   log "Applying Docker daemon log rotation."
   configure_docker_daemon
 
   log "Applying DOCKER-USER hardening assets."
   configure_docker_user
+
+  log "Applying UFW baseline."
+  configure_ufw
+
+  log "Applying rsyslog target/logrotate safety."
+  configure_rsyslog_targets
 
   if is_true "${DOCKER_DAEMON_NEEDS_RESTART}"; then
     log "Restarting Docker (deferred from daemon.json update, DOCKER-USER rules already applied)."
