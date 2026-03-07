@@ -1029,6 +1029,7 @@ EOF
   run coolify_configure_private_tls_dns_script
   assert_success
   assert_output --partial "CF_DNS_API_TOKEN is required"
+  assert_output --partial "DOMAIN is required"
   assert_output --partial "/data/coolify/proxy/.env"
   assert_output --partial "certificatesResolvers.${PRIVATE_TLS_RESOLVER}.acme.dnsChallenge.provider=cloudflare"
   assert_output --partial "reconcile_private_tls_compose() {"

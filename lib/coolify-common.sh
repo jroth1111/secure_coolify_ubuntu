@@ -1985,6 +1985,7 @@ coolify_configure_private_tls_dns_script() {
 set -Eeuo pipefail
 : "${CF_DNS_API_TOKEN:?CF_DNS_API_TOKEN is required}"
 : "${CF_ZONE_NAME:?CF_ZONE_NAME is required}"
+: "${DOMAIN:?DOMAIN is required}"
 : "${PRIVATE_TLS_RESOLVER:=privatedns}"
 
 proxy_dir="/data/coolify/proxy"
