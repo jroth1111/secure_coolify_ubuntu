@@ -131,6 +131,26 @@ init_root_password_auth() {
   ROOT_PASS=""
 }
 
+verify_operator_tailscale_readiness() {
+  if is_true "${SKIP_HARDEN}" || is_true "${PREFLIGHT_ONLY}"; then
+    log "Skipping operator Tailscale readiness gate (--ts-ip/--preflight-only mode)."
+    return 0
+  fi
+
+  log "Checking operator Tailscale readiness before phase 1..."
+  command -v tailscale >/dev/null 2>&1 \
+    || die "Fresh deploys require operator Tailscale readiness before phase 1. Install Tailscale and make sure 'tailscale status' works locally, then retry."
+
+  local ts_status_json backend_state
+  ts_status_json="$(tailscale status --json 2>/dev/null)" \
+    || die "Fresh deploys require operator Tailscale readiness before phase 1. Run 'tailscale status' locally, connect Tailscale, then retry."
+  backend_state="$(jq -r '.BackendState // ""' <<< "${ts_status_json}" 2>/dev/null || true)"
+  [[ "${backend_state}" == "Running" ]] \
+    || die "Fresh deploys require operator Tailscale readiness before phase 1. Expected 'tailscale status --json' BackendState=Running, got '${backend_state:-unknown}'."
+
+  pass "Operator Tailscale ready (BackendState=Running)"
+}
+
 # ── Usage ───────────────────────────────────────────────────────────────────
 
 usage() {
@@ -389,6 +409,10 @@ preflight() {
     command -v "${cmd}" >/dev/null 2>&1 || die "Required command not found: ${cmd}. Install it first."
   done
   pass "Local tools present: ${required_cmds[*]}"
+
+  # Fresh laptop-side deploys must prove the operator machine is Tailscale-ready
+  # before phase 1 hardening can lock down public SSH access.
+  verify_operator_tailscale_readiness
 
   # Validate pubkey
   ssh-keygen -l -f "${PUBKEY_FILE}" >/dev/null 2>&1 || die "Invalid SSH public key file: ${PUBKEY_FILE}"

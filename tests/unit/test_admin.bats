@@ -8,25 +8,34 @@ setup() {
   source_script
 
   # Avoid BW01 warnings in dry-run tests by stubbing user-management commands.
+  groupadd() { :; }
   useradd() { :; }
   usermod() { :; }
 }
 
 # ── Admin user creation ─────────────────────────────────────────────────────────
 
-@test "ensure_admin_access: creates user with sudo group when user doesn't exist" {
+@test "ensure_admin_access: creates user with sudo and SSH admin groups when user doesn't exist" {
   ADMIN_USER="testadmin_${BATS_TEST_NUMBER}_$$"
   DRY_RUN="true"
   ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForTesting test@example.com"
+  getent() {
+    if [[ "$1" == "group" && "$2" == "${SSH_ADMIN_GROUP}" ]]; then
+      return 2
+    fi
+    command getent "$@"
+  }
 
   run ensure_admin_access
   assert_success
+  assert_output --partial "groupadd --system ${SSH_ADMIN_GROUP}"
+  assert_output --partial "useradd -m -s /bin/bash -G sudo,${SSH_ADMIN_GROUP} ${ADMIN_USER}"
   assert_output --partial "DRY-RUN: would create /home/${ADMIN_USER}/.ssh/authorized_keys"
   [ ! -d "/home/${ADMIN_USER}" ]
   [ ! -f "/etc/sudoers.d/${ADMIN_USER}" ]
 }
 
-@test "ensure_admin_access: adds sudo group to existing user without it" {
+@test "ensure_admin_access: adds sudo and SSH admin groups to existing user when missing" {
   ADMIN_USER="existinguser"
   ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForTesting test@example.com"
   DRY_RUN="true"
@@ -42,12 +51,17 @@ setup() {
     command id "$@"
   }
   getent() {
+    if [[ "$1" == "group" && "$2" == "${SSH_ADMIN_GROUP}" ]]; then
+      echo "${SSH_ADMIN_GROUP}:x:999:"
+      return 0
+    fi
     echo "existinguser:x:1001:1001::/home/existinguser:/bin/bash"
   }
 
   run ensure_admin_access
   assert_success
   assert_output --partial "DRY-RUN: usermod -aG sudo existinguser"
+  assert_output --partial "DRY-RUN: usermod -aG ${SSH_ADMIN_GROUP} existinguser"
   [ ! -f "/etc/sudoers.d/existinguser" ]
 }
 

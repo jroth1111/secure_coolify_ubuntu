@@ -81,6 +81,8 @@ teardown_file() {
   run bash "${VALIDATE_SCRIPT}" --json
   assert_success
   assert_json_check_status "${output}" "ssh: AllowUsers includes ${TEST_USER}" "PASS"
+  assert_json_check_status "${output}" "ssh: AllowGroups includes coolify-ssh-admins" "PASS"
+  assert_json_check_status "${output}" "admin: in SSH admin group" "PASS"
 }
 
 @test "validate: stopping fail2ban causes failure" {

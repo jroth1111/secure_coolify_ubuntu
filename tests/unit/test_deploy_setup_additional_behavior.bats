@@ -60,6 +60,22 @@ load '../helpers'
   assert_success
 }
 
+@test "verify_operator_tailscale_readiness: skips checks in preflight-only mode" {
+  marker="$(mktemp)"
+  rm -f "${marker}"
+
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    PREFLIGHT_ONLY="true"
+    tailscale() { printf "called\n" > "'"${marker}"'"; }
+
+    verify_operator_tailscale_readiness
+    [[ ! -e "'"${marker}"'" ]]
+  '
+  assert_success
+  assert_output --partial "Skipping operator Tailscale readiness gate (--ts-ip/--preflight-only mode)."
+}
+
 @test "phase5_fetch_validate_json (deploy): requests remote validator json via sudo" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"

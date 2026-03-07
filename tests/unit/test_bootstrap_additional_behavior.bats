@@ -319,6 +319,23 @@ setup() {
   rm -rf "${tmpdir}"
 }
 
+@test "configure_hardening_report: dry-run reports summary timer install" {
+  DRY_RUN="true"
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  HARDENING_REPORT_SCRIPT="${tmpdir}/hardening-report"
+  HARDENING_REPORT_SERVICE="${tmpdir}/hardening-report.service"
+  HARDENING_REPORT_TIMER="${tmpdir}/hardening-report.timer"
+
+  run configure_hardening_report
+  assert_success
+  assert_output --partial "hardening-report.timer"
+  [ ! -f "${HARDENING_REPORT_SCRIPT}" ]
+  [ ! -f "${HARDENING_REPORT_SERVICE}" ]
+  [ ! -f "${HARDENING_REPORT_TIMER}" ]
+  rm -rf "${tmpdir}"
+}
+
 @test "configure_swap: dry-run logs swap provisioning actions" {
   DRY_RUN="true"
   SWAP_SIZE="2G"
@@ -436,6 +453,31 @@ EOF
   [ ! -f "${marker}" ]
 }
 
+@test "configure_rsyslog_targets: falls back to root-owned targets when syslog user is absent" {
+  DRY_RUN="true"
+  rsyslog_collect_log_targets() {
+    printf '%s\n' "/var/log/ufw.log"
+  }
+  ensure_logrotate_create_directive() {
+    echo "patched $1"
+  }
+  getent() {
+    if [[ "${1:-}" == "passwd" && "${2:-}" == "syslog" ]]; then
+      return 2
+    fi
+    if [[ "${1:-}" == "group" && "${2:-}" == "adm" ]]; then
+      return 0
+    fi
+    return 2
+  }
+
+  run configure_rsyslog_targets
+  assert_success
+  assert_output --partial "User 'syslog' not found; using root-owned rsyslog target fallback."
+  assert_output --partial "DRY-RUN: ensure /var/log/ufw.log exists (0640 root:adm)"
+  assert_output --partial "patched /etc/logrotate.d/ufw"
+}
+
 @test "configure_rsyslog_targets: does not reset /var/log mode while ensuring target directories" {
   DRY_RUN="false"
   rsyslog_collect_log_targets() {
@@ -483,6 +525,63 @@ EOF
   refute_output --partial "unexpected-die"
 }
 
+@test "run_post_checks: container tolerates missing rsyslog unit" {
+  DRY_RUN="false"
+  TUNNEL_MODE="false"
+  TAILSCALE_DIRECT_WAN="false"
+  DOCKER_PRESENT="false"
+  STRICT_DOCKER_SSH_CIDRS="false"
+  TIMEZONE="UTC"
+  WAN_IFACE="eth0"
+  TAILSCALE_IFACE="tailscale0"
+  SSH_PORT="22"
+  assert_sshd_effective() { return 0; }
+  assert_sshd_match_localhost() { return 0; }
+  assert_rsyslog_posture() { echo "rsyslog-posture-ok"; return 0; }
+  is_container_runtime() { return 0; }
+  unit_available() {
+    [[ "${1:-}" == "rsyslog.service" ]] && return 1
+    return 0
+  }
+  sshd() { return 0; }
+  ufw() {
+    if [[ "${1:-}" == "status" && "${2:-}" == "verbose" ]]; then
+      cat <<'EOF'
+Status: active
+22/tcp on tailscale0 ALLOW IN Anywhere
+EOF
+      return 0
+    fi
+    echo "Status: active"
+  }
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "fail2ban" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && ( "${3:-}" == "auditd" || "${3:-}" == "rsyslog" ) ]]; then
+      return 1
+    fi
+    return 0
+  }
+  auditctl() {
+    if [[ "${1:-}" == "-l" ]]; then
+      printf '%s\n' identity sudoers-change user_commands
+    fi
+  }
+  sysctl() { echo 1; }
+  timedatectl() {
+    if [[ "${1:-}" == "show" && "${2:-}" == "--property=Timezone" ]]; then
+      echo "UTC"
+    fi
+  }
+  journalctl() { return 0; }
+
+  run run_post_checks
+  assert_success
+  assert_output --partial "Post-check: rsyslog unavailable in container"
+  assert_output --partial "rsyslog-posture-ok"
+}
+
 @test "on_err: reports failing command context" {
   run on_err 123 "failing-command"
   assert_failure
@@ -524,6 +623,7 @@ EOF
     configure_journald() { :; }
     configure_unattended_upgrades() { :; }
     configure_hardening_validation_timer() { :; }
+    configure_hardening_report() { :; }
     write_state() { :; }
     configure_docker_ssh_cidr_sync_timer() { :; }
     run_post_checks() { :; }

@@ -35,8 +35,10 @@ Use this to decide inputs before running commands.
 | Workflow | Required inputs | Optional inputs with defaults | Not required |
 |----------|-----------------|-------------------------------|--------------|
 | `deploy.sh` fresh run | `--server-ip`, `--domain`, root password (prompt or `--root-pass-file`), `--tailscale-auth-key`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), server timezone choice (`--server-timezone`; mandatory with `--yes`) | `--admin-user` (`coolifyadmin`), `--pubkey-file` (`~/.ssh/id_ed25519.pub`), `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--tailscale-direct-wan` (off), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, optional split tunnel token (`--cf-tunnel-api-token-file`) | `--ts-ip` |
+| `deploy.sh --preflight-only` | `--server-ip`, `--domain`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), server timezone choice (`--server-timezone`; mandatory with `--yes`) | Same optional defaults as fresh run | root password / `--root-pass-file`, `--tailscale-auth-key`, `--ts-ip` |
 | `deploy.sh --ts-ip <ip>` resume | `--server-ip`, `--domain`, `--ts-ip`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), server timezone choice (`--server-timezone`; mandatory with `--yes`) | Same optional defaults as fresh run | root password / `--root-pass-file`, `--tailscale-auth-key` |
 | `setup.sh` server-local run | `--server-ip`, `--admin-user`, `--pubkey-file`, `--domain`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), `--tailscale-auth-key` unless `--preflight-only`, server timezone choice (`--server-timezone`; mandatory with `--yes`) | `--mode` (`tunnel`), `--app-domain-mode` (`apex`), `--swap-size` (`2G`), `--tailscale-direct-wan` (off), `--cf-zone`, `--cf-zone-id`, `--cf-account-id`, optional split tunnel token (`--cf-tunnel-api-token-file`) | root password / `--root-pass-file`, `--ts-ip` |
+| `setup.sh --preflight-only` | `--server-ip`, `--admin-user`, `--pubkey-file`, `--domain`, Cloudflare API token (`CF_API_TOKEN` or `--cf-api-token-file`), server timezone choice (`--server-timezone`; mandatory with `--yes`) | Same optional defaults as server-local run | `--tailscale-auth-key`, root password / `--root-pass-file`, `--ts-ip` |
 
 Recommended defaults (if undecided):
 - `--mode tunnel`
@@ -54,6 +56,10 @@ bash deploy.sh --server-ip <ip> --domain <fqdn> --root-pass-file <path> \
   --tailscale-auth-key <tskey-auth-...> --server-timezone <IANA> \
   --cf-api-token-file <path> --yes
 
+# deploy.sh preflight-only
+bash deploy.sh --server-ip <ip> --domain <fqdn> --server-timezone <IANA> \
+  --cf-api-token-file <path> --preflight-only --yes
+
 # deploy.sh resume from phase 2
 bash deploy.sh --server-ip <ip> --domain <fqdn> --ts-ip <100.x.x.x> \
   --server-timezone <IANA> --cf-api-token-file <path> --yes
@@ -62,6 +68,11 @@ bash deploy.sh --server-ip <ip> --domain <fqdn> --ts-ip <100.x.x.x> \
 sudo bash setup.sh --server-ip <ip> --admin-user <name> --pubkey-file <path> \
   --domain <fqdn> --tailscale-auth-key <tskey-auth-...> --server-timezone <IANA> \
   --cf-api-token-file <path> --yes
+
+# setup.sh preflight-only
+sudo bash setup.sh --server-ip <ip> --admin-user <name> --pubkey-file <path> \
+  --domain <fqdn> --server-timezone <IANA> --cf-api-token-file <path> \
+  --preflight-only --yes
 ```
 
 Decision tree:
@@ -69,7 +80,7 @@ Decision tree:
 - App hostnames: `apex` (`appname.<zone>`) or `vps` (`appname.<domain>`).
 - Token model: combined token (single API token) or split tokens (DNS token + tunnel token).
 
-Rules that prevent confusion:
+Non-interactive caveats:
 - With `--yes`, set `--server-timezone <IANA>` (or `SERVER_TIMEZONE`) explicitly.
 - `--cf-api-token` and `--cf-tunnel-api-token` CLI flags are intentionally removed; use env vars or `--*-token-file`.
 
@@ -85,10 +96,15 @@ Pre-run checklist:
 - Confirm timezone value (IANA string).
 - Confirm token source (env vars or token file path(s)).
 
-For fast permission validation before touching the server, run:
+For fast permission validation before touching the server, use one of these `deploy.sh --preflight-only` patterns:
 
 ```bash
+# Interactive / mixed mode: prompts for any missing required inputs such as server IP or timezone.
 bash deploy.sh --domain <fqdn> --cf-api-token-file /secure/path/cf_api.token --preflight-only
+
+# Non-interactive: provide all required inputs explicitly.
+bash deploy.sh --server-ip <ip> --domain <fqdn> --server-timezone <IANA> \
+  --cf-api-token-file /secure/path/cf_api.token --preflight-only --yes
 ```
 
 On macOS, scripts require Bash 4+ (default `/bin/bash` 3.2 is unsupported). Install modern bash and run with:
@@ -112,6 +128,8 @@ Treat this runbook as a gated procedure. Do not proceed to the next phase until 
 - **Gate E (after management-port enforcement):** Coolify dashboard (`:8000`) and websocket (`:6001`) are reachable on Tailscale IP and not reachable on public IP.
 
 If any gate fails: stop, fix the issue, and re-run the same gate.
+
+Optional benchmark audits (for example, USG/CIS) are out-of-band evidence only. They complement the operational gates in this runbook and must not be treated as new deployment blockers unless you explicitly adopt that policy later.
 
 ### Automated Gate Mapping
 
@@ -326,6 +344,8 @@ sudo iptables -t filter -S DOCKER-USER | grep coolify-hardening
 
 For standard mode, expect a `coolify-hardening-wan-web` rule.
 For tunnel mode, ensure `coolify-hardening-wan-web` is absent while `coolify-hardening-wan-drop` is present.
+
+This UFW/iptables + `DOCKER-USER` split is intentional for the current repo: UFW handles host-interface policy, while Docker/Coolify forwarding boundaries are enforced through managed `DOCKER-USER` rules. Keep Docker on the iptables backend for this workflow; that is a compatibility choice for this automation, not a claim about Ubuntu's broader firewall direction.
 
 ### 3.3 Install Coolify
 
@@ -545,13 +565,39 @@ timedatectl status
 sysctl net.ipv4.tcp_congestion_control
 ```
 
+### 5.4 Optional Benchmark Audit (Non-Gating)
+
+Only run this after `validate_hardening.sh` and the phase-5 smoke tests match the intended host state. The custom validator remains the authoritative operational check for this repo's Tailscale-first, UFW/iptables + `DOCKER-USER` design.
+
+```bash
+# One-time setup on an Ubuntu Pro-attached host
+sudo pro enable usg
+sudo apt install usg
+
+# Run a benchmark-style audit
+sudo usg audit cis_level1_server
+
+# Optional: tailor the benchmark for intentional deviations, then re-audit
+sudo usg generate-tailoring cis_level1_server tailor.xml
+sudo usg audit --tailoring-file tailor.xml
+```
+
+USG writes HTML/XML audit artifacts under `/var/lib/usg/`.
+
+It is supplementary evidence only: do not treat it as a new Gate C/Gate E/F replacement or as formal certification.
+
+- Review findings against the intended Coolify/Tailscale design before making changes.
+- Do **not** run `usg fix` blindly on this host; generic benchmark remediations can conflict with Docker networking, Tailscale-only management, or the existing firewall model.
+- If a control is intentionally different, use a tailoring file and record the rationale instead of forcing generic benchmark defaults.
+
 ## Phase 6: Capture State Artifacts
 
 Capture current hardening state and report output for incident response and handoff:
 
 ```bash
 cat /var/lib/bootstrap-hardening/state
-cat /var/log/bootstrap-hardening-report.json
+sudo cat /var/log/bootstrap-hardening-report.json
+sudo cat /var/log/bootstrap-hardening-summary.txt
 ```
 
 ---
@@ -576,7 +622,10 @@ sudo ./bootstrap_hardening.sh \
 ```bash
 sudo ./validate_hardening.sh
 cat /var/lib/bootstrap-hardening/state
-cat /var/log/bootstrap-hardening-report.json
+sudo cat /var/log/bootstrap-hardening-report.json
+sudo hardening-report
+sudo systemctl status hardening-report.timer --no-pager
+sudo cat /var/log/bootstrap-hardening-summary.txt
 ```
 
 ### Viewing Logs
@@ -592,3 +641,5 @@ sudo fail2ban-client status sshd
 sudo ausearch -k identity --start recent
 sudo ausearch -k sudoers-change --start recent
 ```
+
+`hardening-report` is a **default-on, local-only** reporting baseline. It summarizes the latest validation result plus recent fail2ban/firewall/audit signals for the operator; it does **not** provide centralized logging.

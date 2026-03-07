@@ -48,6 +48,7 @@ setup() {
 admin_user=alice
 ssh_port=2222
 wan_iface=eth0
+ssh_admin_group=custom-ssh-admins
 tailscale_direct_wan=true
 update_profile=balanced
 timezone=Australia/Melbourne
@@ -59,9 +60,31 @@ STATE
   [ "${ADMIN_USER}" = "alice" ]
   [ "${SSH_PORT}" = "2222" ]
   [ "${WAN_IFACE}" = "eth0" ]
+  [ "${SSH_ADMIN_GROUP}" = "custom-ssh-admins" ]
+  [ "${SSH_ADMIN_GROUP_LEGACY_COMPAT}" = "false" ]
   [ "${TAILSCALE_DIRECT_WAN}" = "true" ]
   [ "${UPDATE_PROFILE}" = "balanced" ]
   [ "${CONFIGURED_TIMEZONE}" = "Australia/Melbourne" ]
+
+  rm -f "${state}"
+}
+
+@test "load_state_context: marks legacy compatibility when ssh_admin_group is absent from state" {
+  local state
+  state="$(mktemp)"
+  cat > "${state}" <<STATE
+admin_user=alice
+ssh_port=2222
+STATE
+
+  STATE_FILE="${state}"
+  SSH_ADMIN_GROUP="coolify-ssh-admins"
+  SSH_ADMIN_GROUP_LEGACY_COMPAT="false"
+  load_state_context
+
+  [ "${ADMIN_USER}" = "alice" ]
+  [ "${SSH_ADMIN_GROUP}" = "coolify-ssh-admins" ]
+  [ "${SSH_ADMIN_GROUP_LEGACY_COMPAT}" = "true" ]
 
   rm -f "${state}"
 }
@@ -416,7 +439,7 @@ EOF
       return 0
     fi
     if [[ "${1:-}" == "-nG" && "${2:-}" == "alice" ]]; then
-      echo "alice sudo"
+      echo "alice sudo coolify-ssh-admins"
       return 0
     fi
     command id "$@"
@@ -425,6 +448,10 @@ EOF
   getent() {
     if [[ "${1:-}" == "passwd" && "${2:-}" == "alice" ]]; then
       echo "alice:x:1000:1000:Alice:${tmphome}:/bin/bash"
+      return 0
+    fi
+    if [[ "${1:-}" == "group" && "${2:-}" == "coolify-ssh-admins" ]]; then
+      echo "coolify-ssh-admins:x:999:alice"
       return 0
     fi
     command getent "$@"
@@ -444,6 +471,59 @@ EOF
   assert_json_check_status "${json}" "admin: in sudo group" "PASS"
   assert_json_check_status "${json}" "admin: passwordless sudo (via other config)" "PASS"
   assert_json_check_status "${json}" "admin: authorized_keys format" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  rm -rf "${tmphome}"
+}
+
+@test "admin_sudo_check: legacy state allows missing SSH admin group without Gate C failure" {
+  local tmphome
+  tmphome="$(mktemp -d)"
+  mkdir -p "${tmphome}/.ssh"
+  cat > "${tmphome}/.ssh/authorized_keys" <<'EOF'
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyData admin@test
+EOF
+
+  ADMIN_USER="alice"
+  SSH_ADMIN_GROUP="coolify-ssh-admins"
+  SSH_ADMIN_GROUP_LEGACY_COMPAT="true"
+
+  id() {
+    if [[ "${1:-}" == "alice" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "-nG" && "${2:-}" == "alice" ]]; then
+      echo "alice sudo"
+      return 0
+    fi
+    command id "$@"
+  }
+
+  getent() {
+    if [[ "${1:-}" == "passwd" && "${2:-}" == "alice" ]]; then
+      echo "alice:x:1000:1000:Alice:${tmphome}:/bin/bash"
+      return 0
+    fi
+    if [[ "${1:-}" == "group" && "${2:-}" == "coolify-ssh-admins" ]]; then
+      return 2
+    fi
+    command getent "$@"
+  }
+
+  sudo() {
+    if [[ "${1:-}" == "-l" && "${2:-}" == "-U" && "${3:-}" == "alice" ]]; then
+      echo "(ALL) NOPASSWD: ALL"
+      return 0
+    fi
+    return 1
+  }
+
+  admin_sudo_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "admin: in sudo group" "PASS"
+  assert_json_check_status "${json}" "admin: SSH admin group" "INFO"
+  assert_json_check_status "${json}" "admin: SSH admin group membership" "INFO"
   assert_json_fail_count "${json}" "0"
 
   rm -rf "${tmphome}"
@@ -1199,6 +1279,12 @@ EOF
 }
 
 @test "rsyslog_check: records PASS when log targets are writable and runtime is healthy" {
+  getent() {
+    if [[ "${1:-}" == "passwd" && "${2:-}" == "syslog" ]]; then
+      return 0
+    fi
+    command getent "$@"
+  }
   stat() {
     if [[ "${1:-}" == "-c" && "${2:-}" == "%U" ]]; then echo root; return 0; fi
     if [[ "${1:-}" == "-c" && "${2:-}" == "%G" ]]; then echo syslog; return 0; fi
@@ -1238,6 +1324,12 @@ EOF
 }
 
 @test "rsyslog_check: records FAIL when /var/log is not group-writable and targets are missing" {
+  getent() {
+    if [[ "${1:-}" == "passwd" && "${2:-}" == "syslog" ]]; then
+      return 0
+    fi
+    command getent "$@"
+  }
   stat() {
     if [[ "${1:-}" == "-c" && "${2:-}" == "%U" ]]; then echo root; return 0; fi
     if [[ "${1:-}" == "-c" && "${2:-}" == "%G" ]]; then echo syslog; return 0; fi
@@ -1260,9 +1352,176 @@ EOF
   assert_json_check_status "${json}" "rsyslog: service active" "FAIL"
 }
 
+@test "rsyslog_check: records PASS for root-owned fallback when syslog user is absent" {
+  getent() {
+    if [[ "${1:-}" == "passwd" && "${2:-}" == "syslog" ]]; then
+      return 2
+    fi
+    command getent "$@"
+  }
+  stat() {
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%U" ]]; then echo root; return 0; fi
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%G" ]]; then echo root; return 0; fi
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%a" ]]; then echo 750; return 0; fi
+    command stat "$@"
+  }
+  rsyslog_collect_log_targets() {
+    printf '%s\n' "/var/log/ufw.log"
+  }
+  su() { return 0; }
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "rsyslog" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "show" && "${2:-}" == "-p" && "${3:-}" == "ActiveEnterTimestamp" ]]; then
+      echo "2026-03-05 02:24:40"
+      return 0
+    fi
+    return 0
+  }
+  journalctl() { return 0; }
+  grep() {
+    if [[ "$*" == *"/etc/logrotate.d/rsyslog"* || "$*" == *"/etc/logrotate.d/ufw"* ]]; then
+      return 0
+    fi
+    command grep "$@"
+  }
+
+  rsyslog_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "rsyslog: runtime identity fallback" "INFO"
+  assert_json_check_status "${json}" "rsyslog: /var/log owner/group fallback" "PASS"
+  assert_json_check_status "${json}" "rsyslog: target writable by root (/var/log/ufw.log)" "PASS"
+  assert_json_check_status "${json}" "rsyslog: logrotate create directive" "PASS"
+  assert_json_check_status "${json}" "rsyslog: ufw logrotate create directive" "PASS"
+  assert_json_check_status "${json}" "rsyslog: runtime log-write health" "PASS"
+}
+
+@test "rsyslog_check: records INFO when rsyslog unit is unavailable in container" {
+  IS_CONTAINER="true"
+  getent() {
+    if [[ "${1:-}" == "passwd" && "${2:-}" == "syslog" ]]; then
+      return 2
+    fi
+    command getent "$@"
+  }
+  stat() {
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%U" ]]; then echo root; return 0; fi
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%G" ]]; then echo root; return 0; fi
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%a" ]]; then echo 750; return 0; fi
+    command stat "$@"
+  }
+  rsyslog_collect_log_targets() {
+    printf '%s\n' "/var/log/ufw.log"
+  }
+  su() { return 0; }
+  systemctl() {
+    if [[ "${1:-}" == "show" && "${2:-}" == "--property=LoadState" && "${4:-}" == "rsyslog.service" ]]; then
+      echo "not-found"
+      return 0
+    fi
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "rsyslog" ]]; then
+      return 1
+    fi
+    return 0
+  }
+  journalctl() { return 0; }
+  grep() {
+    if [[ "$*" == *"/etc/logrotate.d/ufw"* ]]; then
+      return 0
+    fi
+    if [[ "$*" == *"/etc/logrotate.d/rsyslog"* ]]; then
+      return 1
+    fi
+    command grep "$@"
+  }
+
+  rsyslog_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "rsyslog: runtime identity fallback" "INFO"
+  assert_json_check_status "${json}" "rsyslog: /var/log owner/group fallback" "PASS"
+  assert_json_check_status "${json}" "rsyslog: /var/log mode" "INFO"
+  assert_json_check_status "${json}" "rsyslog: logrotate create directive" "INFO"
+  assert_json_check_status "${json}" "rsyslog: ufw logrotate create directive" "PASS"
+  assert_json_check_status "${json}" "rsyslog: service active" "INFO"
+}
+
 @test "ssh_check: records PASS for expected hardened sshd output" {
+  local ssh_dropin
+  ssh_dropin="$(mktemp)"
+  cat > "${ssh_dropin}" <<'EOF'
+Match Address 127.0.0.1,::1,10.42.0.0/16
+Ciphers ^chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
+MACs ^hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+KexAlgorithms ^sntrup761x25519-sha512@openssh.com,curve25519-sha256
+HostKeyAlgorithms ^ssh-ed25519,rsa-sha2-512,rsa-sha2-256
+EOF
+
   sshd() {
-    if [[ "$1" == "-T" ]]; then
+    if [[ "$1" == "-T" && "$#" -eq 1 ]]; then
+      cat <<SSHD
+permitrootlogin no
+passwordauthentication no
+pubkeyauthentication yes
+permitemptypasswords no
+compression no
+ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
+macs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+kexalgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256
+hostkeyalgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256
+allowusers alice
+allowgroups coolify-ssh-admins
+SSHD
+      return 0
+    fi
+    if [[ "$1" == "-T" && "$2" == "-C" ]]; then
+      if [[ "$3" == addr=127.0.0.1,* ]]; then
+        cat <<SSHD
+permitrootlogin prohibit-password
+allowusers alice root
+allowgroups coolify-ssh-admins root
+SSHD
+      else
+        cat <<SSHD
+permitrootlogin no
+SSHD
+      fi
+      return 0
+    fi
+    return 0
+  }
+
+  ADMIN_USER="alice"
+  SSH_ADMIN_GROUP="coolify-ssh-admins"
+  DOCKER_SSH_CIDRS='10.42.0.0/16'
+  SSH_DROPIN_FILE="${ssh_dropin}"
+  ssh_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "ssh: permitrootlogin=no" "PASS"
+  assert_json_check_status "${json}" "ssh: passwordauthentication=no" "PASS"
+  assert_json_check_status "${json}" "ssh: AllowGroups includes coolify-ssh-admins" "PASS"
+  assert_json_check_status "${json}" "ssh: Match localhost AllowGroups includes root" "PASS"
+  assert_json_check_status "${json}" "ssh: Match localhost AllowGroups includes coolify-ssh-admins" "PASS"
+
+  rm -f "${ssh_dropin}"
+}
+
+@test "ssh_check: legacy state allows pre-admin-group sshd output without Gate C failure" {
+  local ssh_dropin
+  ssh_dropin="$(mktemp)"
+  cat > "${ssh_dropin}" <<'EOF'
+Match Address 127.0.0.1,::1,10.42.0.0/16
+Ciphers ^chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
+MACs ^hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+KexAlgorithms ^sntrup761x25519-sha512@openssh.com,curve25519-sha256
+HostKeyAlgorithms ^ssh-ed25519,rsa-sha2-512,rsa-sha2-256
+EOF
+
+  sshd() {
+    if [[ "$1" == "-T" && "$#" -eq 1 ]]; then
       cat <<SSHD
 permitrootlogin no
 passwordauthentication no
@@ -1277,15 +1536,30 @@ allowusers alice
 SSHD
       return 0
     fi
+    if [[ "$1" == "-T" && "$2" == "-C" ]]; then
+      cat <<SSHD
+permitrootlogin prohibit-password
+allowusers alice root
+SSHD
+      return 0
+    fi
     return 0
   }
 
   ADMIN_USER="alice"
+  SSH_ADMIN_GROUP="coolify-ssh-admins"
+  SSH_ADMIN_GROUP_LEGACY_COMPAT="true"
+  DOCKER_SSH_CIDRS='10.42.0.0/16'
+  SSH_DROPIN_FILE="${ssh_dropin}"
   ssh_check
   local json
   json="$(emit_validate_results_json)"
-  assert_json_check_status "${json}" "ssh: permitrootlogin=no" "PASS"
-  assert_json_check_status "${json}" "ssh: passwordauthentication=no" "PASS"
+  assert_json_check_status "${json}" "ssh: AllowUsers includes alice" "PASS"
+  assert_json_check_status "${json}" "ssh: AllowGroups" "INFO"
+  assert_json_check_status "${json}" "ssh: Match localhost AllowGroups" "INFO"
+  assert_json_fail_count "${json}" "0"
+
+  rm -f "${ssh_dropin}"
 }
 
 @test "sysctl_check: records PASS when expected values are present" {
@@ -1499,6 +1773,96 @@ EOF
   assert_json_check_status "${json}" "auto-updates: Ubuntu security origin covered" "PASS"
   assert_json_check_status "${json}" "auto-updates: Ubuntu updates origin excluded (security-only)" "PASS"
   assert_json_check_status "${json}" "auto-updates: Docker CE origin excluded (security-only)" "PASS"
+  assert_json_check_status "${json}" "auto-updates: apt-daily.timer active" "PASS"
+  assert_json_check_status "${json}" "auto-updates: apt-daily-upgrade.timer active" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  if [[ "${had_apt_local}" == "true" ]]; then
+    cp "${apt_backup}" "${apt_local}"
+  else
+    rm -f "${apt_local}"
+  fi
+
+  if [[ "${had_override1}" == "true" ]]; then
+    cp "${override1_backup}" "${override1}"
+  else
+    rm -f "${override1}"
+  fi
+
+  if [[ "${had_override2}" == "true" ]]; then
+    cp "${override2_backup}" "${override2}"
+  else
+    rm -f "${override2}"
+  fi
+
+  rm -f "${apt_backup}" "${override1_backup}" "${override2_backup}"
+}
+
+@test "unattended_upgrades_check: records PASS for balanced profile with Docker CE stable origin and active timers" {
+  local apt_local="/etc/apt/apt.conf.d/52unattended-upgrades-local"
+  local apt_backup=""
+  local had_apt_local="false"
+  local override1="/etc/systemd/system/apt-daily.timer.d/override.conf"
+  local override2="/etc/systemd/system/apt-daily-upgrade.timer.d/override.conf"
+  local override1_backup=""
+  local override2_backup=""
+  local had_override1="false"
+  local had_override2="false"
+
+  mkdir -p "/etc/apt/apt.conf.d" 2>/dev/null || skip "unable to create /etc/apt/apt.conf.d"
+  mkdir -p "/etc/systemd/system/apt-daily.timer.d" 2>/dev/null || skip "unable to create apt-daily timer override dir"
+  mkdir -p "/etc/systemd/system/apt-daily-upgrade.timer.d" 2>/dev/null || skip "unable to create apt-daily-upgrade timer override dir"
+
+  if [[ -f "${apt_local}" ]]; then
+    had_apt_local="true"
+    apt_backup="$(mktemp)"
+    cp "${apt_local}" "${apt_backup}"
+  fi
+
+  if [[ -f "${override1}" ]]; then
+    had_override1="true"
+    override1_backup="$(mktemp)"
+    cp "${override1}" "${override1_backup}"
+  fi
+
+  if [[ -f "${override2}" ]]; then
+    had_override2="true"
+    override2_backup="$(mktemp)"
+    cp "${override2}" "${override2_backup}"
+  fi
+
+  cat > "${apt_local}" <<'EOF'
+"origin=Ubuntu,codename=${distro_codename}-security,label=Ubuntu";
+"origin=Ubuntu,codename=${distro_codename}-updates,label=Ubuntu";
+"origin=Docker,label=Docker CE,archive=${distro_codename},component=stable";
+Unattended-Upgrade::Automatic-Reboot "false";
+EOF
+
+  cat > "${override1}" <<'EOF'
+[Timer]
+Persistent=false
+EOF
+  cat > "${override2}" <<'EOF'
+[Timer]
+Persistent=false
+EOF
+
+  UPDATE_PROFILE="balanced"
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" ]]; then
+      return 0
+    fi
+    return 1
+  }
+
+  unattended_upgrades_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "auto-updates: Ubuntu security origin covered" "PASS"
+  assert_json_check_status "${json}" "auto-updates: Ubuntu updates origin covered" "PASS"
+  assert_json_check_detail_contains "${json}" "auto-updates: Ubuntu updates origin covered" "balanced profile"
+  assert_json_check_status "${json}" "auto-updates: Docker CE origin pinned to stable" "PASS"
+  assert_json_check_detail_contains "${json}" "auto-updates: Docker CE origin pinned to stable" "balanced profile"
   assert_json_check_status "${json}" "auto-updates: apt-daily.timer active" "PASS"
   assert_json_check_status "${json}" "auto-updates: apt-daily-upgrade.timer active" "PASS"
   assert_json_fail_count "${json}" "0"

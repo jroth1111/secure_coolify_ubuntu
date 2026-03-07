@@ -20,7 +20,7 @@ Turn a fresh Ubuntu VPS into a **production-hardened Coolify server** in ~15 min
 - ✅ Coolify running with private management access (`http://<tailscale-ip>:8000`)
 - ✅ SSH + dashboard only accessible via Tailscale VPN (no public attack surface)
 - ✅ Automatic Cloudflare routing for app subdomains (mode-specific DNS/tunnel behavior)
-- ✅ Hardened kernel, firewall, audit logging, and auto-updates
+- ✅ Hardened kernel, firewall, audit logging, and profile-based auto-updates
 
 ---
 
@@ -31,11 +31,11 @@ Deploying Coolify on a fresh VPS leaves significant security gaps: root SSH enab
 | Problem | Solution |
 |---------|----------|
 | Root SSH + password auth | Key-only SSH, admin user, root login disabled |
-| No firewall policy | UFW default-deny, DOCKER-USER chain rules |
+| No firewall policy | UFW default-deny + DOCKER-USER compatibility rules for Docker/Coolify |
 | Dashboard publicly accessible | Restrict management ports to `tailscale0` via UFW + private routes |
 | No intrusion detection | Auditd rules for privileged operations, fail2ban |
 | Kernel defaults | SYN cookies, ASLR, ptrace restrictions, BBR |
-| Manual security patches | Unattended-upgrades with scheduled reboots |
+| Manual security patches | Profile-based unattended-upgrades with scheduled reboots (`balanced` adds Ubuntu `-updates` + Docker CE stable) |
 
 **Result:** A hardened server where the only way to SSH or access the Coolify dashboard is through your Tailscale VPN — zero public attack surface on management interfaces.
 
@@ -234,7 +234,7 @@ Wildcard DNS (`*.example.com`) and tunnel ingress rules are created automaticall
 | 3 | **Swap** | Configurable (default 2G), OOM protection |
 | 4 | **Service cleanup** | Disables rpcbind, avahi-daemon, cups |
 | 5 | **Login banner** | Authorized access warning |
-| 6 | **SSH hardening** | Key-only, modern ciphers, root login disabled |
+| 6 | **SSH hardening** | Key-only, explicit admin-group scoping, modern ciphers, root login disabled |
 | 7 | **Auditd** | Tracks identity changes, sudoers, Docker socket |
 | 8 | **Kernel hardening** | SYN cookies, BBR, ASLR, ICMP hardening, ptrace restricted |
 | 9 | **UFW firewall** | Default deny, Tailscale CIDR, tunnel-mode aware |
@@ -242,8 +242,8 @@ Wildcard DNS (`*.example.com`) and tunnel ingress rules are created automaticall
 | 11 | **DOCKER-USER rules** | IPv4/IPv6 chain hardening, bridge rules |
 | 12 | **Fail2ban** | SSH jail with UFW ban action |
 | 13 | **Journald** | Persistent logging with configurable retention |
-| 14 | **Auto-updates** | Unattended security patches with scheduled reboots |
-| 15 | **Post-checks** | Verification + JSON report |
+| 14 | **Auto-updates** | Profile-based unattended patches (`security-only` default; `balanced` also adds Ubuntu `-updates` + Docker CE stable) |
+| 15 | **Post-checks** | Verification + JSON report + daily actionable summary |
 
 ---
 
@@ -307,6 +307,48 @@ sudo ./validate_hardening.sh
 # Validate hardening (JSON, for automation/CI)
 sudo ./validate_hardening.sh --json
 ```
+
+`validate_hardening.sh` is this project's operational validator. It checks the intended Tailscale-first, private-management posture and the current UFW/iptables + `DOCKER-USER` compatibility model used to keep Docker/Coolify enforcement predictable on this repo; it is not a CIS/USG attestation.
+
+### Optional Benchmark Audit (USG/CIS-style)
+
+If you need benchmark-style audit evidence in addition to the project validator, run an optional Ubuntu Security Guide (USG) audit only after `validate_hardening.sh` is already passing for the intended host state.
+
+```bash
+# One-time setup on an Ubuntu Pro-attached host
+sudo pro enable usg
+sudo apt install usg
+
+# Run a benchmark-style audit
+sudo usg audit cis_level1_server
+
+# Optional: tailor the benchmark for intentional deviations, then re-audit
+sudo usg generate-tailoring cis_level1_server tailor.xml
+sudo usg audit --tailoring-file tailor.xml
+```
+
+USG writes HTML/XML audit artifacts under `/var/lib/usg/`.
+
+Use benchmark output as supplementary audit evidence only — it does **not** replace `validate_hardening.sh` or become a deployment gate.
+
+Do not run `usg fix` blindly on this Docker/Tailscale/Coolify host. Some benchmark remediations can conflict with the intended private-management and firewall design; if a finding reflects an intentional design choice, tailor the benchmark and record the rationale instead of forcing generic defaults.
+
+### Lightweight Observability Baseline
+
+`bootstrap_hardening.sh` now installs a **default-on, local-only** reporting path for operators:
+
+```bash
+# Refresh the summary on demand
+sudo hardening-report
+
+# Check the daily timer
+sudo systemctl status hardening-report.timer --no-pager
+
+# Read the last written summary
+sudo cat /var/log/bootstrap-hardening-summary.txt
+```
+
+The summary highlights the latest `validate-hardening` result, current `fail2ban` SSH jail status, recent `UFW BLOCK` volume, and recent audit-key activity. It is intended as a pragmatic first reporting layer — **not** centralized logging or a SIEM rollout.
 
 ### Test Suite
 
@@ -437,7 +479,7 @@ Legacy flags removed (breaking change): `--cf-api-token`, `--cf-tunnel-api-token
 | `--bind-dashboard-to-tailscale` | `false` | Enable watchdog re-enforcement of Tailscale-only UFW rules for 8000/6001/6002 |
 | `--enable-auto-reboot <bool>` | `false` | Auto-reboot after security updates |
 | `--auto-reboot-time <HH:MM>` | `03:30` | Reboot schedule |
-| `--update-profile <name>` | `security-only` | Unattended-upgrades profile: `security-only` or `balanced` |
+| `--update-profile <name>` | `security-only` | Unattended-upgrades profile: `security-only` = Ubuntu security only; `balanced` = Ubuntu security + Ubuntu `-updates` + Docker CE stable |
 | `--journal-retention <span>` | `3month` | Journald retention period |
 | `--strict-docker-ssh-cidrs` | `true` | Limit SSH/UFW bridge allowlists to discovered Docker bridge CIDRs |
 | `--compat-docker-ssh-cidrs` | `false` | Use broad Docker bridge CIDR compatibility ranges |

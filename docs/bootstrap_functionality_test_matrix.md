@@ -68,7 +68,7 @@ These IDs are the canonical hardening workflow contract IDs used by `docs/workfl
 | Validator baseline pass output (`validate_hardening.sh`) | `tests/integration/test_validate_script.bats`: `validate: exits 0 after hardening bootstrap`; `validate: JSON output includes expected top-level fields` | Sufficient |
 | Validator failure detection paths (`validate_hardening.sh`) | `tests/integration/test_validate_script.bats`: failure on missing banner + failure on non-persistent journald | Sufficient |
 | Docker user service wiring check (`docker_user_lifecycle_check`) | `tests/unit/test_validate_functions.bats`: `PartOf=docker.service`; `WantedBy=docker.service` | Sufficient |
-| Unattended-upgrades Docker CE origin check (`unattended_upgrades_check`) | `tests/unit/test_validate_functions.bats`: Docker CE origin present in upgrades config | Sufficient |
+| Unattended-upgrades profile coverage (`configure_unattended_upgrades`, `unattended_upgrades_check`) | `tests/unit/test_functions.bats`: security-only + balanced origin writing; `tests/unit/test_validate_additional_behavior.bats`: security-only + balanced validator outcomes | Sufficient |
 | Coolify binding guard timer check (`coolify_binding_check`) | `tests/unit/test_validate_functions.bats`: binding-guard timer active | Sufficient |
 | Deploy orchestrator input validation (`deploy.sh` `validate_inputs`, `parse_args`) | `tests/unit/test_deploy_workflow_contract.bats`: preflight + phase1 + gate behavior tests with mocked outcomes | Sufficient |
 | Deploy orchestrator Cloudflare/API and DNS flow (`deploy.sh` phase4) | `tests/unit/test_deploy_workflow_contract.bats`: phase4 standard-mode DNS behavior assertion | Sufficient |

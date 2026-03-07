@@ -542,6 +542,50 @@ EOF
   rm -rf "${stub_dir}"
 }
 
+@test "configure_unattended_upgrades: balanced profile writes Ubuntu updates and Docker CE stable origin" {
+  local stub_dir
+  local auto_file
+  local local_file
+  local call_log
+  stub_dir="$(mktemp -d)"
+  auto_file="${stub_dir}/20auto-upgrades"
+  local_file="${stub_dir}/52unattended-upgrades-local"
+  call_log="${stub_dir}/calls.log"
+
+  cat > "${stub_dir}/systemctl" <<EOF
+#!/usr/bin/env bash
+echo "systemctl \$*" >> "${call_log}"
+exit 0
+EOF
+
+  cat > "${stub_dir}/unattended-upgrade" <<EOF
+#!/usr/bin/env bash
+echo "unattended-upgrade \$*" >> "${call_log}"
+exit 0
+EOF
+
+  chmod +x "${stub_dir}/systemctl" "${stub_dir}/unattended-upgrade"
+
+  run env PATH="${stub_dir}:${PATH}" TEST_AUTO="${auto_file}" TEST_LOCAL="${local_file}" bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="false"
+    ENABLE_AUTO_REBOOT="false"
+    UPDATE_PROFILE="balanced"
+    APT_AUTO_FILE="${TEST_AUTO}"
+    APT_LOCAL_FILE="${TEST_LOCAL}"
+    configure_unattended_upgrades
+  '
+  assert_success
+
+  run cat "${local_file}"
+  assert_success
+  assert_output --partial 'origin=Ubuntu,codename=${distro_codename}-security,label=Ubuntu'
+  assert_output --partial 'origin=Ubuntu,codename=${distro_codename}-updates,label=Ubuntu'
+  assert_output --partial 'origin=Docker,label=Docker CE,archive=${distro_codename},component=stable'
+
+  rm -rf "${stub_dir}"
+}
+
 # ── parse_args() ─────────────────────────────────────────────────────────────
 
 @test "parse_args: --admin-user sets ADMIN_USER" {
@@ -686,6 +730,7 @@ EOF
       if [[ "${1:-}" == "-c" && "${2:-}" == "%a" ]]; then echo "0770"; return 0; fi
       return 0
     }
+    getent() { return 0; }
     rsyslog_collect_log_targets() { echo "/var/log/auth.log"; }
     su() { return 0; }
     grep() { return 0; }
@@ -698,6 +743,121 @@ EOF
 
 @test "assert_sshd_effective: correct config passes" {
   ADMIN_USER="testadmin"
+  SSH_ADMIN_GROUP="coolify-ssh-admins"
+  SSH_PORT="2222"
+  local effective
+  effective="port 2222
+permitrootlogin no
+passwordauthentication no
+kbdinteractiveauthentication no
+pubkeyauthentication yes
+authenticationmethods publickey
+allowusers testadmin
+allowgroups coolify-ssh-admins
+permitemptypasswords no
+compression no
+ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
+macs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+kexalgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org
+hostkeyalgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256"
+  run assert_sshd_effective "${effective}"
+  assert_success
+}
+
+@test "assert_sshd_effective: wrong permitrootlogin fails" {
+  ADMIN_USER="testadmin"
+  SSH_ADMIN_GROUP="coolify-ssh-admins"
+  SSH_PORT="2222"
+  local effective
+  effective="port 2222
+permitrootlogin yes
+passwordauthentication no
+kbdinteractiveauthentication no
+pubkeyauthentication yes
+authenticationmethods publickey
+allowusers testadmin
+allowgroups coolify-ssh-admins
+permitemptypasswords no
+compression no
+ciphers chacha20-poly1305@openssh.com"
+  run assert_sshd_effective "${effective}"
+  assert_failure
+}
+
+@test "assert_sshd_effective: wrong kex fails" {
+  ADMIN_USER="testadmin"
+  SSH_ADMIN_GROUP="coolify-ssh-admins"
+  SSH_PORT="2222"
+  local effective
+  effective="port 2222
+permitrootlogin no
+passwordauthentication no
+kbdinteractiveauthentication no
+pubkeyauthentication yes
+authenticationmethods publickey
+allowusers testadmin
+allowgroups coolify-ssh-admins
+permitemptypasswords no
+compression no
+ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
+macs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+kexalgorithms curve25519-sha256
+hostkeyalgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256"
+  run assert_sshd_effective "${effective}"
+  assert_failure
+}
+
+# ── assert_sshd_match_localhost() ─────────────────────────────────────────────
+
+@test "assert_sshd_match_localhost: correct Match config passes (prohibit-password)" {
+  ADMIN_USER="testadmin"
+  SSH_ADMIN_GROUP="coolify-ssh-admins"
+  local effective
+  effective="permitrootlogin prohibit-password
+allowusers testadmin root
+allowgroups coolify-ssh-admins root
+passwordauthentication no"
+  run assert_sshd_match_localhost "${effective}"
+  assert_success
+}
+
+@test "assert_sshd_match_localhost: correct Match config passes (without-password synonym)" {
+  ADMIN_USER="testadmin"
+  SSH_ADMIN_GROUP="coolify-ssh-admins"
+  local effective
+  effective="permitrootlogin without-password
+allowusers testadmin root
+allowgroups coolify-ssh-admins root
+passwordauthentication no"
+  run assert_sshd_match_localhost "${effective}"
+  assert_success
+}
+
+@test "assert_sshd_match_localhost: permitrootlogin no fails" {
+  ADMIN_USER="testadmin"
+  SSH_ADMIN_GROUP="coolify-ssh-admins"
+  local effective
+  effective="permitrootlogin no
+allowusers testadmin root
+allowgroups coolify-ssh-admins root"
+  run assert_sshd_match_localhost "${effective}"
+  assert_failure
+}
+
+@test "assert_sshd_match_localhost: missing root in allowusers fails" {
+  ADMIN_USER="testadmin"
+  SSH_ADMIN_GROUP="coolify-ssh-admins"
+  local effective
+  effective="permitrootlogin prohibit-password
+allowusers testadmin
+allowgroups coolify-ssh-admins"
+  run assert_sshd_match_localhost "${effective}"
+  assert_failure
+}
+
+@test "assert_sshd_effective: missing allowgroups fails" {
+  ADMIN_USER="testadmin"
+  SSH_ADMIN_GROUP="coolify-ssh-admins"
   SSH_PORT="2222"
   local effective
   effective="port 2222
@@ -714,85 +874,6 @@ macs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
 kexalgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org
 hostkeyalgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256"
   run assert_sshd_effective "${effective}"
-  assert_success
-}
-
-@test "assert_sshd_effective: wrong permitrootlogin fails" {
-  ADMIN_USER="testadmin"
-  SSH_PORT="2222"
-  local effective
-  effective="port 2222
-permitrootlogin yes
-passwordauthentication no
-kbdinteractiveauthentication no
-pubkeyauthentication yes
-authenticationmethods publickey
-allowusers testadmin
-permitemptypasswords no
-compression no
-ciphers chacha20-poly1305@openssh.com"
-  run assert_sshd_effective "${effective}"
-  assert_failure
-}
-
-@test "assert_sshd_effective: wrong kex fails" {
-  ADMIN_USER="testadmin"
-  SSH_PORT="2222"
-  local effective
-  effective="port 2222
-permitrootlogin no
-passwordauthentication no
-kbdinteractiveauthentication no
-pubkeyauthentication yes
-authenticationmethods publickey
-allowusers testadmin
-permitemptypasswords no
-compression no
-ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
-macs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
-kexalgorithms curve25519-sha256
-hostkeyalgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256"
-  run assert_sshd_effective "${effective}"
-  assert_failure
-}
-
-# ── assert_sshd_match_localhost() ─────────────────────────────────────────────
-
-@test "assert_sshd_match_localhost: correct Match config passes (prohibit-password)" {
-  ADMIN_USER="testadmin"
-  local effective
-  effective="permitrootlogin prohibit-password
-allowusers testadmin root
-passwordauthentication no"
-  run assert_sshd_match_localhost "${effective}"
-  assert_success
-}
-
-@test "assert_sshd_match_localhost: correct Match config passes (without-password synonym)" {
-  ADMIN_USER="testadmin"
-  local effective
-  effective="permitrootlogin without-password
-allowusers testadmin root
-passwordauthentication no"
-  run assert_sshd_match_localhost "${effective}"
-  assert_success
-}
-
-@test "assert_sshd_match_localhost: permitrootlogin no fails" {
-  ADMIN_USER="testadmin"
-  local effective
-  effective="permitrootlogin no
-allowusers testadmin root"
-  run assert_sshd_match_localhost "${effective}"
-  assert_failure
-}
-
-@test "assert_sshd_match_localhost: missing root in allowusers fails" {
-  ADMIN_USER="testadmin"
-  local effective
-  effective="permitrootlogin prohibit-password
-allowusers testadmin"
-  run assert_sshd_match_localhost "${effective}"
   assert_failure
 }
 
@@ -1407,6 +1488,52 @@ allowusers testadmin"
   '
   assert_success
   assert_output --partial "DRY-RUN"
+}
+
+@test "configure_hardening_report: installs summary script and timer units" {
+  local tmpdir
+  local call_log
+  tmpdir="$(mktemp -d)"
+  call_log="${tmpdir}/calls.log"
+
+  cat > "${tmpdir}/systemctl" <<EOF
+#!/usr/bin/env bash
+echo "systemctl \$*" >> "${call_log}"
+exit 0
+EOF
+  chmod +x "${tmpdir}/systemctl"
+
+  run env PATH="${tmpdir}:$PATH" bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="false"
+    HARDENING_REPORT_SCRIPT="'"${tmpdir}"'/hardening-report"
+    HARDENING_REPORT_SERVICE="'"${tmpdir}"'/hardening-report.service"
+    HARDENING_REPORT_TIMER="'"${tmpdir}"'/hardening-report.timer"
+    configure_hardening_report
+  '
+  assert_success
+
+  run cat "${tmpdir}/hardening-report"
+  assert_success
+  assert_output --partial "Bootstrap hardening actionable summary"
+  assert_output --partial "fail2ban-client status sshd"
+  assert_output --partial "journalctl -k --since '24 hours ago'"
+
+  run cat "${tmpdir}/hardening-report.service"
+  assert_success
+  assert_output --partial "ExecStart=${tmpdir}/hardening-report"
+
+  run cat "${tmpdir}/hardening-report.timer"
+  assert_success
+  assert_output --partial "OnUnitActiveSec=24h"
+  assert_output --partial "Persistent=true"
+
+  run cat "${call_log}"
+  assert_success
+  assert_output --partial "enable --now hardening-report.timer"
+  assert_output --partial "start hardening-report.service"
+
+  rm -rf "${tmpdir}"
 }
 
 # ── set_auditd_conf_kv() ──────────────────────────────────────────────────────

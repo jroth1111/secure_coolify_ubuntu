@@ -146,6 +146,17 @@ entries:
   checks:
   - 'tests/unit/test_functions.bats::configure_hardening_validation_timer: dry-run
     skips install'
+- id: LS-BOOT-073
+  script_path: bootstrap_hardening.sh
+  function: configure_hardening_report
+  criticality: security
+  behavior_test: 'tests/unit/test_functions.bats::configure_hardening_report: installs
+    summary script and timer units'
+  checks:
+  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_hardening_report:
+    dry-run reports summary timer install'
+  - 'tests/unit/test_functions.bats::configure_hardening_report: installs summary
+    script and timer units'
 - id: LS-BOOT-017
   script_path: bootstrap_hardening.sh
   function: configure_journald
@@ -261,10 +272,10 @@ entries:
   function: ensure_admin_access
   criticality: utility
   behavior_test: 'tests/unit/test_admin.bats::ensure_admin_access: creates user with
-    sudo group when user doesn''t exist'
+    sudo and SSH admin groups when user doesn''t exist'
   checks:
-  - 'tests/unit/test_admin.bats::ensure_admin_access: creates user with sudo group
-    when user doesn''t exist'
+  - 'tests/unit/test_admin.bats::ensure_admin_access: creates user with sudo and SSH
+    admin groups when user doesn''t exist'
 - id: LS-BOOT-030
   script_path: bootstrap_hardening.sh
   function: ensure_packages
@@ -937,6 +948,8 @@ entries:
   checks:
   - 'tests/unit/test_deploy_setup_additional_behavior.bats::main (deploy): executes
     all deployment phases in order with stubs'
+  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: preflight-only exits after
+    preflight before later phases'
 - id: LS-DEP-006
   script_path: deploy.sh
   function: parse_args
@@ -1000,10 +1013,12 @@ entries:
   function: preflight
   criticality: orchestration
   behavior_test: 'tests/unit/test_deploy_workflow_contract.bats::deploy: preflight
-    phase marker exists'
+    verifies operator tailscale readiness before root SSH'
   checks:
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: preflight phase marker
-    exists'
+  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: preflight verifies
+    operator tailscale readiness before root SSH'
+  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: preflight fails fresh
+    runs when operator tailscale is not ready'
 - id: LS-DEP-013
   script_path: deploy.sh
   function: reconcile_docker_daemon_remote
@@ -1097,6 +1112,15 @@ entries:
   checks:
   - 'tests/unit/test_deploy_workflow_contract.bats::deploy: gate D validates service
     active and managed rules'
+- id: LS-DEP-028
+  script_path: deploy.sh
+  function: verify_operator_tailscale_readiness
+  criticality: orchestration
+  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::verify_operator_tailscale_readiness:
+    skips checks in preflight-only mode'
+  checks:
+  - 'tests/unit/test_deploy_setup_additional_behavior.bats::verify_operator_tailscale_readiness:
+    skips checks in preflight-only mode'
 - id: LS-SET-001
   script_path: setup.sh
   function: collect_inputs
@@ -1115,6 +1139,8 @@ entries:
   checks:
   - 'tests/unit/test_deploy_setup_additional_behavior.bats::main (setup): executes
     setup phases with stubbed actions'
+  - 'tests/unit/test_setup_workflow_contract.bats::setup: preflight-only exits after
+    preflight before later phases'
 - id: LS-SET-003
   script_path: setup.sh
   function: parse_args

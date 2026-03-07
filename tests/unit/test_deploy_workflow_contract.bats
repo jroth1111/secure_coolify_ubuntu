@@ -3,7 +3,10 @@
 
 load '../helpers'
 
-@test "deploy: preflight phase marker exists" {
+@test "deploy: preflight verifies operator tailscale readiness before root SSH" {
+  marker="$(mktemp)"
+  rm -f "${marker}"
+
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"
     stubbin="$(mktemp -d)"
@@ -21,15 +24,100 @@ EOF
     cf_verify_tunnel_token() { :; }
     resolve_app_domain() { :; }
     ssh_probe=0
-    ssh_root() { ssh_probe=1; return 0; }
+    tailscale() {
+      [[ "$1" == "status" && "$2" == "--json" ]] || return 1
+      printf "checked\n" > "'"${marker}"'"
+      printf "%s\n" "{\"BackendState\":\"Running\"}"
+    }
+    ssh_root() {
+      [[ -f "'"${marker}"'" ]] || return 1
+      ssh_probe=1
+      return 0
+    }
 
     SKIP_HARDEN="false"
     SERVER_IP="203.0.113.10"
     PUBKEY_FILE="/tmp/fake.pub"
     preflight
+    [[ -f "'"${marker}"'" ]]
     [[ "${ssh_probe}" -eq 1 ]]
   '
   assert_success
+}
+
+@test "deploy: preflight fails fresh runs when operator tailscale is not ready" {
+  marker="$(mktemp)"
+  rm -f "${marker}"
+
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    stubbin="$(mktemp -d)"
+    cat > "${stubbin}/ssh-keygen" <<'\''EOF'\''
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "${stubbin}/ssh-keygen"
+    PATH="${stubbin}:${PATH}"
+    command() { [[ "$1" == "-v" ]] && return 0; builtin command "$@"; }
+    cf_verify_token() { :; }
+    cf_get_zone_id() { CF_ZONE_ID="zone123"; }
+    cf_verify_dns_write_token() { :; }
+    cf_get_account_id() { :; }
+    cf_verify_tunnel_token() { :; }
+    resolve_app_domain() { :; }
+    tailscale() {
+      [[ "$1" == "status" && "$2" == "--json" ]] || return 1
+      printf "%s\n" "{\"BackendState\":\"NeedsLogin\"}"
+    }
+    ssh_root() {
+      printf "called\n" > "'"${marker}"'"
+      return 0
+    }
+
+    SKIP_HARDEN="false"
+    SERVER_IP="203.0.113.10"
+    PUBKEY_FILE="/tmp/fake.pub"
+    preflight
+  '
+  assert_failure
+  assert_output --partial "Fresh deploys require operator Tailscale readiness before phase 1."
+  [ ! -e "${marker}" ]
+}
+
+@test "deploy: preflight-only exits after preflight before later phases" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    preflight_calls=0
+    phase1_calls=0
+    phase2_calls=0
+    phase3_calls=0
+    phase4_calls=0
+    phase5_calls=0
+
+    run_report_init() { :; }
+    init_ssh_options() { :; }
+    parse_args() { PREFLIGHT_ONLY="true"; }
+    collect_inputs() { :; }
+    validate_inputs() { :; }
+    init_root_password_auth() { :; }
+    confirm() { :; }
+    preflight() { preflight_calls=$((preflight_calls + 1)); }
+    phase1_upload_harden() { phase1_calls=$((phase1_calls + 1)); }
+    phase2_gates() { phase2_calls=$((phase2_calls + 1)); }
+    phase3_docker_coolify() { phase3_calls=$((phase3_calls + 1)); }
+    phase4_binding_dns() { phase4_calls=$((phase4_calls + 1)); }
+    phase5_verify() { phase5_calls=$((phase5_calls + 1)); }
+
+    main
+    [[ "${preflight_calls}" -eq 1 ]]
+    [[ "${phase1_calls}" -eq 0 ]]
+    [[ "${phase2_calls}" -eq 0 ]]
+    [[ "${phase3_calls}" -eq 0 ]]
+    [[ "${phase4_calls}" -eq 0 ]]
+    [[ "${phase5_calls}" -eq 0 ]]
+  '
+  assert_success
+  assert_output --partial "Preflight-only checks completed. Exiting without deployment changes."
 }
 
 @test "deploy: phase1 upload+harden marker exists" {
@@ -197,6 +285,43 @@ EOF
 
     phase2_gates
     [[ -f "${validate_seen_file}" ]]
+    [[ "${report_seen}" -eq 1 ]]
+  '
+  assert_success
+}
+
+@test "deploy: gate C accepts legacy SSH admin-group compatibility on --ts-ip resume" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    TS_IP="100.64.0.25"
+    ADMIN_USER="coolifyadmin"
+    SKIP_HARDEN="true"
+    report_seen=0
+
+    ssh_admin() {
+      [[ "$1" == "echo ok" ]] && { echo ok; return 0; }
+      [[ "$1" == "whoami" ]] && { echo "${ADMIN_USER}"; return 0; }
+      return 0
+    }
+    ssh_admin_sudo() {
+      if [[ "$1" == *"validate_hardening.sh --json --gate-c"* ]]; then
+        cat <<JSON
+{"pass":4,"fail":0,"info":2,"checks":[{"status":"INFO","name":"ssh: AllowGroups","detail":"legacy state without ssh_admin_group; skipping admin-group requirement"},{"status":"INFO","name":"admin: SSH admin group","detail":"legacy state without ssh_admin_group; skipping group existence requirement"}]}
+JSON
+        return 0
+      fi
+      return 0
+    }
+    reconcile_docker_daemon_remote() { :; }
+    sync_companion_scripts() { :; }
+    report_validation_result() {
+      [[ "$1" == "Gate C" ]]
+      [[ "$2" == *"\"fail\":0"* ]]
+      [[ "$2" == *"legacy state without ssh_admin_group"* ]]
+      report_seen=1
+    }
+
+    phase2_gates
     [[ "${report_seen}" -eq 1 ]]
   '
   assert_success

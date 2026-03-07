@@ -11,12 +11,12 @@ This document provides context for AI assistants (ChatGPT, Claude, Copilot, etc.
 This server runs **Ubuntu 24.04** hardened for **Coolify** (self-hosted PaaS) with:
 
 - **SSH access exclusively via Tailscale** (`tailscale0` interface). No SSH on public internet.
-- **UFW** as the host firewall (deny incoming by default).
-- **DOCKER-USER iptables chain** for container-level traffic control (IPv4 + IPv6). Docker must use the iptables backend (not nftables).
+- **UFW** as the host firewall interface-policy layer (deny incoming by default).
+- **DOCKER-USER iptables chain** for container-level traffic control (IPv4 + IPv6). This repo intentionally keeps Docker on the iptables backend because its current Coolify enforcement hooks depend on `DOCKER-USER`; that is a repo compatibility choice, not a general statement about Ubuntu firewall direction.
 - **fail2ban** with UFW ban action for SSH brute-force protection.
 - **auditd** monitoring identity files, sudoers, SSH config, and Docker runtime.
 - **journald** with persistent storage and configurable retention.
-- **Unattended-upgrades** for automatic security patching.
+- **Unattended-upgrades** for automatic Ubuntu security patching; `balanced` additionally includes Ubuntu `-updates` and Docker CE stable origin.
 - **BBR TCP congestion control** (if kernel supports it).
 - **Swap file** for OOM protection (configurable, default 2G).
 - **NTP synchronization** verified at boot.
@@ -100,7 +100,7 @@ When advising on this server, you **MUST** follow these rules:
 - **NEVER suggest `NOPASSWD:ALL`** in sudoers — this eliminates the last authentication barrier for compromised sessions.
 - **NEVER suggest `set +e`** in hardening scripts — this silently hides failures in security-critical code.
 - **NEVER suggest `rp_filter = 1`** (strict mode) — this breaks Docker asymmetric routing. The server correctly uses `rp_filter = 2` (loose).
-- **NEVER suggest Docker nftables backend** (`iptables=false` / `firewall=nftables`) — this breaks the DOCKER-USER iptables enforcement model used by these scripts.
+- **NEVER switch Docker to the nftables backend as an ad-hoc change** (`iptables=false` / `firewall=nftables`) — this repo's current managed enforcement depends on `DOCKER-USER`; revisit only as an explicit migration task.
 - **NEVER suggest public cloudflared ingress to `localhost:8000`, `localhost:6001`, or `localhost:6002`** in private-only tunnel deployments.
 
 ### ALWAYS Do

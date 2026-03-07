@@ -76,6 +76,40 @@ EOF
   assert_success
 }
 
+@test "setup: preflight-only exits after preflight before later phases" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    preflight_calls=0
+    phase1_calls=0
+    phase2_calls=0
+    phase3_calls=0
+    phase4_calls=0
+    phase5_calls=0
+
+    run_report_init() { :; }
+    parse_args() { PREFLIGHT_ONLY="true"; }
+    collect_inputs() { :; }
+    validate_inputs() { :; }
+    confirm() { :; }
+    preflight() { preflight_calls=$((preflight_calls + 1)); }
+    phase1_harden() { phase1_calls=$((phase1_calls + 1)); }
+    phase2_gates() { phase2_calls=$((phase2_calls + 1)); }
+    phase3_docker_coolify() { phase3_calls=$((phase3_calls + 1)); }
+    phase4_binding_dns() { phase4_calls=$((phase4_calls + 1)); }
+    phase5_verify() { phase5_calls=$((phase5_calls + 1)); }
+
+    main
+    [[ "${preflight_calls}" -eq 1 ]]
+    [[ "${phase1_calls}" -eq 0 ]]
+    [[ "${phase2_calls}" -eq 0 ]]
+    [[ "${phase3_calls}" -eq 0 ]]
+    [[ "${phase4_calls}" -eq 0 ]]
+    [[ "${phase5_calls}" -eq 0 ]]
+  '
+  assert_success
+  assert_output --partial "Preflight-only checks completed. Exiting without deployment changes."
+}
+
 @test "setup: phase1 harden marker exists" {
   run bash -c '
     source "'"${SETUP_SCRIPT}"'"

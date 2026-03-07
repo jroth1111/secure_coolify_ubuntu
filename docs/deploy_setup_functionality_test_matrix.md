@@ -4,7 +4,7 @@ This matrix maps `deploy.sh` and `setup.sh` workflow steps to explicit automated
 
 | Contract ID | Workflow step | Coverage tests | Sufficiency |
 | --- | --- | --- | --- |
-| `DEP-01` | Deploy preflight executes prerequisite checks and root SSH probe path | `tests/unit/test_deploy_workflow_contract.bats`: `deploy: preflight phase marker exists` | Sufficient |
+| `DEP-01` | Deploy preflight proves fresh-run operator Tailscale readiness before the root SSH probe, blocks phase 1 when the laptop is not ready, and exits cleanly in `--preflight-only` mode before later phases | `tests/unit/test_deploy_workflow_contract.bats`: `deploy: preflight verifies operator tailscale readiness before root SSH`; `tests/unit/test_deploy_workflow_contract.bats`: `deploy: preflight fails fresh runs when operator tailscale is not ready`; `tests/unit/test_deploy_workflow_contract.bats`: `deploy: preflight-only exits after preflight before later phases` | Sufficient |
 | `DEP-02` | Deploy phase 1 performs hardening flow and captures Tailscale sentinel IP | `tests/unit/test_deploy_workflow_contract.bats`: `deploy: phase1 upload+harden marker exists` | Sufficient |
 | `DEP-03` | Deploy phase 1 invokes bootstrap with required hardening flags | `tests/unit/test_deploy_workflow_contract.bats`: `deploy: hardening invocation uses env-file and tailscale install` | Sufficient |
 | `DEP-04` | Deploy Gate A retries and succeeds on admin SSH over Tailscale | `tests/unit/test_deploy_workflow_contract.bats`: `deploy: gate A checks admin SSH on tailscale` | Sufficient |
@@ -14,7 +14,7 @@ This matrix maps `deploy.sh` and `setup.sh` workflow steps to explicit automated
 | `DEP-08` | Deploy phase 4 performs DNS updates for standard mode | `tests/unit/test_deploy_workflow_contract.bats`: `deploy: phase4 binding+dns marker exists` | Sufficient |
 | `DEP-09` | Deploy Gate E blocks completion when exposure checks fail | `tests/unit/test_deploy_workflow_contract.bats`: `deploy: gate E fails when exposure checks do not pass` | Sufficient |
 | `DEP-10` | Deploy final validation is executed after verification gates | `tests/unit/test_deploy_workflow_contract.bats`: `deploy: final validation is executed` | Sufficient |
-| `SET-01` | Setup preflight executes prerequisite checks | `tests/unit/test_setup_workflow_contract.bats`: `setup: preflight phase marker exists` | Sufficient |
+| `SET-01` | Setup preflight executes prerequisite checks and exits cleanly in `--preflight-only` mode before later phases | `tests/unit/test_setup_workflow_contract.bats`: `setup: preflight phase marker exists`; `tests/unit/test_setup_workflow_contract.bats`: `setup: preflight-only exits after preflight before later phases` | Sufficient |
 | `SET-02` | Setup phase 1 performs hardening flow and captures local Tailscale IP | `tests/unit/test_setup_workflow_contract.bats`: `setup: phase1 harden marker exists` | Sufficient |
 | `SET-03` | Setup Gate A enforces operator verification pause | `tests/unit/test_setup_workflow_contract.bats`: `setup: gate A requires operator laptop verification` | Sufficient |
 | `SET-04` | Setup Gate B fails when admin home/`.ssh` state is invalid | `tests/unit/test_setup_workflow_contract.bats`: `setup: gate B verifies admin user home and ssh directory` | Sufficient |

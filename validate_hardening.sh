@@ -13,6 +13,7 @@ set -Eeuo pipefail
 STATE_FILE="/var/lib/bootstrap-hardening/state"
 JOURNALD_DROPIN="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
 AUDITD_CONF="/etc/audit/auditd.conf"
+SSH_DROPIN_FILE="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
 JSON_MODE="false"
 HEALTH_CHECK_MODE="false"
 GATE_C_MODE="false"
@@ -97,6 +98,7 @@ SSH_PORT="22"
 TUNNEL_MODE="false"
 WAN_IFACE=""
 TAILSCALE_IFACE="tailscale0"
+SSH_ADMIN_GROUP="coolify-ssh-admins"
 BIND_DASHBOARD_TO_TAILSCALE="false"
 TAILSCALE_IP=""
 TAILSCALE_CIDR="100.64.0.0/10"
@@ -106,19 +108,30 @@ TAILSCALE_DIRECT_WAN="auto"
 UPDATE_PROFILE=""
 DOCKER_RULES_APPLIED="false"
 CONFIGURED_TIMEZONE=""
+SSH_ADMIN_GROUP_LEGACY_COMPAT="false"
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
 DOCKER_SSH_CIDR_SYNC_SCRIPT="/usr/local/sbin/docker-ssh-cidr-sync.sh"
 DOCKER_SSH_CIDR_SYNC_SERVICE="docker-ssh-cidr-sync.service"
 DOCKER_SSH_CIDR_SYNC_TIMER="docker-ssh-cidr-sync.timer"
 
 load_state_context() {
+  local ssh_admin_group_in_state="false"
   [[ -f "${STATE_FILE}" ]] || return 0
+  if grep -q '^ssh_admin_group=' "${STATE_FILE}" 2>/dev/null; then
+    ssh_admin_group_in_state="true"
+  fi
   # shellcheck disable=SC1090
   source "${STATE_FILE}"
   ADMIN_USER="${admin_user:-}"
   SSH_PORT="${ssh_port:-22}"
   TUNNEL_MODE="${tunnel_mode:-false}"
   WAN_IFACE="${wan_iface:-}"
+  if [[ "${ssh_admin_group_in_state}" == "true" ]]; then
+    SSH_ADMIN_GROUP="${ssh_admin_group:-coolify-ssh-admins}"
+    SSH_ADMIN_GROUP_LEGACY_COMPAT="false"
+  else
+    SSH_ADMIN_GROUP_LEGACY_COMPAT="true"
+  fi
   swap_size="${swap_size:-2G}"
   BIND_DASHBOARD_TO_TAILSCALE="${bind_dashboard_to_tailscale:-false}"
   TAILSCALE_IP="${tailscale_ip:-}"
@@ -208,7 +221,12 @@ infer_update_profile() {
 
 ssh_check() {
   local effective
+  local require_ssh_admin_group="true"
   effective="$(sshd -T 2>/dev/null)" || { record "FAIL" "ssh: sshd -T" "cannot query"; return; }
+
+  if [[ "${SSH_ADMIN_GROUP_LEGACY_COMPAT}" == "true" ]]; then
+    require_ssh_admin_group="false"
+  fi
 
   local field val expected
   declare -A ssh_expects=(
@@ -247,6 +265,14 @@ ssh_check() {
     else
       record "FAIL" "ssh: AllowUsers" "${ADMIN_USER} not listed"
     fi
+
+    if grep -qE "^allowgroups .*\\b${SSH_ADMIN_GROUP}\\b" <<< "${effective}"; then
+      record "PASS" "ssh: AllowGroups includes ${SSH_ADMIN_GROUP}"
+    elif [[ "${require_ssh_admin_group}" == "false" ]]; then
+      record "INFO" "ssh: AllowGroups" "legacy state without ssh_admin_group; skipping admin-group requirement"
+    else
+      record "FAIL" "ssh: AllowGroups" "${SSH_ADMIN_GROUP} not listed"
+    fi
   fi
 
   # Verify Match Address block: root key-only login from localhost/Docker bridge CIDRs
@@ -266,10 +292,26 @@ ssh_check() {
     else
       record "FAIL" "ssh: Match localhost AllowUsers" "root not listed"
     fi
+
+    if grep -qE "^allowgroups .*\\broot\\b" <<< "${match_local}"; then
+      record "PASS" "ssh: Match localhost AllowGroups includes root"
+    elif [[ "${require_ssh_admin_group}" == "false" ]]; then
+      record "INFO" "ssh: Match localhost AllowGroups" "legacy state without ssh_admin_group; skipping root-group Match requirement"
+    else
+      record "FAIL" "ssh: Match localhost AllowGroups" "root group not listed"
+    fi
+
+    if grep -qE "^allowgroups .*\\b${SSH_ADMIN_GROUP}\\b" <<< "${match_local}"; then
+      record "PASS" "ssh: Match localhost AllowGroups includes ${SSH_ADMIN_GROUP}"
+    elif [[ "${require_ssh_admin_group}" == "false" ]]; then
+      record "INFO" "ssh: Match localhost AllowGroups" "legacy state without ssh_admin_group; skipping admin-group Match requirement"
+    else
+      record "FAIL" "ssh: Match localhost AllowGroups" "${SSH_ADMIN_GROUP} not listed"
+    fi
   fi
 
   local ssh_dropin match_line cidr
-  ssh_dropin="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
+  ssh_dropin="${SSH_DROPIN_FILE}"
   if [[ -f "${ssh_dropin}" ]]; then
     match_line="$(grep -m1 '^Match Address ' "${ssh_dropin}" || true)"
     if [[ -n "${match_line}" ]]; then
@@ -453,11 +495,13 @@ docker_user_check() {
     return
   fi
 
-  # Warn if Docker is using nftables backend (experimental in Docker 29+)
-  # DOCKER-USER chain behavior differs in nftables mode; iptables rules won't apply.
+  # This repo intentionally relies on Docker's iptables backend because its
+  # DOCKER-USER rules enforce the current Coolify/WAN boundary model there.
+  # That is a compatibility choice for this automation; nftables-mode Docker
+  # changes the enforcement surface and these iptables rules will not apply.
   # See: https://docs.docker.com/engine/network/firewall-nftables/
   if docker info 2>/dev/null | grep -qiE 'iptables:\s*false|firewall:\s*nftables'; then
-    record "FAIL" "docker-user: backend" "Docker using nftables backend — DOCKER-USER iptables rules will NOT work"
+    record "FAIL" "docker-user: backend" "Docker using nftables backend — this repo's DOCKER-USER iptables enforcement model will not apply"
     return
   else
     record "PASS" "docker-user: iptables backend"
@@ -886,19 +930,41 @@ rsyslog_check() {
   local mode owner group group_digit
   local target q_target
   local target_count=0
+  local write_user="syslog"
+  local create_owner_pattern="syslog"
+  local require_rsyslog_unit="true"
+
+  if ! getent passwd syslog >/dev/null 2>&1; then
+    write_user="root"
+    create_owner_pattern="root"
+    record "INFO" "rsyslog: runtime identity fallback" "syslog user absent; validating root-owned fallback"
+  fi
+
+  if [[ "${IS_CONTAINER}" == "true" ]] && ! unit_available "rsyslog.service"; then
+    require_rsyslog_unit="false"
+  fi
 
   owner="$(stat -c '%U' /var/log 2>/dev/null || true)"
   group="$(stat -c '%G' /var/log 2>/dev/null || true)"
   mode="$(stat -c '%a' /var/log 2>/dev/null || true)"
 
-  if [[ "${owner}" == "root" && "${group}" == "syslog" ]]; then
-    record "PASS" "rsyslog: /var/log owner/group"
+  if [[ "${write_user}" == "syslog" ]]; then
+    if [[ "${owner}" == "root" && "${group}" == "syslog" ]]; then
+      record "PASS" "rsyslog: /var/log owner/group"
+    else
+      record "FAIL" "rsyslog: /var/log owner/group" \
+        "expected root:syslog, got ${owner:-unknown}:${group:-unknown}"
+    fi
   else
-    record "FAIL" "rsyslog: /var/log owner/group" \
-      "expected root:syslog, got ${owner:-unknown}:${group:-unknown}"
+    if [[ "${owner}" == "root" ]]; then
+      record "PASS" "rsyslog: /var/log owner/group fallback"
+    else
+      record "FAIL" "rsyslog: /var/log owner/group fallback" \
+        "expected root-owned fallback, got ${owner:-unknown}:${group:-unknown}"
+    fi
   fi
 
-  if [[ "${mode}" =~ ^[0-7]{3,4}$ ]]; then
+  if [[ "${write_user}" == "syslog" ]] && [[ "${mode}" =~ ^[0-7]{3,4}$ ]]; then
     group_digit="${mode: -2:1}"
     if (( (10#${group_digit} & 2) != 0 )); then
       record "PASS" "rsyslog: /var/log group-write enabled"
@@ -906,6 +972,8 @@ rsyslog_check() {
       record "FAIL" "rsyslog: /var/log group-write" \
         "mode ${mode} lacks group write; rsyslog cannot create missing targets"
     fi
+  elif [[ "${write_user}" != "syslog" ]] && [[ "${mode}" =~ ^[0-7]{3,4}$ ]]; then
+    record "INFO" "rsyslog: /var/log mode" "group-write check skipped for root-owned fallback"
   else
     record "FAIL" "rsyslog: /var/log mode" "unreadable (${mode:-unknown})"
   fi
@@ -916,10 +984,10 @@ rsyslog_check() {
     if [[ -f "${target}" ]]; then
       record "PASS" "rsyslog: target exists (${target})"
       printf -v q_target '%q' "${target}"
-      if su -s /bin/sh -c "test -w ${q_target}" syslog >/dev/null 2>&1; then
-        record "PASS" "rsyslog: target writable by syslog (${target})"
+      if su -s /bin/sh -c "test -w ${q_target}" "${write_user}" >/dev/null 2>&1; then
+        record "PASS" "rsyslog: target writable by ${write_user} (${target})"
       else
-        record "FAIL" "rsyslog: target writable by syslog (${target})" "permission denied"
+        record "FAIL" "rsyslog: target writable by ${write_user} (${target})" "permission denied"
       fi
     else
       record "FAIL" "rsyslog: target exists (${target})" "missing"
@@ -931,23 +999,27 @@ rsyslog_check() {
   fi
 
   if [[ -f /etc/logrotate.d/rsyslog ]] \
-    && grep -Eq '^[[:space:]]*create[[:space:]]+640[[:space:]]+syslog[[:space:]]+(adm|syslog)([[:space:]]|$)' /etc/logrotate.d/rsyslog; then
+    && grep -Eq "^[[:space:]]*create[[:space:]]+640[[:space:]]+${create_owner_pattern}[[:space:]]+(adm|syslog|root)([[:space:]]|$)" /etc/logrotate.d/rsyslog; then
     record "PASS" "rsyslog: logrotate create directive"
+  elif [[ "${require_rsyslog_unit}" == "false" ]]; then
+    record "INFO" "rsyslog: logrotate create directive" "skipped; rsyslog.service unavailable in container"
   else
     record "FAIL" "rsyslog: logrotate create directive" \
-      "missing in /etc/logrotate.d/rsyslog (expected create 640 syslog <group>)"
+      "missing in /etc/logrotate.d/rsyslog (expected create 640 ${create_owner_pattern} <group>)"
   fi
 
   if [[ -f /etc/logrotate.d/ufw ]] \
-    && grep -Eq '^[[:space:]]*create[[:space:]]+640[[:space:]]+syslog[[:space:]]+(adm|syslog)([[:space:]]|$)' /etc/logrotate.d/ufw; then
+    && grep -Eq "^[[:space:]]*create[[:space:]]+640[[:space:]]+${create_owner_pattern}[[:space:]]+(adm|syslog|root)([[:space:]]|$)" /etc/logrotate.d/ufw; then
     record "PASS" "rsyslog: ufw logrotate create directive"
   else
     record "FAIL" "rsyslog: ufw logrotate create directive" \
-      "missing in /etc/logrotate.d/ufw (expected create 640 syslog <group>)"
+      "missing in /etc/logrotate.d/ufw (expected create 640 ${create_owner_pattern} <group>)"
   fi
 
   if systemctl is-active --quiet rsyslog 2>/dev/null; then
     record "PASS" "rsyslog: service active"
+  elif [[ "${require_rsyslog_unit}" == "false" ]]; then
+    record "INFO" "rsyslog: service active" "not installed in container test environment"
   else
     record "FAIL" "rsyslog: service active" "service not running"
   fi
@@ -1089,10 +1161,15 @@ banner_check() {
 # ── Admin sudo access ──
 
 admin_sudo_check() {
+  local require_ssh_admin_group="true"
   # Skip if no admin user configured
   if [[ -z "${ADMIN_USER}" ]]; then
     record "INFO" "admin: sudo" "no admin user in state file"
     return 0
+  fi
+
+  if [[ "${SSH_ADMIN_GROUP_LEGACY_COMPAT}" == "true" ]]; then
+    require_ssh_admin_group="false"
   fi
 
   # Check if admin user exists
@@ -1107,6 +1184,22 @@ admin_sudo_check() {
   else
     record "FAIL" "admin: sudo group" "${ADMIN_USER} not in sudo group"
     return 0
+  fi
+
+  if getent group "${SSH_ADMIN_GROUP}" >/dev/null 2>&1; then
+    record "PASS" "admin: SSH admin group exists"
+  elif [[ "${require_ssh_admin_group}" == "false" ]]; then
+    record "INFO" "admin: SSH admin group" "legacy state without ssh_admin_group; skipping group existence requirement"
+  else
+    record "FAIL" "admin: SSH admin group" "${SSH_ADMIN_GROUP} does not exist"
+  fi
+
+  if id -nG "${ADMIN_USER}" | tr ' ' '\n' | grep -qx "${SSH_ADMIN_GROUP}"; then
+    record "PASS" "admin: in SSH admin group"
+  elif [[ "${require_ssh_admin_group}" == "false" ]]; then
+    record "INFO" "admin: SSH admin group membership" "legacy state without ssh_admin_group; skipping membership requirement"
+  else
+    record "FAIL" "admin: SSH admin group" "${ADMIN_USER} not in ${SSH_ADMIN_GROUP}"
   fi
 
   # Check if passwordless sudo is configured.
@@ -1510,13 +1603,13 @@ unattended_upgrades_check() {
 
   if [[ "${profile}" == "balanced" ]]; then
     if grep -qF "${updates_origin}" "${apt_local}"; then
-      record "PASS" "auto-updates: Ubuntu updates origin covered"
+      record "PASS" "auto-updates: Ubuntu updates origin covered" "balanced profile"
     else
       record "FAIL" "auto-updates: Ubuntu updates origin" "missing for balanced profile"
     fi
 
     if grep -qF "${docker_origin_archive}" "${apt_local}" || grep -qF "${docker_origin_suite}" "${apt_local}"; then
-      record "PASS" "auto-updates: Docker CE origin pinned to stable"
+      record "PASS" "auto-updates: Docker CE origin pinned to stable" "balanced profile"
     elif grep -q "origin=Docker,label=Docker CE" "${apt_local}"; then
       record "FAIL" "auto-updates: Docker CE origin" "present but not pinned to archive/suite + component=stable"
     else

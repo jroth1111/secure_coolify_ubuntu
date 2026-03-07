@@ -11,6 +11,7 @@ SCRIPT_NAME="$(basename "$0")"
 
 LOG_FILE="/var/log/bootstrap-hardening.log"
 REPORT_FILE="/var/log/bootstrap-hardening-report.json"
+SUMMARY_REPORT_FILE="/var/log/bootstrap-hardening-summary.txt"
 STATE_DIR="/var/lib/bootstrap-hardening"
 STATE_FILE="${STATE_DIR}/state"
 
@@ -31,9 +32,13 @@ COOLIFY_BINDING_GUARD_TIMER="/etc/systemd/system/coolify-binding-guard.timer"
 DOCKER_SSH_CIDR_SYNC_SCRIPT="/usr/local/sbin/docker-ssh-cidr-sync.sh"
 DOCKER_SSH_CIDR_SYNC_SERVICE="/etc/systemd/system/docker-ssh-cidr-sync.service"
 DOCKER_SSH_CIDR_SYNC_TIMER="/etc/systemd/system/docker-ssh-cidr-sync.timer"
+HARDENING_REPORT_SCRIPT="/usr/local/sbin/hardening-report"
+HARDENING_REPORT_SERVICE="/etc/systemd/system/hardening-report.service"
+HARDENING_REPORT_TIMER="/etc/systemd/system/hardening-report.timer"
 
 TAILSCALE_IFACE="tailscale0"
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
+SSH_ADMIN_GROUP="coolify-ssh-admins"
 
 ADMIN_USER="${ADMIN_USER:-}"
 ADMIN_PUBKEY="${ADMIN_PUBKEY:-}"
@@ -1178,15 +1183,23 @@ ensure_admin_access() {
   local auth_file
   local user_exists="false"
 
+  if ! getent group "${SSH_ADMIN_GROUP}" >/dev/null 2>&1; then
+    run groupadd --system "${SSH_ADMIN_GROUP}"
+  fi
+
   if id "${ADMIN_USER}" >/dev/null 2>&1; then
     user_exists="true"
     log "Admin user exists: ${ADMIN_USER}"
   else
-    run useradd -m -s /bin/bash -G sudo "${ADMIN_USER}"
+    run useradd -m -s /bin/bash -G "sudo,${SSH_ADMIN_GROUP}" "${ADMIN_USER}"
   fi
 
   if [[ "${user_exists}" == "true" ]] && ! id -nG "${ADMIN_USER}" | tr ' ' '\n' | grep -qx "sudo"; then
     run usermod -aG sudo "${ADMIN_USER}"
+  fi
+
+  if [[ "${user_exists}" == "true" ]] && ! id -nG "${ADMIN_USER}" | tr ' ' '\n' | grep -qx "${SSH_ADMIN_GROUP}"; then
+    run usermod -aG "${SSH_ADMIN_GROUP}" "${ADMIN_USER}"
   fi
 
   # Configure passwordless sudo for admin user
@@ -1256,6 +1269,7 @@ assert_sshd_effective() {
   grep -q "^pubkeyauthentication yes$" <<< "${effective}" || return 1
   grep -q "^authenticationmethods publickey$" <<< "${effective}" || return 1
   grep -qE "^allowusers .*\\b${ADMIN_USER}\\b" <<< "${effective}" || return 1
+  grep -qE "^allowgroups .*\\b${SSH_ADMIN_GROUP}\\b" <<< "${effective}" || return 1
   grep -q "^permitemptypasswords no$" <<< "${effective}" || return 1
   grep -q "^compression no$" <<< "${effective}" || return 1
   grep -q "chacha20-poly1305@openssh.com" <<< "${effective}" || return 1
@@ -1271,6 +1285,8 @@ assert_sshd_match_localhost() {
   grep -qE "^permitrootlogin (prohibit-password|without-password)$" <<< "${effective}" || return 1
   grep -qE "^allowusers .*\\broot\\b" <<< "${effective}" || return 1
   grep -qE "^allowusers .*\\b${ADMIN_USER}\\b" <<< "${effective}" || return 1
+  grep -qE "^allowgroups .*\\broot\\b" <<< "${effective}" || return 1
+  grep -qE "^allowgroups .*\\b${SSH_ADMIN_GROUP}\\b" <<< "${effective}" || return 1
 }
 
 reload_ssh_service() {
@@ -1414,6 +1430,7 @@ KbdInteractiveAuthentication no
 PubkeyAuthentication yes
 AuthenticationMethods publickey
 AllowUsers ${ADMIN_USER}
+AllowGroups ${SSH_ADMIN_GROUP}
 X11Forwarding no
 AllowAgentForwarding no
 AllowTcpForwarding no
@@ -1435,6 +1452,7 @@ Banner /etc/issue.net
 Match Address ${match_addresses}
     PermitRootLogin prohibit-password
     AllowUsers ${ADMIN_USER} root
+    AllowGroups ${SSH_ADMIN_GROUP} root
 EOF
 
   if is_true "${DRY_RUN}"; then
@@ -1553,7 +1571,8 @@ rsyslog_collect_log_targets() {
 ensure_logrotate_create_directive() {
   local file="$1"
   local log_group="$2"
-  local create_line="create 640 syslog ${log_group}"
+  local log_owner="${3:-syslog}"
+  local create_line="create 640 ${log_owner} ${log_group}"
 
   if [[ ! -f "${file}" ]]; then
     warn "Logrotate file ${file} not found; skipping create directive check."
@@ -1589,13 +1608,23 @@ ensure_logrotate_create_directive() {
 
 configure_rsyslog_targets() {
   local target
+  local log_owner="syslog"
   local log_group="adm"
+
+  if ! getent passwd "${log_owner}" >/dev/null 2>&1; then
+    log_owner="root"
+    warn "User 'syslog' not found; using root-owned rsyslog target fallback."
+  fi
 
   if ! getent group "${log_group}" >/dev/null 2>&1; then
     log_group="syslog"
   fi
 
-  if getent group syslog >/dev/null 2>&1; then
+  if ! getent group "${log_group}" >/dev/null 2>&1; then
+    log_group="root"
+  fi
+
+  if [[ "${log_owner}" == "syslog" ]] && getent group syslog >/dev/null 2>&1; then
     if is_true "${DRY_RUN}"; then
       log "DRY-RUN: ensure /var/log is root:syslog mode 0770"
     else
@@ -1608,7 +1637,7 @@ configure_rsyslog_targets() {
   while IFS= read -r target; do
     [[ -n "${target}" ]] || continue
     if is_true "${DRY_RUN}"; then
-      log "DRY-RUN: ensure ${target} exists (0640 syslog:${log_group})"
+      log "DRY-RUN: ensure ${target} exists (0640 ${log_owner}:${log_group})"
       continue
     fi
     local target_dir
@@ -1617,12 +1646,12 @@ configure_rsyslog_targets() {
       install -d -m 0755 "${target_dir}"
     fi
     touch "${target}"
-    chown "syslog:${log_group}" "${target}"
+    chown "${log_owner}:${log_group}" "${target}"
     chmod 0640 "${target}"
   done < <(rsyslog_collect_log_targets)
 
-  ensure_logrotate_create_directive "/etc/logrotate.d/ufw" "${log_group}"
-  ensure_logrotate_create_directive "/etc/logrotate.d/rsyslog" "${log_group}"
+  ensure_logrotate_create_directive "/etc/logrotate.d/ufw" "${log_group}" "${log_owner}"
+  ensure_logrotate_create_directive "/etc/logrotate.d/rsyslog" "${log_group}" "${log_owner}"
 
   if unit_available "rsyslog.service"; then
     run systemctl restart rsyslog
@@ -2117,30 +2146,49 @@ is_container_runtime() {
 assert_rsyslog_posture() {
   local log_dir_owner log_dir_group log_dir_mode log_dir_group_digit
   local target q_target
+  local write_user="syslog"
+  local create_owner_pattern="syslog"
+  local require_rsyslog_unit="true"
+
+  if ! getent passwd syslog >/dev/null 2>&1; then
+    write_user="root"
+    create_owner_pattern="root"
+  fi
+
+  if is_container_runtime && ! unit_available "rsyslog.service"; then
+    require_rsyslog_unit="false"
+  fi
 
   log_dir_owner="$(stat -c '%U' /var/log 2>/dev/null || true)"
   log_dir_group="$(stat -c '%G' /var/log 2>/dev/null || true)"
   log_dir_mode="$(stat -c '%a' /var/log 2>/dev/null || true)"
   [[ "${log_dir_owner}" == "root" ]] || die "Post-check failed: /var/log owner is ${log_dir_owner:-unknown}, expected root."
-  [[ "${log_dir_group}" == "syslog" ]] || die "Post-check failed: /var/log group is ${log_dir_group:-unknown}, expected syslog."
   [[ "${log_dir_mode}" =~ ^[0-7]{3,4}$ ]] || die "Post-check failed: /var/log mode unreadable (${log_dir_mode:-unknown})."
-  log_dir_group_digit="${log_dir_mode: -2:1}"
-  if (( (10#${log_dir_group_digit} & 2) == 0 )); then
-    die "Post-check failed: /var/log mode ${log_dir_mode} lacks group write; rsyslog cannot create missing log targets."
+
+  if [[ "${write_user}" == "syslog" ]]; then
+    [[ "${log_dir_group}" == "syslog" ]] || die "Post-check failed: /var/log group is ${log_dir_group:-unknown}, expected syslog."
+    log_dir_group_digit="${log_dir_mode: -2:1}"
+    if (( (10#${log_dir_group_digit} & 2) == 0 )); then
+      die "Post-check failed: /var/log mode ${log_dir_mode} lacks group write; rsyslog cannot create missing log targets."
+    fi
   fi
 
   while IFS= read -r target; do
     [[ -n "${target}" ]] || continue
     [[ -f "${target}" ]] || die "Post-check failed: rsyslog target ${target} is missing."
     printf -v q_target '%q' "${target}"
-    su -s /bin/sh -c "test -w ${q_target}" syslog \
-      || die "Post-check failed: rsyslog user cannot write ${target}."
+    su -s /bin/sh -c "test -w ${q_target}" "${write_user}" \
+      || die "Post-check failed: ${write_user} cannot write ${target}."
   done < <(rsyslog_collect_log_targets)
 
-  grep -Eq '^[[:space:]]*create[[:space:]]+640[[:space:]]+syslog[[:space:]]+(adm|syslog)([[:space:]]|$)' /etc/logrotate.d/ufw \
-    || die "Post-check failed: /etc/logrotate.d/ufw missing create 640 syslog <group> directive."
-  grep -Eq '^[[:space:]]*create[[:space:]]+640[[:space:]]+syslog[[:space:]]+(adm|syslog)([[:space:]]|$)' /etc/logrotate.d/rsyslog \
-    || die "Post-check failed: /etc/logrotate.d/rsyslog missing create 640 syslog <group> directive."
+  grep -Eq "^[[:space:]]*create[[:space:]]+640[[:space:]]+${create_owner_pattern}[[:space:]]+(adm|syslog|root)([[:space:]]|$)" /etc/logrotate.d/ufw \
+    || die "Post-check failed: /etc/logrotate.d/ufw missing create 640 ${create_owner_pattern} <group> directive."
+  if [[ -f /etc/logrotate.d/rsyslog ]]; then
+    grep -Eq "^[[:space:]]*create[[:space:]]+640[[:space:]]+${create_owner_pattern}[[:space:]]+(adm|syslog|root)([[:space:]]|$)" /etc/logrotate.d/rsyslog \
+      || die "Post-check failed: /etc/logrotate.d/rsyslog missing create 640 ${create_owner_pattern} <group> directive."
+  elif [[ "${require_rsyslog_unit}" == "true" ]]; then
+    die "Post-check failed: /etc/logrotate.d/rsyslog missing."
+  fi
 }
 
 run_post_checks() {
@@ -2293,7 +2341,13 @@ run_post_checks() {
     || die "Post-check failed: timezone is ${current_timezone:-unknown}, expected ${TIMEZONE}."
 
   systemctl is-active --quiet fail2ban || die "Post-check failed: fail2ban is not active."
-  systemctl is-active --quiet rsyslog || die "Post-check failed: rsyslog is not active."
+  if ! systemctl is-active --quiet rsyslog 2>/dev/null; then
+    if is_container_runtime && ! unit_available "rsyslog.service"; then
+      warn "Post-check: rsyslog unavailable in container; validating configured targets/logrotate files only."
+    else
+      die "Post-check failed: rsyslog is not active."
+    fi
+  fi
   assert_rsyslog_posture
 
   [[ -f /etc/issue.net ]] || die "Post-check failed: /etc/issue.net missing."
@@ -2366,6 +2420,7 @@ swap_size=${SWAP_SIZE}
 journal_retention=${JOURNAL_RETENTION}
 update_profile=${UPDATE_PROFILE}
 timezone=${TIMEZONE}
+ssh_admin_group=${SSH_ADMIN_GROUP}
 strict_docker_ssh_cidrs=${STRICT_DOCKER_SSH_CIDRS}
 docker_ssh_cidrs=${cidr_csv}
 docker_nproc_hard=${DOCKER_NPROC_HARD}
@@ -2609,6 +2664,171 @@ TIMEREOF
   run systemctl daemon-reload
   run systemctl enable --now hardening-validate.timer
   log "hardening-validate.timer enabled (runs validate_hardening.sh daily)."
+}
+
+configure_hardening_report() {
+  if is_true "${DRY_RUN}"; then
+    log "DRY-RUN: would install hardening-report.timer (daily actionable summary)."
+    return 0
+  fi
+
+  write_file "${HARDENING_REPORT_SCRIPT}" "0750" "root" "root" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SUMMARY_FILE="/var/log/bootstrap-hardening-summary.txt"
+VALIDATE_BIN="/usr/local/sbin/validate-hardening"
+REPORT_FILE="/var/log/bootstrap-hardening-report.json"
+STATE_FILE="/var/lib/bootstrap-hardening/state"
+WINDOW_LABEL="last 24 hours"
+JOURNAL_SINCE="24 hours ago"
+
+count_ufw_blocks() {
+  if ! command -v journalctl >/dev/null 2>&1; then
+    printf 'n/a'
+    return 0
+  fi
+
+  local output
+  output="$(journalctl -k --since "${JOURNAL_SINCE}" --no-pager 2>/dev/null || true)"
+  printf '%s' "$(grep -c 'UFW BLOCK' <<< "${output}" || true)"
+}
+
+count_audit_key() {
+  local key="$1"
+  if ! command -v ausearch >/dev/null 2>&1; then
+    printf 'n/a'
+    return 0
+  fi
+
+  local audit_output count
+  audit_output="$(ausearch -k "${key}" --start recent 2>/dev/null || true)"
+  if [[ -z "${audit_output//[[:space:]]/}" ]]; then
+    printf '0'
+    return 0
+  fi
+
+  count="$(grep -c '^----$' <<< "${audit_output}" || true)"
+  if [[ "${count}" == "0" ]] && grep -q '^type=' <<< "${audit_output}"; then
+    count="1"
+  fi
+  printf '%s' "${count}"
+}
+
+render_report() {
+  local generated_at hostname validate_json validation_summary validate_pass validate_fail validate_info failed_checks
+  local fail2ban_status fail2ban_banned_count fail2ban_banned_ips
+  local ufw_blocks audit_identity audit_sudoers audit_sshd audit_docker
+
+  generated_at="$(date -Iseconds)"
+  hostname="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo unknown-host)"
+  validate_json=""
+  validation_summary="validate-hardening not available"
+  validate_pass="?"
+  validate_fail="0"
+  validate_info="?"
+  failed_checks=""
+
+  if [[ -x "${VALIDATE_BIN}" ]]; then
+    validate_json="$("${VALIDATE_BIN}" --json 2>/dev/null || true)"
+  fi
+
+  if [[ -n "${validate_json}" ]] && jq -e . >/dev/null 2>&1 <<< "${validate_json}"; then
+    validate_pass="$(jq -r '.pass // 0' <<< "${validate_json}")"
+    validate_fail="$(jq -r '.fail // 0' <<< "${validate_json}")"
+    validate_info="$(jq -r '.info // 0' <<< "${validate_json}")"
+    validation_summary="PASS=${validate_pass} FAIL=${validate_fail} INFO=${validate_info}"
+    failed_checks="$(jq -r '.checks[]? | select(.status == "FAIL") | "- \(.check): \(.detail)"' <<< "${validate_json}" 2>/dev/null || true)"
+  fi
+
+  fail2ban_status="fail2ban-client unavailable"
+  fail2ban_banned_count="n/a"
+  fail2ban_banned_ips=""
+  if command -v fail2ban-client >/dev/null 2>&1 && fail2ban-client status sshd >/dev/null 2>&1; then
+    local sshd_status
+    sshd_status="$(fail2ban-client status sshd 2>/dev/null || true)"
+    fail2ban_status="active"
+    fail2ban_banned_count="$(awk -F: '/Currently banned:/ {sub(/^[[:space:]]+/, "", $2); print $2; exit}' <<< "${sshd_status}")"
+    fail2ban_banned_ips="$(awk -F: '/Banned IP list:/ {sub(/^[[:space:]]+/, "", $2); print $2; exit}' <<< "${sshd_status}")"
+    fail2ban_banned_count="${fail2ban_banned_count:-0}"
+  fi
+
+  ufw_blocks="$(count_ufw_blocks)"
+  audit_identity="$(count_audit_key identity)"
+  audit_sudoers="$(count_audit_key sudoers-change)"
+  audit_sshd="$(count_audit_key sshd-config)"
+  audit_docker="$(count_audit_key docker-config)"
+
+  cat <<REPORT_EOF
+Bootstrap hardening actionable summary
+Generated: ${generated_at}
+Host: ${hostname}
+Mode: local-only baseline (not centralized log shipping)
+
+Validation
+- Latest validate-hardening summary: ${validation_summary}
+$(if [[ -n "${failed_checks}" ]]; then
+  printf '%s\n%s\n' 'Failed checks:' "${failed_checks}"
+fi)
+Signals
+- fail2ban sshd status: ${fail2ban_status}
+- fail2ban currently banned IPs: ${fail2ban_banned_count}${fail2ban_banned_ips:+ (${fail2ban_banned_ips})}
+- UFW BLOCK entries in kernel journal (${WINDOW_LABEL}): ${ufw_blocks}
+- audit events (${WINDOW_LABEL}): identity=${audit_identity}, sudoers-change=${audit_sudoers}, sshd-config=${audit_sshd}, docker-config=${audit_docker}
+- Static bootstrap JSON report: $(if [[ -f "${REPORT_FILE}" ]]; then printf '%s' "${REPORT_FILE}"; else printf 'missing'; fi)
+- State file: $(if [[ -f "${STATE_FILE}" ]]; then printf 'present'; else printf 'missing'; fi)
+
+Operator actions
+$(if [[ "${validate_fail}" =~ ^[0-9]+$ ]] && (( validate_fail > 0 )); then
+  cat <<'ACTIONS_EOF'
+- Investigate current failures: sudo validate-hardening
+- Review fail2ban posture: sudo fail2ban-client status sshd
+- Review recent firewall blocks: sudo journalctl -k --since '24 hours ago' | grep 'UFW BLOCK'
+- Review recent audit activity: sudo ausearch -k identity --start recent
+ACTIONS_EOF
+else
+  cat <<'ACTIONS_EOF'
+- No validation failures were detected in the latest summary.
+- Refresh this summary on demand: sudo hardening-report
+- Inspect the last written summary file: sudo cat /var/log/bootstrap-hardening-summary.txt
+ACTIONS_EOF
+fi)
+REPORT_EOF
+}
+
+umask 077
+render_report | tee "${SUMMARY_FILE}"
+EOF
+
+  write_file "${HARDENING_REPORT_SERVICE}" "0644" "root" "root" <<EOF
+[Unit]
+Description=Generate an actionable hardening summary
+After=network-online.target auditd.service fail2ban.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=${HARDENING_REPORT_SCRIPT}
+EOF
+
+  write_file "${HARDENING_REPORT_TIMER}" "0644" "root" "root" <<'EOF'
+[Unit]
+Description=Daily actionable hardening summary
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=24h
+AccuracySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+  run systemctl daemon-reload
+  run systemctl enable --now hardening-report.timer
+  run systemctl start hardening-report.service
+  log "hardening-report.timer enabled (writes ${SUMMARY_REPORT_FILE} daily; run 'sudo hardening-report' on demand)."
 }
 
 configure_docker_ssh_cidr_sync_timer() {
@@ -2913,6 +3133,8 @@ main() {
   fi
 
   generate_report
+  log "Installing actionable hardening summary timer."
+  configure_hardening_report
   log "Completed hardening bootstrap successfully."
 
   # Print Tailscale IP on stdout for orchestrators (deploy.sh) to capture.
