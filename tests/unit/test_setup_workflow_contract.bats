@@ -346,6 +346,9 @@ EOF
     CF_ZONE_NAME="example.com"
     CF_ACCOUNT_ID="account-123"
     CF_API_TOKEN="dns-token"
+    PRIVATE_TLS_CA="zerossl"
+    ZEROSSL_EAB_KID="kid-123"
+    ZEROSSL_EAB_HMAC="hmac-123"
     TUNNEL_ID="tunnel-123"
     TUNNEL_SECRET="secret-123"
     TS_IP="100.64.0.25"
@@ -389,6 +392,9 @@ EOF
 [[ "${CF_DNS_API_TOKEN}" == "dns-token" ]]
 [[ "${CF_ZONE_NAME}" == "example.com" ]]
 [[ "${PRIVATE_TLS_RESOLVER}" == "privatedns" ]]
+[[ "${PRIVATE_TLS_CA}" == "zerossl" ]]
+[[ "${ZEROSSL_EAB_KID}" == "kid-123" ]]
+[[ "${ZEROSSL_EAB_HMAC}" == "hmac-123" ]]
 EOF
     }
     coolify_mark_bind_dashboard_state_script() { echo true; }

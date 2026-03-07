@@ -1030,12 +1030,21 @@ EOF
   assert_success
   assert_output --partial "CF_DNS_API_TOKEN is required"
   assert_output --partial "DOMAIN is required"
+  assert_output --partial 'PRIVATE_TLS_CA:=letsencrypt'
+  assert_output --partial 'ZEROSSL_CA_SERVER:=https://acme.zerossl.com/v2/DV90'
+  assert_output --partial 'ZEROSSL_EAB_KID is required when PRIVATE_TLS_CA=zerossl'
+  assert_output --partial 'Unsupported PRIVATE_TLS_CA: ${PRIVATE_TLS_CA}'
   assert_output --partial "/data/coolify/proxy/.env"
   assert_output --partial "certificatesResolvers.${PRIVATE_TLS_RESOLVER}.acme.dnsChallenge.provider=cloudflare"
   assert_output --partial "reconcile_private_tls_compose() {"
   assert_output --partial 'service_start = next((idx for idx, line in enumerate(lines) if re.match(r"^  traefik:\s*$", line)), None)'
   assert_output --partial 'resolver_flag_pattern = re.compile(rf"^ {{6}}- '\''?--certificatesresolvers\.{re.escape(resolver)}\..*'\''?\s*$")'
   assert_output --partial 'existing_command_flags = set()'
+  assert_output --partial 'private_tls_ca = sys.argv[4]'
+  assert_output --partial 'zerossl_ca_server = sys.argv[5]'
+  assert_output --partial 'f"--certificatesresolvers.{resolver}.acme.caserver={zerossl_ca_server}"'
+  assert_output --partial 'f"--certificatesresolvers.{resolver}.acme.eab.kid={zerossl_eab_kid}"'
+  assert_output --partial 'f"--certificatesresolvers.{resolver}.acme.eab.hmacencoded={zerossl_eab_hmac}"'
   assert_output --partial "Traefik service block not found in docker-compose.yml"
   assert_output --partial 'default_redirect_file="${dynamic_dir}/default_redirect_503.yaml"'
   assert_output --partial 'coolify_dynamic_file="${dynamic_dir}/coolify.yaml"'

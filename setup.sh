@@ -43,6 +43,11 @@ APP_DOMAIN_MODE="${APP_DOMAIN_MODE:-}"
 SWAP_SIZE="${SWAP_SIZE:-}"
 SERVER_TIMEZONE="${SERVER_TIMEZONE:-}"
 TAILSCALE_DIRECT_WAN="${TAILSCALE_DIRECT_WAN:-false}"
+PRIVATE_TLS_CA="${PRIVATE_TLS_CA:-}"
+ZEROSSL_EAB_KID="${ZEROSSL_EAB_KID:-}"
+ZEROSSL_EAB_KID_FILE="${ZEROSSL_EAB_KID_FILE:-}"
+ZEROSSL_EAB_HMAC="${ZEROSSL_EAB_HMAC:-}"
+ZEROSSL_EAB_HMAC_FILE="${ZEROSSL_EAB_HMAC_FILE:-}"
 AUTO_YES="${AUTO_YES:-false}"
 PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-false}"
 
@@ -106,6 +111,11 @@ Optional:
   --cf-account-id <id>          Cloudflare account ID override (32-char hex)
   --swap-size <size>            Swap size (default: 2G)
   --server-timezone <IANA>      Server timezone (for example: Australia/Melbourne, UTC)
+  --private-tls-ca <letsencrypt|zerossl>
+                                Private dashboard/websocket CA in tunnel mode (default: letsencrypt)
+  --zerossl-eab-kid-file <path> File containing ZeroSSL EAB kid (required when --private-tls-ca zerossl)
+  --zerossl-eab-hmac-file <path>
+                                File containing ZeroSSL EAB hmac (required when --private-tls-ca zerossl)
   --tailscale-direct-wan        Allow WAN UDP 41641 for direct Tailscale paths (optional optimization)
   --no-tailscale-direct-wan     Keep WAN UDP 41641 closed (default; DERP fallback remains available)
   --preflight-only              Run local/Cloudflare preflight checks only, then exit
@@ -139,6 +149,9 @@ parse_args() {
       --app-domain-mode) APP_DOMAIN_MODE="${2:?--app-domain-mode requires a value}"; shift 2 ;;
       --swap-size)       SWAP_SIZE="${2:?--swap-size requires a value}"; shift 2 ;;
       --server-timezone|--timezone) SERVER_TIMEZONE="${2:?$1 requires a value}"; shift 2 ;;
+      --private-tls-ca)  PRIVATE_TLS_CA="${2:?--private-tls-ca requires a value}"; shift 2 ;;
+      --zerossl-eab-kid-file) ZEROSSL_EAB_KID_FILE="${2:?--zerossl-eab-kid-file requires a value}"; shift 2 ;;
+      --zerossl-eab-hmac-file) ZEROSSL_EAB_HMAC_FILE="${2:?--zerossl-eab-hmac-file requires a value}"; shift 2 ;;
       --tailscale-direct-wan) TAILSCALE_DIRECT_WAN="true"; shift ;;
       --no-tailscale-direct-wan) TAILSCALE_DIRECT_WAN="false"; shift ;;
       --preflight-only)  PREFLIGHT_ONLY="true"; shift ;;
@@ -162,6 +175,7 @@ collect_inputs() {
 
 validate_inputs() {
   finalize_cloudflare_tokens
+  finalize_private_tls_ca_inputs
 
   if is_true "${AUTO_YES}" && ! is_true "${PREFLIGHT_ONLY}"; then
     die "setup.sh --yes is only supported with --preflight-only. Full setup requires operator confirmations from a laptop; use deploy.sh or run setup.sh interactively."
@@ -186,6 +200,12 @@ validate_inputs() {
 
   [[ "${DEPLOY_MODE}" == "standard" || "${DEPLOY_MODE}" == "tunnel" ]] \
     || die "Mode must be 'standard' or 'tunnel' (got: ${DEPLOY_MODE})"
+  [[ "${PRIVATE_TLS_CA}" == "letsencrypt" || "${PRIVATE_TLS_CA}" == "zerossl" ]] \
+    || die "Private TLS CA must be 'letsencrypt' or 'zerossl' (got: ${PRIVATE_TLS_CA})"
+  if [[ "${DEPLOY_MODE}" == "tunnel" && "${PRIVATE_TLS_CA}" == "zerossl" ]]; then
+    [[ -n "${ZEROSSL_EAB_KID}" ]] || die "ZeroSSL EAB kid is required when --private-tls-ca zerossl."
+    [[ -n "${ZEROSSL_EAB_HMAC}" ]] || die "ZeroSSL EAB hmac is required when --private-tls-ca zerossl."
+  fi
 
   [[ "${APP_DOMAIN_MODE}" == "vps" || "${APP_DOMAIN_MODE}" == "apex" ]] \
     || die "App domain mode must be 'vps' or 'apex' (got: ${APP_DOMAIN_MODE})"
@@ -264,6 +284,7 @@ preflight() {
   cf_get_account_id  # always fetch — needed for tunnel (default mode)
   cf_verify_tunnel_token
   resolve_app_domain
+  cf_verify_private_tls_ca_caa
   pass "Cloudflare API verified (zone: ${CF_ZONE_ID})"
 }
 
@@ -467,11 +488,11 @@ phase4_binding_dns() {
   }
   phase4_configure_private_routes() {
     coolify_configure_private_dashboard_routes_script \
-      | env DOMAIN="${DOMAIN}" PRIVATE_TLS_RESOLVER="privatedns" bash -s
+      | env DOMAIN="${DOMAIN}" PRIVATE_TLS_RESOLVER="$(private_tls_resolver_name)" bash -s
   }
   phase4_configure_private_tls() {
     coolify_configure_private_tls_dns_script \
-      | env CF_DNS_API_TOKEN="${CF_API_TOKEN}" CF_ZONE_NAME="${CF_ZONE_NAME}" DOMAIN="${DOMAIN}" PRIVATE_TLS_RESOLVER="privatedns" bash -s
+      | env CF_DNS_API_TOKEN="${CF_API_TOKEN}" CF_ZONE_NAME="${CF_ZONE_NAME}" DOMAIN="${DOMAIN}" PRIVATE_TLS_RESOLVER="$(private_tls_resolver_name)" PRIVATE_TLS_CA="${PRIVATE_TLS_CA}" ZEROSSL_EAB_KID="${ZEROSSL_EAB_KID}" ZEROSSL_EAB_HMAC="${ZEROSSL_EAB_HMAC}" bash -s
   }
   phase4_remove_private_routes() {
     coolify_remove_private_dashboard_routes_script | bash -s

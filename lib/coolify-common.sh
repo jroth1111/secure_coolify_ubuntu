@@ -372,6 +372,15 @@ read_secret_file() {
   printf '%s' "${secret}"
 }
 
+load_private_tls_ca_secrets_from_files() {
+  if [[ -n "${ZEROSSL_EAB_KID_FILE:-}" ]]; then
+    ZEROSSL_EAB_KID="$(read_secret_file "${ZEROSSL_EAB_KID_FILE}" "ZeroSSL EAB kid")"
+  fi
+  if [[ -n "${ZEROSSL_EAB_HMAC_FILE:-}" ]]; then
+    ZEROSSL_EAB_HMAC="$(read_secret_file "${ZEROSSL_EAB_HMAC_FILE}" "ZeroSSL EAB hmac")"
+  fi
+}
+
 load_cloudflare_tokens_from_files() {
   if [[ -n "${CF_API_TOKEN_FILE:-}" ]]; then
     CF_API_TOKEN="$(read_secret_file "${CF_API_TOKEN_FILE}" "Cloudflare API token")"
@@ -393,6 +402,70 @@ finalize_cloudflare_tokens() {
   if [[ -z "${CF_TUNNEL_API_TOKEN:-}" && -n "${CF_API_TOKEN:-}" ]]; then
     CF_TUNNEL_API_TOKEN="${CF_API_TOKEN}"
   fi
+}
+
+finalize_private_tls_ca_inputs() {
+  PRIVATE_TLS_CA="${PRIVATE_TLS_CA:-letsencrypt}"
+  PRIVATE_TLS_CA="${PRIVATE_TLS_CA%$'\n'}"
+  PRIVATE_TLS_CA="${PRIVATE_TLS_CA%$'\r'}"
+  ZEROSSL_EAB_KID="${ZEROSSL_EAB_KID:-}"
+  ZEROSSL_EAB_HMAC="${ZEROSSL_EAB_HMAC:-}"
+  ZEROSSL_EAB_KID="${ZEROSSL_EAB_KID%$'\n'}"
+  ZEROSSL_EAB_KID="${ZEROSSL_EAB_KID%$'\r'}"
+  ZEROSSL_EAB_HMAC="${ZEROSSL_EAB_HMAC%$'\n'}"
+  ZEROSSL_EAB_HMAC="${ZEROSSL_EAB_HMAC%$'\r'}"
+}
+
+private_tls_resolver_name() {
+  printf 'privatedns'
+}
+
+private_tls_ca_expected_caa_issuer() {
+  case "${PRIVATE_TLS_CA:-letsencrypt}" in
+    letsencrypt) printf 'letsencrypt.org' ;;
+    zerossl) printf 'sectigo.com' ;;
+    *) return 1 ;;
+  esac
+}
+
+cf_verify_private_tls_ca_caa() {
+  [[ "${DEPLOY_MODE}" == "tunnel" ]] || return 0
+
+  local expected_issuer
+  expected_issuer="$(private_tls_ca_expected_caa_issuer)" || die "Unsupported private TLS CA: ${PRIVATE_TLS_CA}"
+
+  local host_name response line found_any="false" authorized="false"
+  local names=("${DOMAIN}")
+  if [[ "${DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
+    names+=("${CF_ZONE_NAME}")
+  fi
+
+  for host_name in "${names[@]}"; do
+    response="$(cf_api GET "/zones/${CF_ZONE_ID}/dns_records?type=CAA&name=${host_name}")"
+    cf_expect_success "Cloudflare CAA lookup (${host_name})" "${response}"
+    while IFS= read -r line; do
+      [[ -n "${line}" ]] || continue
+      found_any="true"
+      if grep -Fqi -- "${expected_issuer}" <<< "${line}"; then
+        authorized="true"
+      fi
+    done < <(
+      printf '%s' "${response}" \
+        | jq -r '.result[]? | [.name, (.data.tag // ""), (.data.value // .content // "")] | @tsv'
+    )
+  done
+
+  if [[ "${found_any}" != "true" ]]; then
+    log "Cloudflare CAA preflight: no CAA records found for ${DOMAIN} or ${CF_ZONE_NAME}; ${PRIVATE_TLS_CA} may issue."
+    return 0
+  fi
+
+  if [[ "${authorized}" == "true" ]]; then
+    log "Cloudflare CAA preflight: ${PRIVATE_TLS_CA} issuer ${expected_issuer} is authorized."
+    return 0
+  fi
+
+  die "Cloudflare CAA preflight failed: found CAA records for ${DOMAIN}/${CF_ZONE_NAME}, but none authorize ${expected_issuer} for private TLS CA ${PRIVATE_TLS_CA}."
 }
 
 # ── Cloudflare API ─────────────────────────────────────────────────────────
@@ -1987,6 +2060,21 @@ set -Eeuo pipefail
 : "${CF_ZONE_NAME:?CF_ZONE_NAME is required}"
 : "${DOMAIN:?DOMAIN is required}"
 : "${PRIVATE_TLS_RESOLVER:=privatedns}"
+: "${PRIVATE_TLS_CA:=letsencrypt}"
+: "${ZEROSSL_CA_SERVER:=https://acme.zerossl.com/v2/DV90}"
+
+case "${PRIVATE_TLS_CA}" in
+  letsencrypt)
+    ;;
+  zerossl)
+    : "${ZEROSSL_EAB_KID:?ZEROSSL_EAB_KID is required when PRIVATE_TLS_CA=zerossl}"
+    : "${ZEROSSL_EAB_HMAC:?ZEROSSL_EAB_HMAC is required when PRIVATE_TLS_CA=zerossl}"
+    ;;
+  *)
+    echo "Unsupported PRIVATE_TLS_CA: ${PRIVATE_TLS_CA}" >&2
+    exit 1
+    ;;
+esac
 
 proxy_dir="/data/coolify/proxy"
 compose_file="${proxy_dir}/docker-compose.yml"
@@ -2004,7 +2092,7 @@ ENV
 chmod 0600 "${env_file}"
 
 reconcile_private_tls_compose() {
-  python3 - "${compose_file}" "${PRIVATE_TLS_RESOLVER}" "${CF_ZONE_NAME}" <<'PY'
+  python3 - "${compose_file}" "${PRIVATE_TLS_RESOLVER}" "${CF_ZONE_NAME}" "${PRIVATE_TLS_CA}" "${ZEROSSL_CA_SERVER}" "${ZEROSSL_EAB_KID:-}" "${ZEROSSL_EAB_HMAC:-}" <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -2012,6 +2100,10 @@ import sys
 path = Path(sys.argv[1])
 resolver = sys.argv[2]
 zone = sys.argv[3]
+private_tls_ca = sys.argv[4]
+zerossl_ca_server = sys.argv[5]
+zerossl_eab_kid = sys.argv[6]
+zerossl_eab_hmac = sys.argv[7]
 env_path = "/data/coolify/proxy/.env"
 required_flags = [
     f"--certificatesresolvers.{resolver}.acme.dnschallenge=true",
@@ -2020,6 +2112,16 @@ required_flags = [
     f"--certificatesresolvers.{resolver}.acme.email=coolify-admin@{zone}",
     f"--certificatesresolvers.{resolver}.acme.storage=/traefik/acme.json",
 ]
+if private_tls_ca == "letsencrypt":
+    pass
+elif private_tls_ca == "zerossl":
+    required_flags.extend([
+        f"--certificatesresolvers.{resolver}.acme.caserver={zerossl_ca_server}",
+        f"--certificatesresolvers.{resolver}.acme.eab.kid={zerossl_eab_kid}",
+        f"--certificatesresolvers.{resolver}.acme.eab.hmacencoded={zerossl_eab_hmac}",
+    ])
+else:
+    raise SystemExit(f"Unsupported PRIVATE_TLS_CA: {private_tls_ca}")
 
 text = path.read_text()
 lines = text.splitlines(keepends=True)
@@ -2387,6 +2489,7 @@ EOF
 # collect_common_inputs — Prompt for inputs shared by both deploy.sh and setup.sh.
 # Each script calls this then adds its own script-specific prompts.
 collect_common_inputs() {
+  load_private_tls_ca_secrets_from_files
   load_cloudflare_tokens_from_files
   [[ -n "${SERVER_IP}" ]]   || prompt_value  SERVER_IP "Server public IP" "" "${IPV4_RE}"
   [[ -n "${ADMIN_USER}" ]]  || prompt_value  ADMIN_USER "Admin username" "coolifyadmin" "${LINUX_USER_RE}"
@@ -2416,6 +2519,13 @@ collect_common_inputs() {
     printf '    apex → appname.ZONE_APEX                (default — works with Cloudflare Free SSL)\n'
     printf '    vps  → appname.%s  (scoped to this server; requires paid ACM or Enterprise for proxied SSL)\n' "${DOMAIN:-DOMAIN}"
     prompt_choice APP_DOMAIN_MODE "App subdomain scope" "apex" "apex" "vps"
+  fi
+  if [[ "${DEPLOY_MODE}" == "tunnel" && -z "${PRIVATE_TLS_CA:-}" ]]; then
+    prompt_choice PRIVATE_TLS_CA "Private TLS CA" "letsencrypt" "letsencrypt" "zerossl"
+  fi
+  if [[ "${DEPLOY_MODE}" == "tunnel" && "${PRIVATE_TLS_CA:-letsencrypt}" == "zerossl" ]]; then
+    [[ -n "${ZEROSSL_EAB_KID:-}" ]] || prompt_secret ZEROSSL_EAB_KID "ZeroSSL EAB kid"
+    [[ -n "${ZEROSSL_EAB_HMAC:-}" ]] || prompt_secret ZEROSSL_EAB_HMAC "ZeroSSL EAB hmac"
   fi
 }
 
@@ -2488,6 +2598,9 @@ print_deployment_summary() {
   summary_box_print_field "Tailscale IP" "${TS_IP}"
   summary_box_print_field "Admin User" "${ADMIN_USER}"
   summary_box_print_field "Deploy Mode" "${DEPLOY_MODE}"
+  if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
+    summary_box_print_field "Private TLS CA" "${PRIVATE_TLS_CA:-letsencrypt}"
+  fi
   summary_box_print_field "Domain" "${DOMAIN}"
   summary_box_print_field "Server Timezone" "${SERVER_TIMEZONE}"
   summary_box_print_field "Dashboard URL" "${dashboard_url}"
@@ -2518,7 +2631,7 @@ print_deployment_summary() {
   fi
   log ""
   if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
-    log "  2. Private dashboard/websocket TLS is already configured for https://${DOMAIN} and wss://ws.${DOMAIN}."
+    log "  2. Private dashboard/websocket TLS is already configured for https://${DOMAIN} and wss://ws.${DOMAIN} using ${PRIVATE_TLS_CA:-letsencrypt}."
   else
     log "  2. Cloudflare SSL mode (one-time):"
     log "       Cloudflare dashboard > your zone > SSL/TLS > Overview > set to 'Full'"

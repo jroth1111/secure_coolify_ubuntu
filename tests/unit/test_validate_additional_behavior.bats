@@ -1441,6 +1441,7 @@ EOF
   json="$(emit_validate_results_json)"
   assert_json_check_status "${json}" "cloudflared: public letsencrypt resolver removed" "PASS"
   assert_json_check_status "${json}" "cloudflared: private TLS resolver present in Traefik command" "PASS"
+  assert_json_check_status "${json}" "cloudflared: private TLS CA (letsencrypt) flags present" "PASS"
   assert_json_check_status "${json}" "cloudflared: catchall route avoids public letsencrypt" "PASS"
   assert_json_check_status "${json}" "cloudflared: generated Coolify HTTPS routers disabled" "PASS"
   assert_json_check_status "${json}" "cloudflared: coolify-private-dashboard-https uses certResolver" "PASS"
@@ -1456,6 +1457,132 @@ EOF
   assert_json_check_status "${json}" "cloudflared: private websocket HTTP redirect verified" "PASS"
   assert_json_check_status "${json}" "cloudflared: private websocket HTTPS route verified" "PASS"
   assert_json_fail_count "${json}" "0"
+
+  rm -rf "${tempdir}"
+}
+
+@test "cloudflared_check: passes when ZeroSSL private TLS flags are present" {
+  local tempdir config_file private_route_file compose_file redirect_file dynamic_file coolify_env_file
+  tempdir="$(mktemp -d)"
+  config_file="${tempdir}/config.yml"
+  private_route_file="${tempdir}/coolify-private-dashboard.yaml"
+  compose_file="${tempdir}/docker-compose.yml"
+  redirect_file="${tempdir}/default_redirect_503.yaml"
+  dynamic_file="${tempdir}/coolify.yaml"
+  coolify_env_file="${tempdir}/coolify.env"
+
+  cat > "${config_file}" <<'EOF'
+tunnel: test-tunnel
+ingress:
+  - hostname: "vps.example.com"
+    service: http://localhost:80
+  - hostname: "ws.vps.example.com"
+    service: http_status:404
+  - hostname: "vps.example.com"
+    service: http_status:404
+  - service: http_status:404
+EOF
+
+  cat > "${private_route_file}" <<'EOF'
+http:
+  routers:
+    coolify-private-dashboard-https:
+      rule: "Host(`vps.example.com`)"
+      tls:
+        certResolver: privatedns
+    coolify-private-realtime-https:
+      rule: "Host(`ws.vps.example.com`)"
+      tls:
+        certResolver: privatedns
+    coolify-private-terminal-https:
+      rule: "Host(`ws.vps.example.com`) && PathPrefix(`/terminal/ws`)"
+      tls:
+        certResolver: privatedns
+EOF
+
+  cat > "${compose_file}" <<'EOF'
+services:
+  traefik:
+    command:
+      - '--certificatesresolvers.privatedns.acme.dnschallenge=true'
+      - '--certificatesresolvers.privatedns.acme.dnschallenge.provider=cloudflare'
+      - '--certificatesresolvers.privatedns.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53'
+      - '--certificatesresolvers.privatedns.acme.email=coolify-admin@example.com'
+      - '--certificatesresolvers.privatedns.acme.storage=/traefik/acme.json'
+      - '--certificatesresolvers.privatedns.acme.caserver=https://acme.zerossl.com/v2/DV90'
+      - '--certificatesresolvers.privatedns.acme.eab.kid=test-kid'
+      - '--certificatesresolvers.privatedns.acme.eab.hmacencoded=test-hmac'
+EOF
+
+  cat > "${redirect_file}" <<'EOF'
+http:
+  routers:
+    catchall:
+      priority: -1000
+EOF
+
+  cat > "${dynamic_file}" <<'EOF'
+http:
+  routers:
+    coolify-http:
+      rule: Host(`vps.example.com`)
+EOF
+
+  cat > "${coolify_env_file}" <<'EOF'
+PUSHER_HOST=ws.vps.example.com
+PUSHER_PORT=443
+PUSHER_SCHEME=https
+EOF
+
+  TUNNEL_MODE="true"
+  TAILSCALE_IP=""
+  CLOUDFLARED_CONFIG_FILE="${config_file}"
+  COOLIFY_PRIVATE_ROUTE_FILE="${private_route_file}"
+  COOLIFY_PROXY_COMPOSE_FILE="${compose_file}"
+  COOLIFY_PROXY_DEFAULT_REDIRECT_FILE="${redirect_file}"
+  COOLIFY_PROXY_DYNAMIC_FILE="${dynamic_file}"
+  COOLIFY_ENV_FILE="${coolify_env_file}"
+
+  systemctl() {
+    if [[ "${1:-}" == "list-unit-files" ]]; then
+      echo "cloudflared.service enabled"
+      return 0
+    fi
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "is-active" ]]; then
+      echo "active"
+      return 0
+    fi
+    return 0
+  }
+
+  command() {
+    if [[ "${1:-}" == "-v" ]]; then
+      case "${2:-}" in
+        cloudflared|sysctl) return 0 ;;
+        getent|dig|openssl|curl) return 1 ;;
+      esac
+    fi
+    builtin command "$@"
+  }
+
+  sysctl() {
+    if [[ "${1:-}" == "-n" && "${2:-}" == "net.ipv4.ping_group_range" ]]; then
+      echo "0 2147483647"
+      return 0
+    fi
+    command sysctl "$@"
+  }
+
+  pgrep() { return 1; }
+
+  cloudflared_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "cloudflared: private TLS resolver present in Traefik command" "PASS"
+  assert_json_check_status "${json}" "cloudflared: private TLS CA (zerossl) flags present" "PASS"
 
   rm -rf "${tempdir}"
 }

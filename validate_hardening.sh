@@ -2357,7 +2357,7 @@ cloudflared_check() {
         record "PASS" "cloudflared: public letsencrypt resolver removed"
       fi
 
-      local private_tls_resolver traefik_command_block private_resolver_flag_fail
+      local private_tls_resolver private_tls_ca traefik_command_block private_resolver_flag_fail
       private_tls_resolver="$(awk '
         $0 ~ /^    coolify-private-(dashboard|realtime|terminal)-https:[[:space:]]*$/ { in_router=1; next }
         in_router && /^[[:space:]]*certResolver:[[:space:]]*/ {
@@ -2368,6 +2368,7 @@ cloudflared_check() {
         in_router && /^    [a-zA-Z0-9_-]+:[[:space:]]*$/ { in_router=0 }
       ' "${private_route_file}" 2>/dev/null || true)"
       [[ -n "${private_tls_resolver}" ]] || private_tls_resolver="privatedns"
+      private_tls_ca="letsencrypt"
 
       traefik_command_block="$(awk '
         /^  traefik:[[:space:]]*$/ { in_service=1; next }
@@ -2396,6 +2397,21 @@ cloudflared_check() {
       else
         record "FAIL" "cloudflared: private TLS resolver present in Traefik command" \
           "missing ${private_tls_resolver} ACME flags in traefik command block of ${proxy_compose_file}"
+      fi
+
+      if grep -Fq -- "--certificatesresolvers.${private_tls_resolver}.acme.caserver=https://acme.zerossl.com/v2/DV90" <<< "${traefik_command_block}"; then
+        private_tls_ca="zerossl"
+      fi
+      if [[ "${private_tls_ca}" == "zerossl" ]]; then
+        if grep -Fq -- "--certificatesresolvers.${private_tls_resolver}.acme.eab.kid=" <<< "${traefik_command_block}" \
+          && grep -Fq -- "--certificatesresolvers.${private_tls_resolver}.acme.eab.hmacencoded=" <<< "${traefik_command_block}"; then
+          record "PASS" "cloudflared: private TLS CA (${private_tls_ca}) flags present"
+        else
+          record "FAIL" "cloudflared: private TLS CA (${private_tls_ca}) flags present" \
+            "missing ZeroSSL caServer/EAB flags in traefik command block of ${proxy_compose_file}"
+        fi
+      else
+        record "PASS" "cloudflared: private TLS CA (${private_tls_ca}) flags present"
       fi
     else
       record "FAIL" "cloudflared: proxy compose file" "missing ${proxy_compose_file}"
