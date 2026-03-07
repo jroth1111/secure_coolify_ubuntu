@@ -1928,10 +1928,6 @@ http:
         - coolify-private-gzip
       tls:
         certResolver: ${PRIVATE_TLS_RESOLVER}
-        domains:
-          - main: ${DOMAIN}
-            sans:
-              - ws.${DOMAIN}
     coolify-private-realtime-http:
       entryPoints:
         - http
@@ -1944,7 +1940,8 @@ http:
         - https
       rule: "Host(\`ws.${DOMAIN}\`)"
       service: coolify-private-realtime
-      tls: {}
+      tls:
+        certResolver: ${PRIVATE_TLS_RESOLVER}
     coolify-private-terminal-http:
       entryPoints:
         - http
@@ -1959,7 +1956,8 @@ http:
       rule: "Host(\`ws.${DOMAIN}\`) && PathPrefix(\`/terminal/ws\`)"
       service: coolify-private-terminal
       priority: 100
-      tls: {}
+      tls:
+        certResolver: ${PRIVATE_TLS_RESOLVER}
   services:
     coolify-private-dashboard:
       loadBalancer:
@@ -2172,43 +2170,65 @@ wait_for_private_tls_ready() {
   local ws_host="ws.vps.invalid"
   local attempts=120
   local delay=5
-  local attempt dashboard_code dashboard_code_insecure cert_meta cert_subject cert_issuer
+  local attempt
+  local dashboard_code dashboard_code_insecure dashboard_subject dashboard_issuer
+  local ws_code ws_code_insecure ws_subject ws_issuer
 
   if ! command -v curl >/dev/null 2>&1 || ! command -v openssl >/dev/null 2>&1; then
     return 0
   fi
 
-  host="${DOMAIN}"
-  ws_host="ws.${DOMAIN}"
-  for (( attempt=1; attempt<=attempts; attempt++ )); do
-    dashboard_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
-      --resolve "${host}:443:127.0.0.1" "https://${host}/api/v1/health" 2>/dev/null || true)"
-    dashboard_code_insecure="$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 10 \
-      --resolve "${host}:443:127.0.0.1" "https://${host}/api/v1/health" 2>/dev/null || true)"
-    dashboard_code="${dashboard_code:-000}"
-    dashboard_code_insecure="${dashboard_code_insecure:-000}"
-    dashboard_code="${dashboard_code:0:3}"
-    dashboard_code_insecure="${dashboard_code_insecure:0:3}"
+  probe_private_tls_host() {
+    local prefix="${1:?probe_private_tls_host requires prefix}"
+    local probe_host="${2:?probe_private_tls_host requires host}"
+    local probe_path="${3:?probe_private_tls_host requires path}"
+    local ready_regex="${4:?probe_private_tls_host requires ready regex}"
+    local code insecure_code cert_meta cert_subject cert_issuer
 
-    cert_meta="$(printf '' | openssl s_client -connect 127.0.0.1:443 -servername "${host}" -showcerts 2>/dev/null \
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+      --resolve "${probe_host}:443:127.0.0.1" "https://${probe_host}${probe_path}" 2>/dev/null || true)"
+    insecure_code="$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 10 \
+      --resolve "${probe_host}:443:127.0.0.1" "https://${probe_host}${probe_path}" 2>/dev/null || true)"
+    code="${code:-000}"
+    insecure_code="${insecure_code:-000}"
+    code="${code:0:3}"
+    insecure_code="${insecure_code:0:3}"
+
+    cert_meta="$(printf '' | openssl s_client -connect 127.0.0.1:443 -servername "${probe_host}" -showcerts 2>/dev/null \
       | openssl x509 -noout -subject -issuer -ext subjectAltName 2>/dev/null || true)"
     cert_subject="$(awk -F= '/^subject=/{print $2; exit}' <<< "${cert_meta}" | sed 's/^ *//')"
     cert_issuer="$(awk -F= '/^issuer=/{print $2; exit}' <<< "${cert_meta}" | sed 's/^ *//')"
 
-    if [[ "${dashboard_code}" =~ ^2[0-9][0-9]$ ]] \
+    printf -v "${prefix}_code" '%s' "${code}"
+    printf -v "${prefix}_code_insecure" '%s' "${insecure_code}"
+    printf -v "${prefix}_subject" '%s' "${cert_subject}"
+    printf -v "${prefix}_issuer" '%s' "${cert_issuer}"
+
+    if [[ "${code}" =~ ${ready_regex} ]] \
       && ! grep -Fq "TRAEFIK DEFAULT CERT" <<< "${cert_meta}" \
-      && grep -Fq "DNS:${host}" <<< "${cert_meta}" \
-      && grep -Fq "DNS:${ws_host}" <<< "${cert_meta}"; then
-      echo "Private TLS certificate ready for ${host} (HTTP ${dashboard_code})."
+      && grep -Fq "DNS:${probe_host}" <<< "${cert_meta}"; then
+      return 0
+    fi
+
+    return 1
+  }
+
+  host="${DOMAIN}"
+  ws_host="ws.${DOMAIN}"
+  for (( attempt=1; attempt<=attempts; attempt++ )); do
+    if probe_private_tls_host "dashboard" "${host}" "/api/v1/health" '^2[0-9][0-9]$' \
+      && probe_private_tls_host "ws" "${ws_host}" "/" '^[234][0-9][0-9]$'; then
+      echo "Private TLS certificates ready for ${host} and ${ws_host} (dashboard=${dashboard_code}, websocket=${ws_code})."
       return 0
     fi
 
     if (( attempt == 1 || attempt % 12 == 0 )); then
       if [[ "${dashboard_code_insecure}" =~ ^2[0-9][0-9]$ && ! "${dashboard_code}" =~ ^2[0-9][0-9]$ ]]; then
-        echo "Waiting for trusted private TLS on ${host}: route is up behind untrusted cert (verified=${dashboard_code}, insecure=${dashboard_code_insecure}, subject=${cert_subject:-unknown}, issuer=${cert_issuer:-unknown}, attempt=${attempt}/${attempts})."
+        echo "Waiting for trusted private TLS on ${host}: route is up behind untrusted cert (verified=${dashboard_code}, insecure=${dashboard_code_insecure}, subject=${dashboard_subject:-unknown}, issuer=${dashboard_issuer:-unknown}, attempt=${attempt}/${attempts})."
       else
-        echo "Waiting for trusted private TLS on ${host}: verified=${dashboard_code}, insecure=${dashboard_code_insecure}, subject=${cert_subject:-unknown}, issuer=${cert_issuer:-unknown}, attempt=${attempt}/${attempts}."
+        echo "Waiting for trusted private TLS on ${host}: verified=${dashboard_code}, insecure=${dashboard_code_insecure}, subject=${dashboard_subject:-unknown}, issuer=${dashboard_issuer:-unknown}, attempt=${attempt}/${attempts}."
       fi
+      echo "Waiting for trusted private TLS on ${ws_host}: verified=${ws_code:-000}, insecure=${ws_code_insecure:-000}, subject=${ws_subject:-unknown}, issuer=${ws_issuer:-unknown}, attempt=${attempt}/${attempts}."
     fi
 
     if (( attempt < attempts )); then
@@ -2216,7 +2236,8 @@ wait_for_private_tls_ready() {
     fi
   done
 
-  echo "Timed out waiting for trusted private TLS on ${host}; verified=${dashboard_code:-000}, insecure=${dashboard_code_insecure:-000}, subject=${cert_subject:-unknown}, issuer=${cert_issuer:-unknown}" >&2
+  echo "Timed out waiting for trusted private TLS on ${host}; verified=${dashboard_code:-000}, insecure=${dashboard_code_insecure:-000}, subject=${dashboard_subject:-unknown}, issuer=${dashboard_issuer:-unknown}" >&2
+  echo "Timed out waiting for trusted private TLS on ${ws_host}; verified=${ws_code:-000}, insecure=${ws_code_insecure:-000}, subject=${ws_subject:-unknown}, issuer=${ws_issuer:-unknown}" >&2
   return 1
 }
 

@@ -1176,7 +1176,8 @@ http:
         - coolify-private-force-https
     coolify-private-realtime-https:
       rule: "Host(`ws.vps.example.com`)"
-      tls: {}
+      tls:
+        certResolver: privatedns
     coolify-private-terminal-http:
       rule: "Host(`ws.vps.example.com`) && PathPrefix(`/terminal/ws`)"
       service: noop@internal
@@ -1184,7 +1185,8 @@ http:
         - coolify-private-force-https
     coolify-private-terminal-https:
       rule: "Host(`ws.vps.example.com`) && PathPrefix(`/terminal/ws`)"
-      tls: {}
+      tls:
+        certResolver: privatedns
 EOF
 
   cat > "${compose_file}" <<'EOF'
@@ -1316,7 +1318,8 @@ http:
         - coolify-private-force-https
     coolify-private-realtime-https:
       rule: "Host(`ws.vps.example.com`)"
-      tls: {}
+      tls:
+        certResolver: privatedns
     coolify-private-terminal-http:
       rule: "Host(`ws.vps.example.com`) && PathPrefix(`/terminal/ws`)"
       service: noop@internal
@@ -1324,7 +1327,8 @@ http:
         - coolify-private-force-https
     coolify-private-terminal-https:
       rule: "Host(`ws.vps.example.com`) && PathPrefix(`/terminal/ws`)"
-      tls: {}
+      tls:
+        certResolver: privatedns
 EOF
 
   cat > "${compose_file}" <<'EOF'
@@ -1413,10 +1417,12 @@ EOF
 
   curl() {
     local url="${@: -1}"
-    if [[ "${url}" == "https://vps.example.com/api/v1/health" ]]; then
-      echo "200"
-      return 0
-    fi
+    case "${url}" in
+      "http://vps.example.com") echo "302" ; return 0 ;;
+      "https://vps.example.com/api/v1/health") echo "200" ; return 0 ;;
+      "http://ws.vps.example.com") echo "302" ; return 0 ;;
+      "https://ws.vps.example.com/") echo "200" ; return 0 ;;
+    esac
     command curl "$@"
   }
 
@@ -1437,11 +1443,18 @@ EOF
   assert_json_check_status "${json}" "cloudflared: private TLS resolver present in Traefik command" "PASS"
   assert_json_check_status "${json}" "cloudflared: catchall route avoids public letsencrypt" "PASS"
   assert_json_check_status "${json}" "cloudflared: generated Coolify HTTPS routers disabled" "PASS"
+  assert_json_check_status "${json}" "cloudflared: coolify-private-dashboard-https uses certResolver" "PASS"
+  assert_json_check_status "${json}" "cloudflared: coolify-private-realtime-https uses certResolver" "PASS"
+  assert_json_check_status "${json}" "cloudflared: coolify-private-terminal-https uses certResolver" "PASS"
+  assert_json_check_status "${json}" "cloudflared: private HTTPS routers use certResolver" "PASS"
   assert_json_check_status "${json}" "cloudflared: dashboard host served TLS cert" "PASS"
   assert_json_check_status "${json}" "cloudflared: dashboard host certificate SAN (vps.example.com)" "PASS"
   assert_json_check_status "${json}" "cloudflared: websocket host served TLS cert" "PASS"
   assert_json_check_status "${json}" "cloudflared: websocket host certificate SAN (ws.vps.example.com)" "PASS"
+  assert_json_check_status "${json}" "cloudflared: private dashboard HTTP redirect verified" "PASS"
   assert_json_check_status "${json}" "cloudflared: private dashboard HTTPS health verified" "PASS"
+  assert_json_check_status "${json}" "cloudflared: private websocket HTTP redirect verified" "PASS"
+  assert_json_check_status "${json}" "cloudflared: private websocket HTTPS route verified" "PASS"
   assert_json_fail_count "${json}" "0"
 
   rm -rf "${tempdir}"
@@ -1492,7 +1505,17 @@ http:
         - coolify-private-force-https
     coolify-private-realtime-https:
       rule: "Host(`ws.vps.example.com`)"
-      tls: {}
+      tls:
+        certResolver: privatedns
+    coolify-private-terminal-http:
+      rule: "Host(`ws.vps.example.com`) && PathPrefix(`/terminal/ws`)"
+      service: noop@internal
+      middlewares:
+        - coolify-private-force-https
+    coolify-private-terminal-https:
+      rule: "Host(`ws.vps.example.com`) && PathPrefix(`/terminal/ws`)"
+      tls:
+        certResolver: privatedns
 EOF
 
   cat > "${compose_file}" <<'EOF'
@@ -1577,10 +1600,12 @@ EOF
 
   curl() {
     local url="${@: -1}"
-    if [[ "${url}" == "https://vps.example.com/api/v1/health" ]]; then
-      echo "000"
-      return 0
-    fi
+    case "${url}" in
+      "http://vps.example.com") echo "302" ; return 0 ;;
+      "https://vps.example.com/api/v1/health") echo "000" ; return 0 ;;
+      "http://ws.vps.example.com") echo "302" ; return 0 ;;
+      "https://ws.vps.example.com/") echo "000" ; return 0 ;;
+    esac
     command curl "$@"
   }
 
@@ -1600,8 +1625,11 @@ EOF
   assert_json_check_status "${json}" "cloudflared: private TLS resolver present in Traefik command" "FAIL"
   assert_json_check_status "${json}" "cloudflared: dashboard host served TLS cert" "FAIL"
   assert_json_check_status "${json}" "cloudflared: websocket host served TLS cert" "FAIL"
+  assert_json_check_status "${json}" "cloudflared: private dashboard HTTP redirect verified" "PASS"
   assert_json_check_status "${json}" "cloudflared: private dashboard HTTPS health verified" "FAIL"
-  assert_json_fail_count "${json}" "4"
+  assert_json_check_status "${json}" "cloudflared: private websocket HTTP redirect verified" "PASS"
+  assert_json_check_status "${json}" "cloudflared: private websocket HTTPS route verified" "FAIL"
+  assert_json_fail_count "${json}" "5"
 
   rm -rf "${tempdir}"
 }

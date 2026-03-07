@@ -243,18 +243,17 @@ setup() {
   assert_output --partial "coolify-private-dashboard.yaml"
   assert_output --partial "coolify-private-dashboard-http:"
   assert_output --partial "coolify-private-dashboard-https:"
-  assert_output --partial "main: \${DOMAIN}"
-  assert_output --partial "- ws.\${DOMAIN}"
   assert_output --partial "coolify-private-realtime-http:"
   assert_output --partial "coolify-private-realtime-https:"
   assert_output --partial "coolify-private-terminal-http:"
   assert_output --partial "coolify-private-terminal-https:"
-  assert_output --partial "tls: {}"
   assert_output --partial 'rule: "Host(`ws.${DOMAIN}`)"'
   assert_output --partial "http://coolify:8080"
   assert_output --partial "http://coolify-realtime:6001"
   assert_output --partial "http://coolify-realtime:6002"
-  [[ "$(grep -Fc 'certResolver: ${PRIVATE_TLS_RESOLVER}' <<< "${output}")" -eq 1 ]]
+  refute_output --partial "domains:"
+  refute_output --partial "sans:"
+  [[ "$(grep -Fc 'certResolver: ${PRIVATE_TLS_RESOLVER}' <<< "${output}")" -eq 3 ]]
 }
 
 @test "coolify_remove_private_dashboard_routes_script: emits managed route cleanup logic" {
@@ -1047,8 +1046,12 @@ EOF
   assert_output --partial 'Public Coolify HTTPS routers remained in ${coolify_dynamic_file}'
   assert_output --partial 'Public letsencrypt resolver remained in ${default_redirect_file}'
   assert_output --partial 'dashboard_code_insecure="$(curl -k -s -o /dev/null -w '\''%{http_code}'\'' --max-time 10 \'
+  assert_output --partial 'probe_private_tls_host() {'
+  assert_output --partial "Private TLS certificates ready for \${host} and \${ws_host}"
   assert_output --partial 'Waiting for trusted private TLS on ${host}: route is up behind untrusted cert'
+  assert_output --partial 'Waiting for trusted private TLS on ${ws_host}: verified=${ws_code:-000}, insecure=${ws_code_insecure:-000}'
   assert_output --partial 'Timed out waiting for trusted private TLS on ${host}; verified=${dashboard_code:-000}, insecure=${dashboard_code_insecure:-000}'
+  assert_output --partial 'Timed out waiting for trusted private TLS on ${ws_host}; verified=${ws_code:-000}, insecure=${ws_code_insecure:-000}'
   assert_output --partial "--api.insecure=false"
   assert_output --partial 'docker compose -f "${compose_file}" up -d >/dev/null'
 }

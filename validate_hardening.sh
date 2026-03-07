@@ -2323,11 +2323,29 @@ cloudflared_check() {
         fi
       done
 
-      if grep -Eq '^[[:space:]]*certResolver:[[:space:]]*[^[:space:]]+' "${private_route_file}"; then
+      local https_router_name https_router_block private_https_router_fail=0
+      for https_router_name in \
+        coolify-private-dashboard-https \
+        coolify-private-realtime-https \
+        coolify-private-terminal-https; do
+        https_router_block="$(awk -v router="${https_router_name}:" '
+          $0 ~ "^    " router "[[:space:]]*$" {in_router=1; next}
+          in_router && $0 ~ "^    [a-zA-Z0-9_-]+:[[:space:]]*$" {exit}
+          in_router {print}
+        ' "${private_route_file}")"
+        if grep -Eq '^[[:space:]]*certResolver:[[:space:]]*[^[:space:]]+' <<< "${https_router_block}"; then
+          record "PASS" "cloudflared: ${https_router_name} uses certResolver"
+        else
+          record "FAIL" "cloudflared: ${https_router_name} uses certResolver" \
+            "missing certResolver in ${https_router_name} router block"
+          private_https_router_fail=1
+        fi
+      done
+      if [[ "${private_https_router_fail}" -eq 0 ]]; then
         record "PASS" "cloudflared: private HTTPS routers use certResolver"
       else
         record "FAIL" "cloudflared: private HTTPS routers use certResolver" \
-          "missing certResolver on private HTTPS routers in ${private_route_file}"
+          "one or more private HTTPS routers in ${private_route_file} are missing certResolver"
       fi
     fi
 
@@ -2545,6 +2563,19 @@ cloudflared_check() {
 
     if command -v curl >/dev/null 2>&1; then
       if [[ -n "${dashboard_host}" ]]; then
+        local private_dashboard_http_code
+        private_dashboard_http_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+          --resolve "${dashboard_host}:80:127.0.0.1" "http://${dashboard_host}" 2>/dev/null || true)"
+        private_dashboard_http_code="${private_dashboard_http_code:-000}"
+        private_dashboard_http_code="${private_dashboard_http_code:0:3}"
+
+        if [[ "${private_dashboard_http_code}" =~ ^30[12378]$ ]]; then
+          record "PASS" "cloudflared: private dashboard HTTP redirect verified"
+        else
+          record "FAIL" "cloudflared: private dashboard HTTP redirect verified" \
+            "expected 30x from http://${dashboard_host} via local Traefik, got ${private_dashboard_http_code}"
+        fi
+
         local private_dashboard_https_code
         private_dashboard_https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
           --resolve "${dashboard_host}:443:127.0.0.1" "https://${dashboard_host}/api/v1/health" 2>/dev/null || true)"
@@ -2558,8 +2589,37 @@ cloudflared_check() {
             "expected 2xx from https://${dashboard_host}/api/v1/health via local Traefik, got ${private_dashboard_https_code}"
         fi
       fi
+
+      if [[ -n "${ws_host}" ]]; then
+        local private_ws_http_code private_ws_https_code
+        private_ws_http_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+          --resolve "${ws_host}:80:127.0.0.1" "http://${ws_host}" 2>/dev/null || true)"
+        private_ws_https_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+          --resolve "${ws_host}:443:127.0.0.1" "https://${ws_host}/" 2>/dev/null || true)"
+        private_ws_http_code="${private_ws_http_code:-000}"
+        private_ws_https_code="${private_ws_https_code:-000}"
+        private_ws_http_code="${private_ws_http_code:0:3}"
+        private_ws_https_code="${private_ws_https_code:0:3}"
+
+        if [[ "${private_ws_http_code}" =~ ^30[12378]$ ]]; then
+          record "PASS" "cloudflared: private websocket HTTP redirect verified"
+        else
+          record "FAIL" "cloudflared: private websocket HTTP redirect verified" \
+            "expected 30x from http://${ws_host} via local Traefik, got ${private_ws_http_code}"
+        fi
+
+        if [[ "${private_ws_https_code}" =~ ^[234][0-9][0-9]$ ]]; then
+          record "PASS" "cloudflared: private websocket HTTPS route verified"
+        else
+          record "FAIL" "cloudflared: private websocket HTTPS route verified" \
+            "expected 2xx/3xx/4xx from https://${ws_host}/ via local Traefik, got ${private_ws_https_code}"
+        fi
+      fi
     else
+      record "INFO" "cloudflared: private dashboard HTTP redirect verified" "curl not found; skipped redirect check"
       record "INFO" "cloudflared: private dashboard HTTPS health verified" "curl not found; skipped verified HTTPS health check"
+      record "INFO" "cloudflared: private websocket HTTP redirect verified" "curl not found; skipped redirect check"
+      record "INFO" "cloudflared: private websocket HTTPS route verified" "curl not found; skipped verified HTTPS route check"
     fi
   fi
 
