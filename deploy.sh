@@ -839,9 +839,11 @@ EOF
     local cf_dns_token_q cf_zone_name_q resolver_q
     cf_dns_token_q="$(printf '%q' "${CF_API_TOKEN}")"
     cf_zone_name_q="$(printf '%q' "${CF_ZONE_NAME}")"
+    local domain_q
+    domain_q="$(printf '%q' "${DOMAIN}")"
     resolver_q="$(printf '%q' "privatedns")"
     coolify_configure_private_tls_dns_script \
-      | ssh_admin_sudo "CF_DNS_API_TOKEN=${cf_dns_token_q} CF_ZONE_NAME=${cf_zone_name_q} PRIVATE_TLS_RESOLVER=${resolver_q} bash -s"
+      | ssh_admin_sudo "CF_DNS_API_TOKEN=${cf_dns_token_q} CF_ZONE_NAME=${cf_zone_name_q} DOMAIN=${domain_q} PRIVATE_TLS_RESOLVER=${resolver_q} bash -s"
   }
   phase4_remove_private_routes() {
     coolify_remove_private_dashboard_routes_script | ssh_admin_sudo 'bash -s'

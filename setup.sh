@@ -471,7 +471,7 @@ phase4_binding_dns() {
   }
   phase4_configure_private_tls() {
     coolify_configure_private_tls_dns_script \
-      | env CF_DNS_API_TOKEN="${CF_API_TOKEN}" CF_ZONE_NAME="${CF_ZONE_NAME}" PRIVATE_TLS_RESOLVER="privatedns" bash -s
+      | env CF_DNS_API_TOKEN="${CF_API_TOKEN}" CF_ZONE_NAME="${CF_ZONE_NAME}" DOMAIN="${DOMAIN}" PRIVATE_TLS_RESOLVER="privatedns" bash -s
   }
   phase4_remove_private_routes() {
     coolify_remove_private_dashboard_routes_script | bash -s
