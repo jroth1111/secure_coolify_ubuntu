@@ -135,6 +135,8 @@ EOF
     init_ssh_options
     [[ "${#SSH_OPTS[@]}" -gt 0 ]]
     [[ "${#ROOT_SSH_OPTS[@]}" -gt 0 ]]
+    [[ " ${ROOT_SSH_OPTS[*]} " == *" PubkeyAuthentication=no "* ]]
+    [[ " ${ROOT_SSH_OPTS[*]} " == *" NumberOfPasswordPrompts=1 "* ]]
   '
   assert_success
 }
@@ -326,8 +328,16 @@ EOF
     TAILSCALE_AUTH_KEY="tskey-auth-test"
     TAILSCALE_DIRECT_WAN="false"
     REMOTE_DEPLOY_ENV_PATH="/root/deploy.env"
+    probe_counter="${tmpdir}/probe-attempts"
+    echo 0 > "${probe_counter}"
     scp_root() { return 0; }
     ssh_root() {
+      if [[ "$1" == "true" ]]; then
+        count="$(cat "${probe_counter}")"
+        count=$((count + 1))
+        echo "${count}" > "${probe_counter}"
+        return 0
+      fi
       if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force"* ]]; then
         attempt="$(cat "${counter_file}")"
         attempt=$((attempt + 1))
@@ -345,6 +355,7 @@ EOF
     sleep() { :; }
     phase1_upload_harden
     [[ "$(cat "${counter_file}")" -eq 2 ]]
+    [[ "$(cat "${probe_counter}")" -eq 1 ]]
     [[ "${TS_IP}" == "100.64.0.10" ]]
   '
   assert_success

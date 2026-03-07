@@ -168,6 +168,8 @@ init_ssh_options() {
     -o "UserKnownHostsFile=${DEPLOY_KNOWN_HOSTS}"
     -o ConnectTimeout=10
     -o LogLevel=ERROR
+    -o PubkeyAuthentication=no
+    -o NumberOfPasswordPrompts=1
     -o PreferredAuthentications=keyboard-interactive,password
   )
 }
@@ -554,6 +556,15 @@ phase1_upload_harden() {
   fi
   DEPLOY_ENV_REMOTE_PENDING="true"
   pass "Environment file written"
+
+  # We have just opened a burst of short-lived root password-auth sessions for upload/chmod.
+  # Some providers intermittently wobble on the first immediately-following long SSH command,
+  # even though root password auth is otherwise valid. Re-probe the transport here so the
+  # bootstrap run starts only after root auth is stable again.
+  if ! retry_root_transport "Pre-bootstrap root SSH probe to ${SERVER_IP}" ssh_root 'true'; then
+    die "Root SSH probe failed after companion upload burst; refusing to start bootstrap_hardening.sh."
+  fi
+  pass "Root SSH probe succeeded before bootstrap"
 
   # Run hardening, streaming output to terminal while capturing it for TS_IP extraction.
   # After hardening, UFW blocks all SSH on the public IP (only tailscale0 allowed), so
