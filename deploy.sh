@@ -66,6 +66,7 @@ TUNNEL_ID=""
 TUNNEL_SECRET=""
 REMOTE_DEPLOY_ENV_PATH="/root/deploy.env"
 DEPLOY_ENV_REMOTE_PENDING="false"
+ROOT_SSH_HOST=""
 
 # ── SSH options ─────────────────────────────────────────────────────────────
 
@@ -132,7 +133,7 @@ cleanup_remote_deploy_env() {
     fi
   fi
 
-  if [[ "${cleaned}" != "true" && -n "${SERVER_IP:-}" && -n "${ROOT_PASS_RUNTIME_FILE:-}" && -f "${ROOT_PASS_RUNTIME_FILE}" && ${#ROOT_SSH_OPTS[@]} -gt 0 ]]; then
+  if [[ "${cleaned}" != "true" && -n "${ROOT_SSH_HOST:-}" && -n "${ROOT_PASS_RUNTIME_FILE:-}" && -f "${ROOT_PASS_RUNTIME_FILE}" && ${#ROOT_SSH_OPTS[@]} -gt 0 ]]; then
     if ssh_root "rm -f ${REMOTE_DEPLOY_ENV_PATH}" >/dev/null 2>&1; then
       cleaned="true"
     fi
@@ -172,6 +173,7 @@ init_ssh_options() {
     -o NumberOfPasswordPrompts=1
     -o PreferredAuthentications=keyboard-interactive,password
   )
+  ROOT_SSH_HOST="${SERVER_IP}"
 }
 
 init_root_password_auth() {
@@ -377,7 +379,8 @@ validate_inputs() {
 ssh_root() {
   [[ -n "${ROOT_PASS_RUNTIME_FILE}" && -f "${ROOT_PASS_RUNTIME_FILE}" ]] \
     || die "Root password runtime file is missing."
-  sshpass -f "${ROOT_PASS_RUNTIME_FILE}" ssh "${ROOT_SSH_OPTS[@]}" "root@${SERVER_IP}" "$@"
+  [[ -n "${ROOT_SSH_HOST:-}" ]] || die "ROOT_SSH_HOST is not set."
+  sshpass -f "${ROOT_PASS_RUNTIME_FILE}" ssh "${ROOT_SSH_OPTS[@]}" "root@${ROOT_SSH_HOST}" "$@"
 }
 
 scp_root() {
@@ -404,6 +407,12 @@ retry_root_transport() {
     fi
     return "${rc}"
   done
+}
+
+extract_bootstrap_tailscale_ip() {
+  local capture_file="${1:-}"
+  [[ -n "${capture_file}" && -f "${capture_file}" ]] || return 0
+  awk -F= '/^HARDEN_RESULT_TAILSCALE_IP=/{ip=$2} END{gsub(/[[:space:]]/,"",ip); print ip}' "${capture_file}"
 }
 
 scp_admin() {
@@ -567,9 +576,9 @@ phase1_upload_harden() {
   pass "Root SSH probe succeeded before bootstrap"
 
   # Run hardening, streaming output to terminal while capturing it for TS_IP extraction.
-  # After hardening, UFW blocks all SSH on the public IP (only tailscale0 allowed), so
-  # we cannot open a new root SSH session to run 'tailscale ip -4'. Instead, bootstrap
-  # prints 'HARDEN_RESULT_TAILSCALE_IP=<ip>' as the last stdout line; we parse that.
+  # bootstrap_hardening.sh emits HARDEN_RESULT_TAILSCALE_IP as soon as Tailscale is
+  # verified, and again at the end. If the public root path dies after that point,
+  # phase 1 can retry the same bootstrap command against root@TS_IP with password auth.
   log "Running bootstrap_hardening.sh (this may take a few minutes)..."
   local harden_tmp bootstrap_attempt bootstrap_rc
   harden_tmp="$(mktemp)" || die "Failed to create temp file for hardening output"
@@ -586,6 +595,15 @@ phase1_upload_harden() {
       break
     else
       bootstrap_rc=$?
+      local captured_ts_ip=""
+      captured_ts_ip="$(extract_bootstrap_tailscale_ip "${harden_tmp}")"
+      if [[ "${captured_ts_ip}" =~ ${IPV4_RE} ]]; then
+        TS_IP="${captured_ts_ip}"
+        if [[ "${ROOT_SSH_HOST}" != "${TS_IP}" ]]; then
+          ROOT_SSH_HOST="${TS_IP}"
+          log "Phase 1 fallback: switching root retries to Tailscale IP ${TS_IP}"
+        fi
+      fi
       if (( bootstrap_rc == 255 && bootstrap_attempt < 3 )); then
         warn "bootstrap_hardening.sh SSH transport/auth failed on attempt ${bootstrap_attempt}/3; retrying in 3s."
         sleep 3
@@ -606,7 +624,7 @@ phase1_upload_harden() {
   pass "Hardening completed"
 
   # Extract Tailscale IP from captured bootstrap output (sentinel line).
-  TS_IP="$(awk -F= '/^HARDEN_RESULT_TAILSCALE_IP=/{ip=$2} END{gsub(/[[:space:]]/,"",ip); print ip}' "${harden_tmp}")"
+  TS_IP="$(extract_bootstrap_tailscale_ip "${harden_tmp}")"
   rm -f "${harden_tmp}"
   [[ "${TS_IP}" =~ ${IPV4_RE} ]] || die "Failed to get a valid Tailscale IP from bootstrap output."
   pass "Server Tailscale IP: ${TS_IP}"

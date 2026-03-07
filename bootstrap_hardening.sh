@@ -977,6 +977,13 @@ get_tailscale_ip() {
   echo "${DETECTED_TAILSCALE_IP}"
 }
 
+emit_tailscale_result_sentinel() {
+  local ts_ip=""
+  ts_ip="$(get_tailscale_ip 2>/dev/null || true)"
+  [[ "${ts_ip}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 0
+  printf 'HARDEN_RESULT_TAILSCALE_IP=%s\n' "${ts_ip}"
+}
+
 tailscale_runssh_pref_value() {
   local attempts="${1:-5}"
   local delay_seconds="${2:-1}"
@@ -3419,7 +3426,6 @@ main() {
   configure_networkd_wait_online
   configure_cron_extra_opts
   ensure_power_group
-  apply_system_package_updates
 
   # Install Tailscale if requested (before verify_tailscale_iface)
   if is_true "${INSTALL_TAILSCALE}"; then
@@ -3431,6 +3437,8 @@ main() {
   ensure_tailscaled_notify_access
   verify_tailscale_iface
   ensure_tailscale_ssh_disabled
+  emit_tailscale_result_sentinel
+  apply_system_package_updates
   detect_docker
   discover_docker_ssh_cidrs
 
