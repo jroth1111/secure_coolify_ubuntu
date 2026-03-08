@@ -355,13 +355,18 @@ ssh_admin_sudo() {
 # even when phase 1 (root SCP upload) was skipped via --ts-ip.
 sync_companion_scripts() {
   local scripts=(bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh)
-  log "Syncing companion scripts to server /root/..."
+  log "Syncing companion scripts to server /root/ (and validator helper under /usr/local/sbin)..."
   for script in "${scripts[@]}"; do
     local path="${SCRIPT_DIR}/${script}"
     [[ -f "${path}" ]] || die "Script not found: ${path}"
     scp_admin "${path}" "${ADMIN_USER}@${TS_IP}:/tmp/${script}" \
       || die "Failed to upload ${script}"
     # Use bash -c so both mv and chmod run under sudo (&&-chain only elevates the first command)
+    if [[ "${script}" == "validate_hardening.sh" ]]; then
+      ssh_admin_sudo "bash -c 'mv /tmp/${script} /root/${script} && chmod 755 /root/${script} && install -m 0750 -o root -g root /root/${script} /usr/local/sbin/validate-hardening'" \
+        || die "Failed to install ${script} to /root/ and /usr/local/sbin/validate-hardening"
+      continue
+    fi
     ssh_admin_sudo "bash -c 'mv /tmp/${script} /root/${script} && chmod 755 /root/${script}'" \
       || die "Failed to install ${script} to /root/"
   done
@@ -683,6 +688,9 @@ phase5_verify() {
   # Gate E: Checking dashboard accessibility...
   # Running final validate_hardening.sh...
   coolify_phase5_verify_shared phase5_fetch_validate_json external phase5_noop_operator_confirm
+  log "Refreshing hardening report artifacts from final validated state..."
+  ssh_admin_sudo "bash -c 'source /root/bootstrap_hardening.sh && generate_report && if [[ -x /usr/local/sbin/hardening-report ]]; then /usr/local/sbin/hardening-report; else echo \"WARN: /usr/local/sbin/hardening-report missing; summary refresh skipped\" >&2; fi'"
+  pass "Hardening report artifacts refreshed from final validated state"
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────

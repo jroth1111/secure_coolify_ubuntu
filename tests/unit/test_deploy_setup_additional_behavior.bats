@@ -263,11 +263,17 @@ EOF
     TS_IP="100.64.0.10"
     upload_count=0
     install_count=0
+    validate_helper_sync=0
     scp_admin() { upload_count=$((upload_count + 1)); return 0; }
-    ssh_admin_sudo() { install_count=$((install_count + 1)); return 0; }
+    ssh_admin_sudo() {
+      install_count=$((install_count + 1))
+      [[ "$1" == *"/usr/local/sbin/validate-hardening"* ]] && validate_helper_sync=1
+      return 0
+    }
     sync_companion_scripts
     [[ "${upload_count}" -eq 3 ]]
     [[ "${install_count}" -eq 3 ]]
+    [[ "${validate_helper_sync}" -eq 1 ]]
   '
   assert_success
 }

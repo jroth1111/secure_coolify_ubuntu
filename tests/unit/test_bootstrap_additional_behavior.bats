@@ -123,17 +123,19 @@ setup() {
   [ ! -f "${marker}" ]
 }
 
-@test "disable_unused_services: dry-run logs service disable actions" {
+@test "disable_unused_services: dry-run includes apport masking when unit exists" {
   DRY_RUN="true"
-  local marker
-  marker="$(mktemp)"
-  rm -f "${marker}"
-  systemctl() { echo called > "${marker}"; return 0; }
+  systemctl() {
+    if [[ "${1:-}" == "list-unit-files" ]]; then
+      printf '%s enabled\n' "${3:-}"
+      return 0
+    fi
+    return 0
+  }
 
   run disable_unused_services
   assert_success
-  assert_output --partial "DRY-RUN"
-  [ ! -f "${marker}" ]
+  assert_output --partial "DRY-RUN: systemctl disable --now apport.service"
 }
 
 @test "configure_banner: dry-run logs banner file write" {
@@ -333,6 +335,23 @@ setup() {
   [ ! -f "${HARDENING_REPORT_SCRIPT}" ]
   [ ! -f "${HARDENING_REPORT_SERVICE}" ]
   [ ! -f "${HARDENING_REPORT_TIMER}" ]
+  rm -rf "${tmpdir}"
+}
+
+@test "configure_hardening_report: generated script includes safety-net warning section" {
+  DRY_RUN="false"
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  HARDENING_REPORT_SCRIPT="${tmpdir}/hardening-report"
+  HARDENING_REPORT_SERVICE="${tmpdir}/hardening-report.service"
+  HARDENING_REPORT_TIMER="${tmpdir}/hardening-report.timer"
+
+  run configure_hardening_report
+  assert_success
+  [ -f "${HARDENING_REPORT_SCRIPT}" ]
+  grep -q 'Safety-net warnings' "${HARDENING_REPORT_SCRIPT}"
+  grep -q 'startswith("safety-net:")' "${HARDENING_REPORT_SCRIPT}"
+
   rm -rf "${tmpdir}"
 }
 

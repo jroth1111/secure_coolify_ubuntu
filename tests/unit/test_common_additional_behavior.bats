@@ -247,7 +247,10 @@ setup() {
   assert_output --partial "coolify-private-realtime-https:"
   assert_output --partial "coolify-private-terminal-http:"
   assert_output --partial "coolify-private-terminal-https:"
-  assert_output --partial "tls: {}"
+  assert_output --partial "certResolver: privateadmin"
+  refute_output --partial "tls: {}"
+  resolver_count="$(printf '%s\n' "$output" | grep -c 'certResolver: privateadmin')"
+  [ "${resolver_count}" -eq 3 ]
   assert_output --partial 'rule: "Host(`ws.${DOMAIN}`)"'
   assert_output --partial "http://coolify:8080"
   assert_output --partial "http://coolify-realtime:6001"
@@ -409,6 +412,14 @@ setup() {
   run report_validation_result "Gate X" '{"fail":2,"checks":[{\"status\":\"FAIL\"}]}' "boom"
   assert_failure
   assert_output --partial "reported 2 failures"
+}
+
+@test "report_validation_result: emits warnings for safety-net info checks" {
+  run report_validation_result "Final validation" '{"fail":0,"checks":[{"status":"INFO","check":"safety-net: realized backup artifacts","detail":"none found in /data/coolify/backups"},{"status":"INFO","check":"safety-net: repo-managed off-host alerting","detail":"not configured"}]}' "boom"
+  assert_success
+  assert_output --partial "0 failures"
+  assert_output --partial "WARN: Final validation: safety-net: realized backup artifacts: none found in /data/coolify/backups"
+  assert_output --partial "WARN: Final validation: safety-net: repo-managed off-host alerting: not configured"
 }
 
 @test "resolve_app_domain: derives app domain by selected mode" {

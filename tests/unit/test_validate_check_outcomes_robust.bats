@@ -450,6 +450,24 @@ STATUS
   assert_json_check_status "${json}" "disabled: rpcbind" "FAIL"
 }
 
+@test "disabled_services_check: fails when apport service is enabled" {
+  systemctl() {
+    if [[ "${1:-}" == "is-enabled" ]]; then
+      case "${2:-}" in
+        apport.service) echo "enabled"; return 0 ;;
+        *) echo "masked"; return 0 ;;
+      esac
+    fi
+    return 0
+  }
+
+  disabled_services_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "disabled: apport" "FAIL"
+  assert_json_check_detail_contains "${json}" "disabled: apport" "fs.suid_dumpable=0"
+}
+
 @test "docker_daemon_check: fails when Docker is installed but daemon.json is missing" {
   command() {
     if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then

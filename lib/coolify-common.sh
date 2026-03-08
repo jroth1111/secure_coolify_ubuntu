@@ -708,6 +708,26 @@ cf_assert_private_tailscale_a_record() {
   log "Verified DNS-only A record: ${name} → ${expected_ip}"
 }
 
+cf_assert_proxied_cname_record() {
+  local name="$1" expected_target="$2"
+  local resp success matching_count conflicting_count
+  resp="$(cf_api GET "/zones/${CF_ZONE_ID}/dns_records?type=CNAME&name=${name}")"
+  success="$(printf '%s' "${resp}" | jq -r '.success // false')"
+  [[ "${success}" == "true" ]] || die "Cloudflare DNS lookup failed for ${name}: $(printf '%s' "${resp}" | jq -r '.errors[0].message // "unknown"')"
+
+  matching_count="$(printf '%s' "${resp}" \
+    | jq -r --arg target "${expected_target}" '[.result[]? | select((.content // "") == $target and (.proxied == true))] | length')"
+  conflicting_count="$(printf '%s' "${resp}" \
+    | jq -r --arg target "${expected_target}" '[.result[]? | select((.content // "") != $target or (.proxied != true))] | length')"
+
+  [[ "${matching_count}" =~ ^[0-9]+$ ]] || matching_count=0
+  [[ "${conflicting_count}" =~ ^[0-9]+$ ]] || conflicting_count=0
+
+  (( matching_count >= 1 )) || die "Expected proxied CNAME record ${name} → ${expected_target}, but none found."
+  (( conflicting_count == 0 )) || die "Conflicting CNAME record(s) found for ${name}; expected only proxied ${expected_target}."
+  log "Verified proxied CNAME record: ${name} → ${expected_target}"
+}
+
 # ── Shared deployment helpers ────────────────────────────────────────────────
 
 # report_validation_result — Parse and report validate_hardening.sh JSON output.
@@ -715,10 +735,17 @@ cf_assert_private_tailscale_a_record() {
 # Usage: report_validation_result "Gate C" "${validate_json}" "Gate C failed. ..."
 report_validation_result() {
   local label="$1" validate_json="$2" die_msg="$3"
-  local fail_count
+  local fail_count safety_net_infos
   fail_count="$(printf '%s' "${validate_json}" | jq -r '.fail // -1' 2>/dev/null || echo "-1")"
   if [[ "${fail_count}" == "0" ]]; then
     pass "${label}: validate_hardening.sh — 0 failures"
+    safety_net_infos="$(printf '%s' "${validate_json}" | jq -r '.checks[]? | select(.status=="INFO" and (.check | startswith("safety-net:"))) | "\(.check): \(.detail)"' 2>/dev/null || true)"
+    if [[ -n "${safety_net_infos}" ]]; then
+      while IFS= read -r info_line; do
+        [[ -n "${info_line}" ]] || continue
+        warn "${label}: ${info_line}"
+      done <<< "${safety_net_infos}"
+    fi
   else
     fail "${label}: validate_hardening.sh reported ${fail_count} failures"
     printf '%s\n' "${validate_json}" | jq '.checks[] | select(.status=="FAIL")' 2>/dev/null || true
@@ -1171,6 +1198,14 @@ coolify_phase5_verify_shared() {
     pass "Gate F: DNS A record verified (${DOMAIN} → ${TS_IP}, DNS-only)"
     cf_assert_private_tailscale_a_record "ws.${DOMAIN}" "${TS_IP}"
     pass "Gate F: DNS A record verified (ws.${DOMAIN} → ${TS_IP}, DNS-only)"
+
+    local tunnel_target="${TUNNEL_ID}.cfargotunnel.com"
+    cf_assert_proxied_cname_record "*.${APP_DOMAIN}" "${tunnel_target}"
+    pass "Gate F: DNS wildcard CNAME verified (*.${APP_DOMAIN} → ${tunnel_target}, proxied)"
+    if [[ "${APP_DOMAIN}" != "${CF_ZONE_NAME}" ]]; then
+      cf_assert_proxied_cname_record "*.${CF_ZONE_NAME}" "${tunnel_target}"
+      pass "Gate F: DNS wildcard CNAME verified (*.${CF_ZONE_NAME} → ${tunnel_target}, proxied)"
+    fi
   fi
 
   # Final validation run
@@ -1422,7 +1457,8 @@ http:
       service: coolify-private-dashboard
       middlewares:
         - coolify-private-gzip
-      tls: {}
+      tls:
+        certResolver: privateadmin
     coolify-private-realtime-http:
       entryPoints:
         - http
@@ -1433,7 +1469,8 @@ http:
         - https
       rule: "Host(\`ws.${DOMAIN}\`)"
       service: coolify-private-realtime
-      tls: {}
+      tls:
+        certResolver: privateadmin
     coolify-private-terminal-http:
       entryPoints:
         - http
@@ -1446,7 +1483,8 @@ http:
       rule: "Host(\`ws.${DOMAIN}\`) && PathPrefix(\`/terminal/ws\`)"
       service: coolify-private-terminal
       priority: 100
-      tls: {}
+      tls:
+        certResolver: privateadmin
   services:
     coolify-private-dashboard:
       loadBalancer:
@@ -1689,6 +1727,7 @@ print_deployment_summary() {
   log "Next steps:"
   if [[ "${DEPLOY_MODE}" == "tunnel" ]]; then
     log "  1. Open http://${DOMAIN} (or http://${TS_IP}:8000) and create your Coolify admin account."
+    log "       In tunnel mode, ignore any generic upstream message about public-IP access on :8000; use only the private host route or Tailscale URL above."
   else
     log "  1. Open http://${TS_IP}:8000 and create your Coolify admin account."
   fi

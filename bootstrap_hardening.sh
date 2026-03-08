@@ -1041,7 +1041,9 @@ configure_swap() {
 }
 
 disable_unused_services() {
-  local services=(rpcbind avahi-daemon cups cups-browsed)
+  # Ubuntu apport crash handling flips fs.suid_dumpable=2 at runtime; this
+  # hardening baseline requires fs.suid_dumpable=0 consistently.
+  local services=(rpcbind avahi-daemon cups cups-browsed apport)
   local unit
   for svc in "${services[@]}"; do
     for unit in "${svc}.service" "${svc}.socket"; do
@@ -1391,7 +1393,7 @@ discover_docker_ssh_cidrs() {
 
   if is_true "${STRICT_DOCKER_SSH_CIDRS}"; then
     if [[ ${#DOCKER_SSH_CIDRS[@]} -eq 0 ]]; then
-      warn "STRICT_DOCKER_SSH_CIDRS enabled but no Docker bridge CIDRs discovered; falling back to compatibility ranges."
+      warn "STRICT_DOCKER_SSH_CIDRS enabled but no Docker bridge CIDRs discovered yet; this is expected before Docker is installed. Falling back temporarily to compatibility ranges and reconciling after Docker install."
       DOCKER_SSH_CIDRS=(10.0.0.0/8 172.16.0.0/12)
     fi
   else
@@ -1798,7 +1800,7 @@ configure_docker_user() {
     docker_service_present="true"
     run systemctl enable docker-user-hardening.service
   else
-    log "docker.service not found yet; deferring docker-user-hardening enable until Docker is installed."
+    log "docker.service not found yet; this is expected before Docker installation. Deferring docker-user-hardening enable until Docker is installed."
   fi
 
   if [[ "${DOCKER_PRESENT}" == "true" ]]; then
@@ -1809,10 +1811,10 @@ configure_docker_user() {
         DOCKER_RULES_APPLIED="true"
       fi
     else
-      warn "Docker CLI detected but docker.service is not present; DOCKER-USER enable/start deferred."
+      warn "Docker CLI detected but docker.service is not present yet; treating DOCKER-USER enable/start deferral as transitional until Docker installation finishes."
     fi
   else
-    warn "Docker not detected; DOCKER-USER unit installed, enable/start deferred."
+    warn "Docker not detected yet; DOCKER-USER unit installed and enable/start is deferred until Docker installation completes."
   fi
 }
 
@@ -2121,7 +2123,12 @@ EOF
   fi
 
   if ! is_true "${DRY_RUN}"; then
-    unattended-upgrade --dry-run --debug >/tmp/unattended-upgrade-dryrun.log 2>&1 || warn "unattended-upgrade dry-run returned non-zero; see /tmp/unattended-upgrade-dryrun.log"
+    log "Running unattended-upgrade dry-run (this may take several minutes); detailed output will be written to /tmp/unattended-upgrade-dryrun.log"
+    if unattended-upgrade --dry-run --debug >/tmp/unattended-upgrade-dryrun.log 2>&1; then
+      log "Completed unattended-upgrade dry-run; details saved to /tmp/unattended-upgrade-dryrun.log"
+    else
+      warn "unattended-upgrade dry-run returned non-zero; see /tmp/unattended-upgrade-dryrun.log"
+    fi
   fi
 }
 
@@ -2716,7 +2723,7 @@ count_audit_key() {
 }
 
 render_report() {
-  local generated_at hostname validate_json validation_summary validate_pass validate_fail validate_info failed_checks
+  local generated_at hostname validate_json validation_summary validate_pass validate_fail validate_info failed_checks safety_net_warnings
   local fail2ban_status fail2ban_banned_count fail2ban_banned_ips
   local ufw_blocks audit_identity audit_sudoers audit_sshd audit_docker
 
@@ -2728,6 +2735,7 @@ render_report() {
   validate_fail="0"
   validate_info="?"
   failed_checks=""
+  safety_net_warnings=""
 
   if [[ -x "${VALIDATE_BIN}" ]]; then
     validate_json="$("${VALIDATE_BIN}" --json 2>/dev/null || true)"
@@ -2739,6 +2747,7 @@ render_report() {
     validate_info="$(jq -r '.info // 0' <<< "${validate_json}")"
     validation_summary="PASS=${validate_pass} FAIL=${validate_fail} INFO=${validate_info}"
     failed_checks="$(jq -r '.checks[]? | select(.status == "FAIL") | "- \(.check): \(.detail)"' <<< "${validate_json}" 2>/dev/null || true)"
+    safety_net_warnings="$(jq -r '.checks[]? | select(.status == "INFO" and (.check | startswith("safety-net:"))) | "- \(.check): \(.detail)"' <<< "${validate_json}" 2>/dev/null || true)"
   fi
 
   fail2ban_status="fail2ban-client unavailable"
@@ -2777,6 +2786,15 @@ Signals
 - audit events (${WINDOW_LABEL}): identity=${audit_identity}, sudoers-change=${audit_sudoers}, sshd-config=${audit_sshd}, docker-config=${audit_docker}
 - Static bootstrap JSON report: $(if [[ -f "${REPORT_FILE}" ]]; then printf '%s' "${REPORT_FILE}"; else printf 'missing'; fi)
 - State file: $(if [[ -f "${STATE_FILE}" ]]; then printf 'present'; else printf 'missing'; fi)
+
+Safety-net warnings
+$(if [[ -n "${safety_net_warnings}" ]]; then
+  printf '%s\n' "${safety_net_warnings}"
+else
+  cat <<'WARNINGS_EOF'
+- No repo-detected backup/alerting warnings in this summary.
+WARNINGS_EOF
+fi)
 
 Operator actions
 $(if [[ "${validate_fail}" =~ ^[0-9]+$ ]] && (( validate_fail > 0 )); then

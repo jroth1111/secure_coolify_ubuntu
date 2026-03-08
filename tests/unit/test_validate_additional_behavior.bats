@@ -415,6 +415,44 @@ SS
   assert_json_check_status "${json}" "coolify-containers: coolify-db running (healthy)" "PASS"
 }
 
+@test "safety_net_check: records INFO when backups and repo-managed alerting are absent" {
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  mkdir -p "${tmpdir}/source" "${tmpdir}/backups"
+  touch "${tmpdir}/source/.env"
+
+  COOLIFY_ENV_FILE="${tmpdir}/source/.env"
+  UPGRADE_MAIL=""
+
+  safety_net_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "safety-net: realized backup artifacts" "INFO"
+  assert_json_check_status "${json}" "safety-net: repo-managed off-host alerting" "INFO"
+  assert_json_fail_count "${json}" "0"
+
+  rm -rf "${tmpdir}"
+}
+
+@test "safety_net_check: records PASS when backup artifacts and upgrade mail target exist" {
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  mkdir -p "${tmpdir}/source" "${tmpdir}/backups"
+  touch "${tmpdir}/source/.env" "${tmpdir}/backups/coolify-backup.tgz"
+
+  COOLIFY_ENV_FILE="${tmpdir}/source/.env"
+  UPGRADE_MAIL="ops@example.com"
+
+  safety_net_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "safety-net: realized backup artifacts" "PASS"
+  assert_json_check_status "${json}" "safety-net: repo-managed off-host alerting" "PASS"
+  assert_json_fail_count "${json}" "0"
+
+  rm -rf "${tmpdir}"
+}
+
 @test "admin_sudo_check: reports info when admin user is not configured" {
   ADMIN_USER=""
   admin_sudo_check
@@ -679,6 +717,7 @@ UFW
   assert_json_check_status "${json}" "disabled: rpcbind.service (masked)" "PASS"
   assert_json_check_status "${json}" "disabled: avahi-daemon.service (masked)" "PASS"
   assert_json_check_status "${json}" "disabled: cups.service (masked)" "PASS"
+  assert_json_check_status "${json}" "disabled: apport (masked)" "PASS"
   assert_json_fail_count "${json}" "0"
 }
 
@@ -1932,6 +1971,7 @@ EOF
   coolify_binding_check() { record "PASS" "binding: ok"; }
   coolify_ssh_check() { record "PASS" "coolify ssh: ok"; }
   coolify_container_check() { record "PASS" "containers: ok"; }
+  safety_net_check() { record "INFO" "safety-net: ok"; }
   validate_timer_check() { record "PASS" "timer: ok"; }
   listening_ports_info() { record "INFO" "ports: info"; }
   cloudflared_check() { record "INFO" "cloudflared: info"; }

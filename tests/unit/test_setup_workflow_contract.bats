@@ -271,10 +271,18 @@ EOF
 echo "{\"fail\":0,\"checks\":[]}"
 EOF
     chmod +x "${tmpdir}/validate_hardening.sh"
+    cat > "${tmpdir}/bootstrap_hardening.sh" <<EOF
+#!/usr/bin/env bash
+generate_report() { :; }
+EOF
+    chmod +x "${tmpdir}/bootstrap_hardening.sh"
     DEPLOY_MODE="tunnel"
     TS_IP="100.64.0.25"
     SERVER_IP="203.0.113.10"
     DOMAIN="coolify.vps.example.com"
+    APP_DOMAIN="vps.example.com"
+    CF_ZONE_NAME="example.com"
+    TUNNEL_ID="tunnel-1234"
     prompt_count=0
     sleep() { :; }
     curl() {
@@ -297,6 +305,13 @@ EOF
       return 0
     }
     cf_assert_private_tailscale_a_record() { :; }
+    cf_assert_proxied_cname_record() { :; }
+    bash() {
+      if [[ "$1" == "-c" && "$2" == *"source \"${tmpdir}/bootstrap_hardening.sh\" && generate_report"* ]]; then
+        return 0
+      fi
+      command bash "$@"
+    }
 
     pause_for_operator() { prompt_count=$((prompt_count + 1)); echo "$1"; }
     report_validation_result() { :; }
@@ -315,16 +330,25 @@ EOF
     source "'"${SETUP_SCRIPT}"'"
     tmpdir="$(mktemp -d)"
     SCRIPT_DIR="${tmpdir}"
+    refresh_cmd_file="$(mktemp)"
     cat > "${tmpdir}/validate_hardening.sh" <<EOF
 #!/usr/bin/env bash
 touch "${tmpdir}/validate_called"
 echo "{\"fail\":0,\"checks\":[]}"
 EOF
     chmod +x "${tmpdir}/validate_hardening.sh"
+    cat > "${tmpdir}/bootstrap_hardening.sh" <<EOF
+#!/usr/bin/env bash
+generate_report() { :; }
+EOF
+    chmod +x "${tmpdir}/bootstrap_hardening.sh"
     DEPLOY_MODE="tunnel"
     TS_IP="100.64.0.25"
     SERVER_IP="203.0.113.10"
     DOMAIN="coolify.vps.example.com"
+    APP_DOMAIN="vps.example.com"
+    CF_ZONE_NAME="example.com"
+    TUNNEL_ID="tunnel-1234"
     sleep() { :; }
     curl() {
       local url="${@: -1}"
@@ -346,7 +370,15 @@ EOF
       return 0
     }
     cf_assert_private_tailscale_a_record() { :; }
+    cf_assert_proxied_cname_record() { :; }
     pause_for_operator() { :; }
+    bash() {
+      if [[ "$1" == "-c" && "$2" == *"source \"${tmpdir}/bootstrap_hardening.sh\" && generate_report"* ]]; then
+        printf "%s\n" "$2" > "${refresh_cmd_file}"
+        return 0
+      fi
+      command bash "$@"
+    }
     report_seen=0
     report_validation_result() {
       [[ "$1" == "Final validation" ]]
@@ -357,6 +389,7 @@ EOF
 
     phase5_verify
     [[ -f "${tmpdir}/validate_called" ]]
+    grep -q "/usr/local/sbin/hardening-report" "${refresh_cmd_file}"
     [[ "${report_seen}" -eq 1 ]]
   '
   assert_success

@@ -396,7 +396,11 @@ JSON
     TS_IP="100.64.0.25"
     SERVER_IP="203.0.113.10"
     DOMAIN="coolify.vps.example.com"
+    APP_DOMAIN="vps.example.com"
+    CF_ZONE_NAME="example.com"
+    TUNNEL_ID="tunnel-1234"
     validate_seen_file="$(mktemp)"
+    refresh_cmd_file="$(mktemp)"
     report_seen=0
     dns_assert_calls=0
 
@@ -433,10 +437,13 @@ JSON
       dns_assert_calls=$((dns_assert_calls + 1))
       return 0
     }
+    cf_assert_proxied_cname_record() { :; }
     ssh_admin_sudo() {
       if [[ "$1" == *"validate_hardening.sh --json"* ]]; then
         printf "seen\n" > "${validate_seen_file}"
         echo "{\"fail\":0,\"checks\":[]}"
+      elif [[ "$1" == *"source /root/bootstrap_hardening.sh && generate_report"* ]]; then
+        printf "%s\n" "$1" > "${refresh_cmd_file}"
       fi
       return 0
     }
@@ -449,6 +456,7 @@ JSON
 
     phase5_verify
     [[ -f "${validate_seen_file}" ]]
+    grep -q "/usr/local/sbin/hardening-report" "${refresh_cmd_file}"
     [[ "${report_seen}" -eq 1 ]]
     [[ "${dns_assert_calls}" -eq 2 ]]
   '

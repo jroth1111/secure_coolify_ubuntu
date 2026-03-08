@@ -424,6 +424,9 @@ phase5_verify() {
   # setup.sh runs on the server itself; public-IP reachability checks are confirmed
   # from an operator laptop in coolify_phase5_verify_shared (public_probe_mode=operator).
   coolify_phase5_verify_shared phase5_fetch_validate_json operator pause_for_operator
+  log "Refreshing hardening report artifacts from final validated state..."
+  bash -c "source \"${SCRIPT_DIR}/bootstrap_hardening.sh\" && generate_report && if [[ -x /usr/local/sbin/hardening-report ]]; then /usr/local/sbin/hardening-report; else echo \"WARN: /usr/local/sbin/hardening-report missing; summary refresh skipped\" >&2; fi"
+  pass "Hardening report artifacts refreshed from final validated state"
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────

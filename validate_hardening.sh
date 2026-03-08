@@ -106,6 +106,7 @@ STRICT_DOCKER_SSH_CIDRS="false"
 DOCKER_SSH_CIDRS="10.0.0.0/8,172.16.0.0/12"
 TAILSCALE_DIRECT_WAN="auto"
 UPDATE_PROFILE=""
+UPGRADE_MAIL=""
 DOCKER_RULES_APPLIED="false"
 CONFIGURED_TIMEZONE=""
 SSH_ADMIN_GROUP_LEGACY_COMPAT="false"
@@ -140,6 +141,7 @@ load_state_context() {
   DOCKER_SSH_CIDRS="${docker_ssh_cidrs:-10.0.0.0/8,172.16.0.0/12}"
   TAILSCALE_DIRECT_WAN="${tailscale_direct_wan:-auto}"
   UPDATE_PROFILE="${update_profile:-}"
+  UPGRADE_MAIL="${upgrade_mail:-}"
   DOCKER_RULES_APPLIED="${docker_rules_applied:-false}"
   CONFIGURED_TIMEZONE="${timezone:-}"
 }
@@ -1445,7 +1447,7 @@ apparmor_check() {
 
 disabled_services_check() {
   local svc
-  for svc in rpcbind avahi-daemon cups; do
+  for svc in rpcbind avahi-daemon cups apport; do
     local state="not-found"
     state="$(systemctl is-enabled "${svc}.service" 2>/dev/null || true)"
     state="${state%%$'\n'*}"
@@ -1453,6 +1455,8 @@ disabled_services_check() {
 
     if [[ "${state}" == masked* || "${state}" == "not-found" ]]; then
       record "PASS" "disabled: ${svc} (${state})"
+    elif [[ "${svc}" == "apport" ]]; then
+      record "FAIL" "disabled: ${svc}" "state is ${state}, expected masked because apport can override fs.suid_dumpable=0"
     else
       record "FAIL" "disabled: ${svc}" "state is ${state}, expected masked"
     fi
@@ -2105,6 +2109,45 @@ coolify_container_check() {
   done
 }
 
+safety_net_check() {
+  local coolify_root backup_dir backup_count alert_target
+  local apt_local="/etc/apt/apt.conf.d/52unattended-upgrades-local"
+
+  coolify_root="$(dirname "$(dirname "${COOLIFY_ENV_FILE}")")"
+
+  # Runtime-only: don't warn about backups/alerting before Coolify is installed.
+  if [[ ! -d "${coolify_root}" || ! -f "${COOLIFY_ENV_FILE}" ]]; then
+    return 0
+  fi
+
+  backup_dir="${coolify_root}/backups"
+  backup_count="0"
+  if [[ -d "${backup_dir}" ]]; then
+    backup_count="$(find "${backup_dir}" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d '[:space:]')"
+    [[ -n "${backup_count}" ]] || backup_count="0"
+  fi
+
+  if [[ "${backup_count}" =~ ^[0-9]+$ ]] && (( backup_count > 0 )); then
+    record "PASS" "safety-net: realized backup artifacts" "${backup_count} item(s) found in ${backup_dir}"
+  else
+    record "INFO" "safety-net: realized backup artifacts" \
+      "none found in ${backup_dir} — configure recurring backups and verify restore path"
+  fi
+
+  alert_target="${UPGRADE_MAIL:-}"
+  if [[ -z "${alert_target}" && -f "${apt_local}" ]]; then
+    alert_target="$(awk -F'"' '/Unattended-Upgrade::Mail[[:space:]]*"/ {print $2; exit}' "${apt_local}" 2>/dev/null || true)"
+  fi
+
+  if [[ -n "${alert_target}" ]]; then
+    record "PASS" "safety-net: repo-managed off-host alerting" \
+      "unattended-upgrades mail target ${alert_target}"
+  else
+    record "INFO" "safety-net: repo-managed off-host alerting" \
+      "not configured — baseline remains local-only unless another alert path is documented"
+  fi
+}
+
 # ── Hardening validation timer ──
 
 validate_timer_check() {
@@ -2158,6 +2201,7 @@ main() {
   else
     coolify_ssh_check
     coolify_container_check
+    safety_net_check
   fi
   validate_timer_check
   listening_ports_info
