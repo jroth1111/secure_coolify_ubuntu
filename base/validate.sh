@@ -11,6 +11,8 @@ if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
 fi
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # validate_hardening.sh — Standalone health-check companion for bootstrap_hardening.sh
 # Re-runnable: prints PASS/FAIL per check, exits 0 if all pass, 1 if any fail.
 # Usage: sudo ./validate_hardening.sh [--json|--health-check]
@@ -24,6 +26,25 @@ JSON_MODE="false"
 HEALTH_CHECK_MODE="false"
 GATE_C_MODE="false"
 IS_CONTAINER="false"
+
+# shellcheck source=../overlays/docker-host/checks/_helpers.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../overlays/docker-host/checks/_helpers.sh"
+# shellcheck source=../overlays/docker-host/checks/docker_user_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../overlays/docker-host/checks/docker_user_check.sh"
+# shellcheck source=../overlays/docker-host/checks/docker_user_lifecycle_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../overlays/docker-host/checks/docker_user_lifecycle_check.sh"
+# shellcheck source=../overlays/docker-host/checks/docker_ssh_cidr_sync_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../overlays/docker-host/checks/docker_ssh_cidr_sync_check.sh"
+# shellcheck source=../overlays/docker-host/checks/docker_daemon_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../overlays/docker-host/checks/docker_daemon_check.sh"
+# shellcheck source=../overlays/docker-host/checks/docker_trust_boundary_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../overlays/docker-host/checks/docker_trust_boundary_check.sh"
 
 parse_cli_args() {
   local arg
@@ -193,17 +214,6 @@ is_true() {
   esac
 }
 
-docker_hardening_expected() {
-  if is_true "${DOCKER_PRESENT:-false}" || is_true "${DOCKER_RULES_APPLIED:-false}"; then
-    return 0
-  fi
-
-  if [[ "${GATE_C_MODE}" == "true" ]]; then
-    return 1
-  fi
-
-  command -v docker >/dev/null 2>&1
-}
 
 regex_escape() {
   printf '%s' "$1" | sed -e 's/[][\\/.*^$(){}+?|]/\\&/g'
@@ -279,41 +289,6 @@ tailscale_runssh_pref_value() {
   printf '%s\n' "${run_ssh_pref:-unknown}"
 }
 
-load_docker_ssh_cidrs() {
-  local raw="${DOCKER_SSH_CIDRS:-10.0.0.0/8,172.16.0.0/12}"
-  local item
-  local -a cidrs=()
-  local -A seen=()
-
-  IFS=',' read -r -a cidrs <<< "${raw}"
-  for item in "${cidrs[@]}"; do
-    item="${item//[[:space:]]/}"
-    [[ -n "${item}" ]] || continue
-    if [[ -z "${seen[${item}]:-}" ]]; then
-      seen["${item}"]=1
-      printf '%s\n' "${item}"
-    fi
-  done
-
-  # In strict mode, also include currently detected Docker bridge CIDRs so
-  # post-hardening network drift is surfaced by validation.
-  if is_true "${STRICT_DOCKER_SSH_CIDRS}"; then
-    while IFS= read -r item; do
-      item="${item//[[:space:]]/}"
-      [[ -n "${item}" ]] || continue
-      if [[ -z "${seen[${item}]:-}" ]]; then
-        seen["${item}"]=1
-        printf '%s\n' "${item}"
-      fi
-    done < <(
-      docker network ls --format '{{.Name}} {{.Driver}}' 2>/dev/null \
-        | awk '$2 == "bridge" && ($1 == "bridge" || $1 == "coolify" || $1 ~ /^br-/) {print $1}' \
-        | xargs -r docker network inspect --format '{{range .IPAM.Config}}{{.Subnet}}{{"\n"}}{{end}}' 2>/dev/null \
-        | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$' \
-        | sort -u
-    )
-  fi
-}
 
 infer_update_profile() {
   local apt_local="$1"
@@ -609,232 +584,12 @@ ufw_check() {
 
 # ── DOCKER-USER iptables (IPv4 + IPv6) ──
 
-docker_user_check() {
-  if ! command -v iptables >/dev/null 2>&1; then
-    record "FAIL" "docker-user: iptables" "iptables not found"
-    return
-  fi
-
-  # Check if Docker is installed first
-  if ! command -v docker >/dev/null 2>&1; then
-    record "INFO" "docker-user: Docker" "Docker not installed; skipping DOCKER-USER checks"
-    return
-  fi
-
-  # Warn if Docker is using nftables backend (experimental in Docker 29+)
-  # DOCKER-USER chain behavior differs in nftables mode; iptables rules won't apply.
-  # See: https://docs.docker.com/engine/network/firewall-nftables/
-  if docker info 2>/dev/null | grep -qiE 'iptables:\s*false|firewall:\s*nftables'; then
-    record "FAIL" "docker-user: backend" "Docker using nftables backend — DOCKER-USER iptables rules will NOT work"
-    return
-  else
-    record "PASS" "docker-user: iptables backend"
-  fi
-
-  local docker_service_present="false"
-  if unit_available "docker.service"; then
-    docker_service_present="true"
-  fi
-  if [[ "${DOCKER_RULES_APPLIED}" != "true" && "${docker_service_present}" != "true" ]]; then
-    record "INFO" "docker-user: IPv4" "docker.service unavailable and DOCKER-USER apply deferred"
-    return
-  fi
-
-  local rules attempt chain_ready="false"
-  for (( attempt=1; attempt<=10; attempt++ )); do
-    rules="$(iptables -t filter -S DOCKER-USER 2>/dev/null)" || rules=""
-    if [[ -n "${rules}" ]]; then
-      chain_ready="true"
-      break
-    fi
-    (( attempt < 10 )) || break
-    sleep 2
-  done
-  if [[ "${chain_ready}" != "true" ]]; then
-    record "FAIL" "docker-user: IPv4" "DOCKER-USER chain absent (Docker may need restart)"
-    return
-  fi
-
-  if grep -q "coolify-hardening-wan-drop" <<< "${rules}"; then
-    record "PASS" "docker-user: IPv4 wan-drop"
-  else
-    record "FAIL" "docker-user: IPv4 wan-drop" "rule missing"
-  fi
-
-  if grep -q "coolify-hardening-bridge-docker0" <<< "${rules}"; then
-    record "PASS" "docker-user: IPv4 bridge-docker0"
-  else
-    record "FAIL" "docker-user: IPv4 bridge-docker0" "rule missing"
-  fi
-
-  if is_true "${TUNNEL_MODE}" && grep -q "coolify-hardening-wan-web" <<< "${rules}"; then
-    record "FAIL" "docker-user: tunnel-mode no wan-web" "wan-web ACCEPT present"
-  elif is_true "${TUNNEL_MODE}"; then
-    record "PASS" "docker-user: tunnel-mode no wan-web"
-  fi
-
-  if command -v ip6tables >/dev/null 2>&1; then
-    local rules6
-    rules6="$(ip6tables -t filter -S DOCKER-USER 2>/dev/null)" || { record "INFO" "docker-user: IPv6" "DOCKER-USER chain absent"; return; }
-
-    if grep -q "coolify-hardening-wan-drop6" <<< "${rules6}"; then
-      record "PASS" "docker-user: IPv6 wan-drop6"
-    else
-      record "FAIL" "docker-user: IPv6 wan-drop6" "rule missing"
-    fi
-  else
-    record "INFO" "docker-user: IPv6" "ip6tables not available"
-  fi
-}
 
 # ── docker-user-hardening service lifecycle ──
 
-docker_user_lifecycle_check() {
-  local unit_file="/etc/systemd/system/docker-user-hardening.service"
-  if [[ ! -f "${unit_file}" ]]; then
-    if docker_hardening_expected; then
-      record "FAIL" "docker-user: unit file" "not found at ${unit_file}"
-    else
-      record "INFO" "docker-user: unit file" "Docker hardening not yet expected; skipped"
-    fi
-    return
-  fi
-
-  if grep -q "PartOf=docker.service" "${unit_file}"; then
-    record "PASS" "docker-user: PartOf=docker.service"
-  else
-    record "FAIL" "docker-user: PartOf=docker.service" "missing — rules lost on Docker daemon restart"
-  fi
-
-  if grep -q "WantedBy=docker.service" "${unit_file}"; then
-    record "PASS" "docker-user: WantedBy=docker.service"
-  else
-    record "FAIL" "docker-user: WantedBy=docker.service" "missing — rules may not re-apply after Docker start"
-  fi
-
-  local docker_service_present="false"
-  if unit_available "docker.service"; then
-    docker_service_present="true"
-  fi
-  if [[ "${docker_service_present}" != "true" ]]; then
-    record "INFO" "docker-user: enabled state" "docker.service unavailable; enable/start deferred"
-    return
-  fi
-
-  local enabled_state
-  enabled_state="$(systemctl is-enabled docker-user-hardening.service 2>/dev/null || echo "unknown")"
-  if [[ "${enabled_state}" == "enabled" || "${enabled_state}" == "enabled-runtime" ]]; then
-    record "PASS" "docker-user: enabled"
-  else
-    record "FAIL" "docker-user: enabled" "state=${enabled_state} — rules may not re-apply on Docker restart"
-  fi
-
-  # Functional: service must have run at least once since boot (rules are only in iptables if it did).
-  local active_state
-  active_state="$(systemctl show docker-user-hardening.service --property=ActiveState --value 2>/dev/null || echo "unknown")"
-  if [[ "${active_state}" == "active" || "${active_state}" == "activating" ]]; then
-    record "PASS" "docker-user: service has run (${active_state})"
-  else
-    # For a oneshot service, "inactive" is normal after a successful run.
-    local result
-    result="$(systemctl show docker-user-hardening.service --property=Result --value 2>/dev/null || echo "unknown")"
-    if [[ "${result}" == "success" ]]; then
-      record "PASS" "docker-user: service completed successfully"
-    else
-      record "FAIL" "docker-user: service result" "result=${result} — rules may not have been applied"
-    fi
-  fi
-}
 
 # ── docker-ssh-cidr-sync lifecycle (strict CIDR mode) ──
 
-docker_ssh_cidr_sync_check() {
-  if ! is_true "${STRICT_DOCKER_SSH_CIDRS}"; then
-    record "INFO" "docker-ssh-cidr-sync: strict mode" "disabled"
-    return
-  fi
-
-  if [[ ! -f "${DOCKER_SSH_CIDR_SYNC_SCRIPT}" ]]; then
-    record "FAIL" "docker-ssh-cidr-sync: script" "missing at ${DOCKER_SSH_CIDR_SYNC_SCRIPT}"
-    return
-  fi
-
-  # Guard against legacy script versions that inserted host/prefix values
-  # (for example 10.0.0.1/24) into sshd Match Address and broke sshd reloads.
-  if grep -q 'normalize_cidr()' "${DOCKER_SSH_CIDR_SYNC_SCRIPT}"; then
-    record "PASS" "docker-ssh-cidr-sync: CIDR normalization"
-  else
-    record "FAIL" "docker-ssh-cidr-sync: CIDR normalization" \
-      "normalize_cidr() missing; host/prefix CIDRs can break sshd Match Address"
-  fi
-
-  if ! command -v systemctl >/dev/null 2>&1; then
-    record "INFO" "docker-ssh-cidr-sync: systemd" "systemctl unavailable"
-    return
-  fi
-
-  if systemctl is-active --quiet "${DOCKER_SSH_CIDR_SYNC_TIMER}" 2>/dev/null; then
-    record "PASS" "docker-ssh-cidr-sync: timer active"
-  elif systemctl list-unit-files --no-legend "${DOCKER_SSH_CIDR_SYNC_TIMER}" 2>/dev/null | grep -q "${DOCKER_SSH_CIDR_SYNC_TIMER}"; then
-    record "FAIL" "docker-ssh-cidr-sync: timer active" "installed but inactive"
-  else
-    record "FAIL" "docker-ssh-cidr-sync: timer active" "timer not installed"
-  fi
-
-  local active_state result
-  active_state="$(systemctl show "${DOCKER_SSH_CIDR_SYNC_SERVICE}" --property=ActiveState --value 2>/dev/null || echo "unknown")"
-  if [[ "${active_state}" == "active" || "${active_state}" == "activating" ]]; then
-    record "PASS" "docker-ssh-cidr-sync: service has run (${active_state})"
-  else
-    # Oneshot services are expected to go inactive after successful completion.
-    result="$(systemctl show "${DOCKER_SSH_CIDR_SYNC_SERVICE}" --property=Result --value 2>/dev/null || echo "unknown")"
-    if [[ "${result}" == "success" ]]; then
-      record "PASS" "docker-ssh-cidr-sync: service completed successfully"
-    else
-      record "FAIL" "docker-ssh-cidr-sync: service result" \
-        "result=${result} — inspect: journalctl -u ${DOCKER_SSH_CIDR_SYNC_SERVICE}"
-    fi
-  fi
-
-  local docker_runtime_ready="false"
-  local docker_sock="${DOCKER_SOCK:-/var/run/docker.sock}"
-  if command -v docker >/dev/null 2>&1; then
-    if command -v systemctl >/dev/null 2>&1 \
-      && systemctl is-active --quiet docker.service 2>/dev/null; then
-      docker_runtime_ready="true"
-    elif [[ -S "${docker_sock}" ]] && docker info >/dev/null 2>&1; then
-      docker_runtime_ready="true"
-    fi
-  fi
-
-  if docker_hardening_expected && [[ "${docker_runtime_ready}" == "true" ]]; then
-    local cidr
-    local -a compat_cidrs=()
-    local -A seen_compat=()
-
-    while IFS= read -r cidr; do
-      cidr="${cidr//[[:space:]]/}"
-      case "${cidr}" in
-        10.0.0.0/8|172.16.0.0/12)
-          if [[ -z "${seen_compat[${cidr}]:-}" ]]; then
-            compat_cidrs+=("${cidr}")
-            seen_compat["${cidr}"]=1
-          fi
-          ;;
-      esac
-    done < <(printf '%s\n' "${DOCKER_SSH_CIDRS:-10.0.0.0/8,172.16.0.0/12}" | tr ',' '\n')
-
-    if (( ${#compat_cidrs[@]} > 0 )); then
-      record "FAIL" "docker-ssh-cidr-sync: compatibility fallback cleared" \
-        "strict mode still includes broad fallback CIDRs after Docker install: $(IFS=,; echo "${compat_cidrs[*]}")"
-    else
-      record "PASS" "docker-ssh-cidr-sync: compatibility fallback cleared"
-    fi
-  elif docker_hardening_expected && [[ "${GATE_C_MODE}" != "true" ]]; then
-    record "INFO" "docker-ssh-cidr-sync: compatibility fallback cleared" \
-      "Docker runtime not ready; compatibility fallback still tolerated"
-  fi
-}
 
 # ── Sysctl ──
 
@@ -1524,213 +1279,9 @@ admin_sudo_check() {
 #   storage-driver, default-ulimits. Coolify may add: default-address-pools.
 # Using json-file driver to match Coolify's expectation for compatibility.
 
-docker_daemon_check() {
-  local daemon_json="/etc/docker/daemon.json"
-  if [[ ! -f "${daemon_json}" ]]; then
-    if docker_hardening_expected; then
-      record "FAIL" "docker-daemon: daemon.json" "file missing (no log rotation)"
-    else
-      record "INFO" "docker-daemon: daemon.json" "Docker hardening not yet expected; skipped"
-    fi
-    return
-  fi
-
-  # Check log-driver is json-file (matches Coolify's expectation)
-  local log_driver
-  log_driver="$(jq -r '.["log-driver"] // ""' "${daemon_json}" 2>/dev/null || true)"
-  if [[ "${log_driver}" == "json-file" ]]; then
-    record "PASS" "docker-daemon: log-driver is json-file"
-  elif [[ "${log_driver}" == "" ]]; then
-    record "FAIL" "docker-daemon: log-driver" "not set in daemon.json"
-  else
-    record "FAIL" "docker-daemon: log-driver" "expected 'json-file', got '${log_driver}'"
-  fi
-
-  # Check log-opts have rotation configured
-  if jq -e '.["log-opts"]["max-size"]' "${daemon_json}" >/dev/null 2>&1; then
-    record "PASS" "docker-daemon: log-opts.max-size configured"
-  else
-    record "FAIL" "docker-daemon: log-opts.max-size" "not set in daemon.json"
-  fi
-
-  local live_restore
-  live_restore="$(jq -r 'if has("live-restore") then .["live-restore"] else "missing" end | tostring' "${daemon_json}" 2>/dev/null || echo "invalid")"
-  case "${live_restore}" in
-    true)
-      record "PASS" "docker-daemon: live-restore=true"
-      ;;
-    false)
-      record "FAIL" "docker-daemon: live-restore" "expected true, got false"
-      ;;
-    missing)
-      record "FAIL" "docker-daemon: live-restore" "not set in daemon.json"
-      ;;
-    *)
-      record "FAIL" "docker-daemon: live-restore" "invalid value in daemon.json"
-      ;;
-  esac
-
-  # CIS 5.19: isolate container IPC namespaces
-  local ipc_mode
-  ipc_mode="$(jq -r '.["default-ipc-mode"] // ""' "${daemon_json}" 2>/dev/null || true)"
-  if [[ "${ipc_mode}" == "private" ]]; then
-    record "PASS" "docker-daemon: default-ipc-mode is private"
-  else
-    record "FAIL" "docker-daemon: default-ipc-mode" "expected 'private', got '${ipc_mode:-<unset>}'"
-  fi
-
-  # Make overlay2 explicit to prevent regression
-  local storage
-  storage="$(jq -r '.["storage-driver"] // ""' "${daemon_json}" 2>/dev/null || true)"
-  if [[ "${storage}" == "overlay2" ]]; then
-    record "PASS" "docker-daemon: storage-driver is overlay2"
-  else
-    record "FAIL" "docker-daemon: storage-driver" "expected 'overlay2', got '${storage:-<unset>}'"
-  fi
-
-  # Prevent fork bombs / fd exhaustion
-  if jq -e '.["default-ulimits"]["nofile"]' "${daemon_json}" >/dev/null 2>&1 \
-    && jq -e '.["default-ulimits"]["nproc"]' "${daemon_json}" >/dev/null 2>&1; then
-    record "PASS" "docker-daemon: default-ulimits (nofile+nproc) configured"
-  else
-    record "FAIL" "docker-daemon: default-ulimits" "nofile and/or nproc not set in daemon.json"
-  fi
-
-  # Verify the RUNNING daemon matches the config file — daemon.json changes only take
-  # effect after a restart, so file and live state can diverge silently.
-  if docker info >/dev/null 2>&1; then
-    local live_driver
-    live_driver="$(docker info --format '{{.LoggingDriver}}' 2>/dev/null || true)"
-    if [[ "${live_driver}" == "json-file" ]]; then
-      record "PASS" "docker-daemon: live log-driver is json-file"
-    elif [[ -n "${live_driver}" ]]; then
-      record "FAIL" "docker-daemon: live log-driver" \
-        "daemon reports '${live_driver}' — restart Docker to apply daemon.json"
-    fi
-  else
-    record "INFO" "docker-daemon: live config" "docker daemon not responding; skipping live check"
-  fi
-}
 
 # ── Docker daemon trust-boundary checks ──
 
-docker_trust_boundary_check() {
-  local docker_sock="${DOCKER_SOCK:-/var/run/docker.sock}"
-  local socket_present="false"
-
-  if ! command -v docker >/dev/null 2>&1; then
-    record "INFO" "docker-trust: docker" "Docker not installed; skipped"
-    return
-  fi
-
-  local mode owner group other
-  if [[ -S "${docker_sock}" ]]; then
-    socket_present="true"
-    mode="$(stat -c '%a' "${docker_sock}" 2>/dev/null || echo "")"
-    owner="$(stat -c '%U' "${docker_sock}" 2>/dev/null || echo "")"
-    group="$(stat -c '%G' "${docker_sock}" 2>/dev/null || echo "")"
-
-    if [[ -n "${mode}" ]]; then
-      other="${mode: -1}"
-      if [[ "${other}" =~ ^[0-7]$ ]] && (( (10#${other} & 2) != 0 )); then
-        record "FAIL" "docker-trust: socket world-writable check" \
-          "${docker_sock} mode=${mode} allows world write"
-      else
-        record "PASS" "docker-trust: socket world-writable check"
-      fi
-    else
-      record "FAIL" "docker-trust: socket mode" "cannot read mode for ${docker_sock}"
-    fi
-
-    if [[ "${owner}" == "root" ]]; then
-      record "PASS" "docker-trust: socket owner is root"
-    else
-      record "FAIL" "docker-trust: socket owner" "expected root, got ${owner:-<unknown>}"
-    fi
-
-    if [[ "${group}" == "docker" || "${group}" == "root" ]]; then
-      record "PASS" "docker-trust: socket group is ${group}"
-    else
-      record "INFO" "docker-trust: socket group" \
-        "group=${group:-<unknown>} (verify intended access model)"
-    fi
-  else
-    record "INFO" "docker-trust: socket" "${docker_sock} not present; socket-specific checks skipped"
-  fi
-
-  if getent group docker >/dev/null 2>&1; then
-    local docker_members
-    docker_members="$(getent group docker | awk -F: '{print $4}')"
-
-    if [[ -z "${docker_members}" ]]; then
-      record "PASS" "docker-trust: docker group has no named members"
-    else
-      record "FAIL" "docker-trust: docker group has no named members" \
-        "named members present: ${docker_members} (root-equivalent Docker access)"
-    fi
-
-    if [[ -n "${ADMIN_USER}" ]] && grep -qE "(^|,)$(regex_escape "${ADMIN_USER}")($|,)" <<< "${docker_members}"; then
-      record "FAIL" "docker-trust: admin user not in docker group" \
-        "${ADMIN_USER} is in docker group (root-equivalent Docker access)"
-    else
-      record "PASS" "docker-trust: admin user not in docker group"
-    fi
-  else
-    record "INFO" "docker-trust: docker group" "group not present"
-  fi
-
-  if [[ "${socket_present}" != "true" ]]; then
-    record "INFO" "docker-trust: privileged containers" "skipped because ${docker_sock} is not present"
-    return
-  fi
-
-  local docker_ps_output docker_ps_status
-  docker_ps_status=0
-  docker_ps_output="$(docker ps -q 2>/dev/null)" || docker_ps_status=$?
-  if (( docker_ps_status != 0 )); then
-    record "INFO" "docker-trust: privileged containers" "unable to enumerate running containers"
-    return
-  fi
-
-  local priv_containers
-  priv_containers="$(xargs -r docker inspect --format '{{if .HostConfig.Privileged}}{{.Name}}{{end}}' <<< "${docker_ps_output}" 2>/dev/null \
-    | sed 's|^/||' \
-    | awk 'NF' \
-    | paste -sd, - || true)"
-  if [[ -z "${priv_containers}" ]]; then
-    record "PASS" "docker-trust: privileged containers allowlist" "no privileged containers running"
-    return
-  fi
-
-  local allowed_name priv_name
-  local -a allowed_names=() priv_names=() unapproved_privileged=()
-  local -A allowed_privileged=()
-  IFS=',' read -r -a allowed_names <<< "${ALLOWED_PRIVILEGED_CONTAINERS:-}"
-  for allowed_name in "${allowed_names[@]}"; do
-    allowed_name="${allowed_name//[[:space:]]/}"
-    allowed_name="${allowed_name#/}"
-    [[ -n "${allowed_name}" ]] || continue
-    allowed_privileged["${allowed_name}"]=1
-  done
-
-  IFS=',' read -r -a priv_names <<< "${priv_containers}"
-  for priv_name in "${priv_names[@]}"; do
-    priv_name="${priv_name//[[:space:]]/}"
-    priv_name="${priv_name#/}"
-    [[ -n "${priv_name}" ]] || continue
-    if [[ -z "${allowed_privileged[${priv_name}]:-}" ]]; then
-      unapproved_privileged+=("${priv_name}")
-    fi
-  done
-
-  if (( ${#unapproved_privileged[@]} > 0 )); then
-    record "FAIL" "docker-trust: privileged containers allowlist" \
-      "unapproved privileged containers: $(IFS=,; echo "${unapproved_privileged[*]}")"
-  else
-    record "PASS" "docker-trust: privileged containers allowlist" \
-      "allowed privileged containers: ${priv_containers}"
-  fi
-}
 
 # ── AppArmor ──
 

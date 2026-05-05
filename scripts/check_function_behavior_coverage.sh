@@ -17,6 +17,18 @@ SCRIPT_TARGETS = (
     "lib/common.sh",
     "lib/tailscale.sh",
     "lib/coolify-common.sh",
+    "overlays/docker-host/modules/cidrs.sh",
+    "overlays/docker-host/modules/detect.sh",
+    "overlays/docker-host/modules/readiness.sh",
+    "overlays/docker-host/modules/user_rules.sh",
+    "overlays/docker-host/modules/daemon.sh",
+    "overlays/docker-host/modules/cidr_sync_timer.sh",
+    "overlays/docker-host/checks/_helpers.sh",
+    "overlays/docker-host/checks/docker_user_check.sh",
+    "overlays/docker-host/checks/docker_user_lifecycle_check.sh",
+    "overlays/docker-host/checks/docker_ssh_cidr_sync_check.sh",
+    "overlays/docker-host/checks/docker_daemon_check.sh",
+    "overlays/docker-host/checks/docker_trust_boundary_check.sh",
 )
 
 ALLOWED_TEST_FILES = {
@@ -67,6 +79,102 @@ ALLOWED_TEST_FILES = {
         "tests/unit/test_deploy_workflow_contract.bats",
         "tests/unit/test_setup_workflow_contract.bats",
     },
+    "overlays/docker-host/modules/cidrs.sh": {
+        "tests/unit/test_bootstrap_additional_behavior.bats",
+        "tests/unit/test_functions.bats",
+        "tests/integration/test_full_run.bats",
+        "tests/integration/test_full_tunnel.bats",
+        "tests/integration/test_dry_run.bats",
+        "tests/integration/test_bootstrap_matrix.bats",
+    },
+    "overlays/docker-host/modules/detect.sh": {
+        "tests/unit/test_bootstrap_additional_behavior.bats",
+        "tests/unit/test_functions.bats",
+        "tests/integration/test_full_run.bats",
+        "tests/integration/test_full_tunnel.bats",
+        "tests/integration/test_dry_run.bats",
+        "tests/integration/test_bootstrap_matrix.bats",
+    },
+    "overlays/docker-host/modules/readiness.sh": {
+        "tests/unit/test_bootstrap_additional_behavior.bats",
+        "tests/unit/test_functions.bats",
+        "tests/integration/test_full_run.bats",
+        "tests/integration/test_full_tunnel.bats",
+        "tests/integration/test_dry_run.bats",
+        "tests/integration/test_bootstrap_matrix.bats",
+    },
+    "overlays/docker-host/modules/user_rules.sh": {
+        "tests/unit/test_bootstrap_additional_behavior.bats",
+        "tests/unit/test_functions.bats",
+        "tests/integration/test_full_run.bats",
+        "tests/integration/test_full_tunnel.bats",
+        "tests/integration/test_dry_run.bats",
+        "tests/integration/test_bootstrap_matrix.bats",
+    },
+    "overlays/docker-host/modules/daemon.sh": {
+        "tests/unit/test_bootstrap_additional_behavior.bats",
+        "tests/unit/test_functions.bats",
+        "tests/integration/test_full_run.bats",
+        "tests/integration/test_full_tunnel.bats",
+        "tests/integration/test_dry_run.bats",
+        "tests/integration/test_bootstrap_matrix.bats",
+    },
+    "overlays/docker-host/modules/cidr_sync_timer.sh": {
+        "tests/unit/test_bootstrap_additional_behavior.bats",
+        "tests/unit/test_functions.bats",
+        "tests/integration/test_full_run.bats",
+        "tests/integration/test_full_tunnel.bats",
+        "tests/integration/test_dry_run.bats",
+        "tests/integration/test_bootstrap_matrix.bats",
+    },
+    "overlays/docker-host/checks/_helpers.sh": {
+        "tests/unit/test_validate_additional_behavior.bats",
+        "tests/unit/test_validate_check_outcomes_robust.bats",
+        "tests/unit/test_validate_functions.bats",
+        "tests/integration/test_validate_script.bats",
+        "tests/integration/test_validate_negative_matrix.bats",
+        "tests/integration/test_full_run.bats",
+    },
+    "overlays/docker-host/checks/docker_user_check.sh": {
+        "tests/unit/test_validate_additional_behavior.bats",
+        "tests/unit/test_validate_check_outcomes_robust.bats",
+        "tests/unit/test_validate_functions.bats",
+        "tests/integration/test_validate_script.bats",
+        "tests/integration/test_validate_negative_matrix.bats",
+        "tests/integration/test_full_run.bats",
+    },
+    "overlays/docker-host/checks/docker_user_lifecycle_check.sh": {
+        "tests/unit/test_validate_additional_behavior.bats",
+        "tests/unit/test_validate_check_outcomes_robust.bats",
+        "tests/unit/test_validate_functions.bats",
+        "tests/integration/test_validate_script.bats",
+        "tests/integration/test_validate_negative_matrix.bats",
+        "tests/integration/test_full_run.bats",
+    },
+    "overlays/docker-host/checks/docker_ssh_cidr_sync_check.sh": {
+        "tests/unit/test_validate_additional_behavior.bats",
+        "tests/unit/test_validate_check_outcomes_robust.bats",
+        "tests/unit/test_validate_functions.bats",
+        "tests/integration/test_validate_script.bats",
+        "tests/integration/test_validate_negative_matrix.bats",
+        "tests/integration/test_full_run.bats",
+    },
+    "overlays/docker-host/checks/docker_daemon_check.sh": {
+        "tests/unit/test_validate_additional_behavior.bats",
+        "tests/unit/test_validate_check_outcomes_robust.bats",
+        "tests/unit/test_validate_functions.bats",
+        "tests/integration/test_validate_script.bats",
+        "tests/integration/test_validate_negative_matrix.bats",
+        "tests/integration/test_full_run.bats",
+    },
+    "overlays/docker-host/checks/docker_trust_boundary_check.sh": {
+        "tests/unit/test_validate_additional_behavior.bats",
+        "tests/unit/test_validate_check_outcomes_robust.bats",
+        "tests/unit/test_validate_functions.bats",
+        "tests/integration/test_validate_script.bats",
+        "tests/integration/test_validate_negative_matrix.bats",
+        "tests/integration/test_full_run.bats",
+    },
 }
 
 SOURCE_PATTERNS = {
@@ -103,6 +211,54 @@ SOURCE_PATTERNS = {
         r"\bsource_setup_script\b",
         r"\bsource_script\b",
         r"\bsource\b[^\n]*(?:COMMON_LIB|coolify-common\.sh|DEPLOY_SCRIPT|SETUP_SCRIPT|SCRIPT)",
+    ],
+    "overlays/docker-host/modules/cidrs.sh": [
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh)",
+    ],
+    "overlays/docker-host/modules/detect.sh": [
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh)",
+    ],
+    "overlays/docker-host/modules/readiness.sh": [
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh)",
+    ],
+    "overlays/docker-host/modules/user_rules.sh": [
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh)",
+    ],
+    "overlays/docker-host/modules/daemon.sh": [
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh)",
+    ],
+    "overlays/docker-host/modules/cidr_sync_timer.sh": [
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh)",
+    ],
+    "overlays/docker-host/checks/_helpers.sh": [
+        r"\bsource_validate_script\b",
+        r"\bsource\b[^\n]*(?:VALIDATE_SCRIPT|validate\.sh)",
+    ],
+    "overlays/docker-host/checks/docker_user_check.sh": [
+        r"\bsource_validate_script\b",
+        r"\bsource\b[^\n]*(?:VALIDATE_SCRIPT|validate\.sh)",
+    ],
+    "overlays/docker-host/checks/docker_user_lifecycle_check.sh": [
+        r"\bsource_validate_script\b",
+        r"\bsource\b[^\n]*(?:VALIDATE_SCRIPT|validate\.sh)",
+    ],
+    "overlays/docker-host/checks/docker_ssh_cidr_sync_check.sh": [
+        r"\bsource_validate_script\b",
+        r"\bsource\b[^\n]*(?:VALIDATE_SCRIPT|validate\.sh)",
+    ],
+    "overlays/docker-host/checks/docker_daemon_check.sh": [
+        r"\bsource_validate_script\b",
+        r"\bsource\b[^\n]*(?:VALIDATE_SCRIPT|validate\.sh)",
+    ],
+    "overlays/docker-host/checks/docker_trust_boundary_check.sh": [
+        r"\bsource_validate_script\b",
+        r"\bsource\b[^\n]*(?:VALIDATE_SCRIPT|validate\.sh)",
     ],
 }
 

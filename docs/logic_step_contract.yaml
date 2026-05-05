@@ -1,7 +1,7 @@
 version: 2
 entries:
 - id: LS-BOOT-001
-  script_path: base/bootstrap.sh
+  script_path: overlays/docker-host/modules/cidrs.sh
   function: add_docker_ssh_cidr
   criticality: utility
   behavior_test: 'tests/unit/test_functions.bats::add_docker_ssh_cidr: rejects invalid
@@ -102,7 +102,7 @@ entries:
   - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_coolify_binding_watchdog:
     dry-run emits planned timer install'
 - id: LS-BOOT-012
-  script_path: base/bootstrap.sh
+  script_path: overlays/docker-host/modules/daemon.sh
   function: configure_docker_daemon
   criticality: security
   behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_daemon:
@@ -111,7 +111,7 @@ entries:
   - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_daemon:
     skips when Docker absent'
 - id: LS-BOOT-013
-  script_path: base/bootstrap.sh
+  script_path: overlays/docker-host/modules/cidr_sync_timer.sh
   function: configure_docker_ssh_cidr_sync_timer
   criticality: security
   behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_cidr_sync_timer:
@@ -120,7 +120,7 @@ entries:
   - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_cidr_sync_timer:
     dry-run reports timer install'
 - id: LS-BOOT-014
-  script_path: base/bootstrap.sh
+  script_path: overlays/docker-host/modules/user_rules.sh
   function: configure_docker_user
   criticality: security
   behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_user:
@@ -201,7 +201,7 @@ entries:
   - 'tests/unit/test_functions.bats::configure_unattended_upgrades: writes disabled
     reboot policy when requested'
 - id: LS-BOOT-023
-  script_path: base/bootstrap.sh
+  script_path: overlays/docker-host/modules/detect.sh
   function: detect_docker
   criticality: utility
   behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::detect_docker:
@@ -248,7 +248,7 @@ entries:
   - 'tests/unit/test_bootstrap_additional_behavior.bats::disable_unused_services:
     dry-run logs service disable actions'
 - id: LS-BOOT-028
-  script_path: base/bootstrap.sh
+  script_path: overlays/docker-host/modules/cidrs.sh
   function: discover_docker_ssh_cidrs
   criticality: utility
   behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::discover_docker_ssh_cidrs:
@@ -303,7 +303,7 @@ entries:
     not available'
   - 'tests/unit/test_tailscale.bats::get_tailscale_ip: returns cached value if set'
 - id: LS-BOOT-034
-  script_path: base/bootstrap.sh
+  script_path: overlays/docker-host/modules/user_rules.sh
   function: install_docker_user_assets
   criticality: utility
   behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::install_docker_user_assets:
@@ -661,7 +661,7 @@ entries:
   - 'tests/unit/test_validate_check_outcomes_robust.bats::disabled_services_check:
     fails when rpcbind service is enabled'
 - id: LS-VAL-012
-  script_path: base/validate.sh
+  script_path: overlays/docker-host/checks/docker_daemon_check.sh
   function: docker_daemon_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_daemon_check:
@@ -672,7 +672,7 @@ entries:
   - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_daemon_check: fails
     when Docker is installed but daemon.json is missing'
 - id: LS-VAL-013
-  script_path: base/validate.sh
+  script_path: overlays/docker-host/checks/docker_trust_boundary_check.sh
   function: docker_trust_boundary_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_trust_boundary_check:
@@ -683,7 +683,7 @@ entries:
   - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_trust_boundary_check:
     records INFO when docker socket is absent'
 - id: LS-VAL-014
-  script_path: base/validate.sh
+  script_path: overlays/docker-host/checks/docker_user_check.sh
   function: docker_user_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_user_check:
@@ -698,7 +698,7 @@ entries:
   - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_user_check: fails
     in tunnel mode when wan-web rule exists'
 - id: LS-VAL-015
-  script_path: base/validate.sh
+  script_path: overlays/docker-host/checks/docker_user_lifecycle_check.sh
   function: docker_user_lifecycle_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_user_lifecycle_check:
@@ -709,7 +709,7 @@ entries:
   - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_user_lifecycle_check:
     fails when docker-user-hardening unit is missing'
 - id: LS-VAL-015A
-  script_path: base/validate.sh
+  script_path: overlays/docker-host/checks/_helpers.sh
   function: docker_hardening_expected
   criticality: utility
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_hardening_expected:
@@ -769,7 +769,7 @@ entries:
   - 'tests/unit/test_validate_additional_behavior.bats::listening_ports_info: records
     discovered listening ports'
 - id: LS-VAL-021
-  script_path: base/validate.sh
+  script_path: overlays/docker-host/checks/_helpers.sh
   function: load_docker_ssh_cidrs
   criticality: utility
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::load_docker_ssh_cidrs:
@@ -1672,7 +1672,7 @@ entries:
   - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
     values'
 - id: LS-VAL-035
-  script_path: base/validate.sh
+  script_path: overlays/docker-host/checks/docker_ssh_cidr_sync_check.sh
   function: docker_ssh_cidr_sync_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_ssh_cidr_sync_check:
@@ -2304,42 +2304,42 @@ entries:
   checks:
   - "tests/unit/test_bootstrap_additional_behavior.bats::emit_tailscale_result_sentinel: prints machine-readable sentinel when IPv4 exists"
 - id: LS-BOOT-090
-  script_path: base/bootstrap.sh
+  script_path: overlays/docker-host/modules/readiness.sh
   function: docker_daemon_ready
   criticality: utility
   behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
   checks:
   - "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
 - id: LS-BOOT-091
-  script_path: base/bootstrap.sh
+  script_path: overlays/docker-host/modules/readiness.sh
   function: wait_for_systemd_unit_success
   criticality: utility
   behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
   checks:
   - "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
 - id: LS-BOOT-092
-  script_path: base/bootstrap.sh
+  script_path: overlays/docker-host/modules/readiness.sh
   function: wait_for_docker_daemon_ready
   criticality: utility
   behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
   checks:
   - "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
 - id: LS-BOOT-093
-  script_path: base/bootstrap.sh
+  script_path: overlays/docker-host/modules/readiness.sh
   function: docker_user_rules_present
   criticality: security
   behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
   checks:
   - "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
 - id: LS-BOOT-094
-  script_path: base/bootstrap.sh
+  script_path: overlays/docker-host/modules/readiness.sh
   function: ensure_docker_user_service_applied
   criticality: security
   behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
   checks:
   - "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
 - id: LS-BOOT-095
-  script_path: base/bootstrap.sh
+  script_path: overlays/docker-host/modules/readiness.sh
   function: wait_for_fail2ban_sshd_jail
   criticality: security
   behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::wait_for_fail2ban_sshd_jail: returns success after jail becomes queryable"
