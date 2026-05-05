@@ -15,9 +15,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_VERSION="1.2.8"
 SCRIPT_NAME="$(basename "$0")"
 
-# shellcheck source=lib/tailscale.sh
+# shellcheck source=../lib/tailscale.sh
 # shellcheck disable=SC1091
-source "${SCRIPT_DIR}/lib/tailscale.sh"
+source "${SCRIPT_DIR}/../lib/tailscale.sh"
 
 LOG_FILE="/var/log/bootstrap-hardening.log"
 REPORT_FILE="/var/log/bootstrap-hardening-report.json"
@@ -122,7 +122,7 @@ usage() {
 Ubuntu Coolify bootstrap hardening script.
 
 Usage:
-  bootstrap_hardening.sh --admin-user <name> --admin-pubkey "<ssh key>" [options]
+  base/bootstrap.sh --admin-user <name> --admin-pubkey "<ssh key>" [options]
 
 Required:
   --admin-user <name>           Admin user to create/ensure and allow via SSH
@@ -1968,7 +1968,7 @@ configure_password_policy() {
 
   if ! is_true "${DRY_RUN}"; then
     cat > "${pwquality}" <<'PWEOF'
-# Managed by bootstrap_hardening.sh
+# Managed by base/bootstrap.sh
 minlen = 12
 minclass = 3
 dcredit = -1
@@ -3268,7 +3268,7 @@ generate_report() {
 
 configure_hardening_validation_timer() {
   if is_true "${DRY_RUN}"; then
-    log "DRY-RUN: would install hardening-validate.timer (daily validate_hardening.sh run)."
+    log "DRY-RUN: would install hardening-validate.timer (daily base/validate.sh run)."
     return 0
   fi
 
@@ -3290,14 +3290,14 @@ configure_hardening_validation_timer() {
   # Final fallback: use directory of script invocation
   script_dir="${script_dir:-$(pwd)}"
 
-  validate_src="${script_dir}/validate_hardening.sh"
+  validate_src="${script_dir}/validate.sh"
   validate_dest="/usr/local/sbin/validate-hardening"
 
   if [[ -f "${validate_src}" ]]; then
     install -m 0750 -o root -g root "${validate_src}" "${validate_dest}"
     log "Installed ${validate_src} → ${validate_dest}"
   else
-    warn "validate_hardening.sh not found at ${validate_src}; skipping timer install."
+    warn "validate.sh not found at ${validate_src}; skipping timer install."
     return 0
   fi
 
@@ -3325,7 +3325,7 @@ TIMEREOF
 
   run systemctl daemon-reload
   run systemctl enable --now hardening-validate.timer
-  log "hardening-validate.timer enabled (runs validate_hardening.sh daily)."
+  log "hardening-validate.timer enabled (runs base/validate.sh daily)."
 }
 
 configure_docker_ssh_cidr_sync_timer() {

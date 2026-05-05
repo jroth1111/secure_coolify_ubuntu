@@ -368,7 +368,7 @@ validate_inputs() {
   esac
 
   # Verify companion scripts exist before prompting to proceed
-  local scripts=(bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh)
+  local scripts=(base/bootstrap.sh base/validate.sh configure_coolify_binding.sh)
   for script in "${scripts[@]}"; do
     [[ -f "${SCRIPT_DIR}/${script}" ]] || die "Required script not found: ${SCRIPT_DIR}/${script}"
   done
@@ -432,16 +432,21 @@ ssh_admin_sudo() {
 # Called at start of phase 2 so all phases always use the latest local scripts,
 # even when phase 1 (root SCP upload) was skipped via --ts-ip.
 sync_companion_scripts() {
-  local scripts=(bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh)
+  local scripts=(base/bootstrap.sh base/validate.sh configure_coolify_binding.sh)
   log "Syncing companion scripts to server /root/..."
   for script in "${scripts[@]}"; do
-    local path="${SCRIPT_DIR}/${script}"
-    [[ -f "${path}" ]] || die "Script not found: ${path}"
-    scp_admin "${path}" "${ADMIN_USER}@${TS_IP}:/tmp/${script}" \
+    local local_path="${SCRIPT_DIR}/${script}"
+    [[ -f "${local_path}" ]] || die "Script not found: ${local_path}"
+    local script_bn script_dn remote_dir
+    script_bn="$(basename "${script}")"
+    script_dn="$(dirname "${script}")"
+    [[ "${script_dn}" == "." ]] && remote_dir="/root" || remote_dir="/root/${script_dn}"
+    ssh_admin_sudo "install -d -m 0755 -o root -g root '${remote_dir}'" \
+      || die "Failed to create ${remote_dir} on server"
+    scp_admin "${local_path}" "${ADMIN_USER}@${TS_IP}:/tmp/${script_bn}" \
       || die "Failed to upload ${script}"
-    # Use bash -c so both mv and chmod run under sudo (&&-chain only elevates the first command)
-    ssh_admin_sudo "bash -c 'mv /tmp/${script} /root/${script} && chmod 755 /root/${script}'" \
-      || die "Failed to install ${script} to /root/"
+    ssh_admin_sudo "bash -c 'mv /tmp/${script_bn} ${remote_dir}/${script_bn} && chmod 755 ${remote_dir}/${script_bn}'" \
+      || die "Failed to install ${script} to ${remote_dir}/"
   done
 
   local lib_files=(lib/tailscale.sh)
@@ -539,17 +544,24 @@ phase1_upload_harden() {
 set -Eeuo pipefail
 cleanup() { rm -f -- ${REMOTE_DEPLOY_ENV_PATH@Q}; }
 trap cleanup EXIT
-/root/bootstrap_hardening.sh --env-file ${REMOTE_DEPLOY_ENV_PATH@Q} --install-tailscale --force
+/root/base/bootstrap.sh --env-file ${REMOTE_DEPLOY_ENV_PATH@Q} --install-tailscale --force
 EOF
 )"
   printf -v bootstrap_cmd 'bash -lc %q' "${bootstrap_cmd_script}"
   local bootstrap_transport="root"
 
   # Upload scripts
-  local scripts=(bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh)
+  local scripts=(base/bootstrap.sh base/validate.sh configure_coolify_binding.sh)
   for script in "${scripts[@]}"; do
     local path="${SCRIPT_DIR}/${script}"
     [[ -f "${path}" ]] || die "Script not found: ${path}"
+    local script_dn
+    script_dn="$(dirname "${script}")"
+    if [[ "${script_dn}" != "." ]]; then
+      retry_root_transport "Creating /root/${script_dn} on ${SERVER_IP}" \
+        ssh_root "install -d -m 0755 -o root -g root /root/${script_dn}" \
+        || die "Failed to create /root/${script_dn} on ${SERVER_IP}"
+    fi
     retry_root_transport "Uploading ${script} to ${SERVER_IP}" \
       scp_root "${path}" "root@${SERVER_IP}:/root/${script}" \
       || die "Failed to upload ${script} to ${SERVER_IP}"
@@ -581,7 +593,7 @@ EOF
   # even though root password auth is otherwise valid. Re-probe the transport here before
   # placing secrets on the server so a failing transport does not strand deploy.env remotely.
   if ! retry_root_transport "Pre-bootstrap root SSH probe to ${SERVER_IP}" ssh_root 'true'; then
-    die "Root SSH probe failed after companion upload burst; refusing to upload deploy.env or start bootstrap_hardening.sh."
+    die "Root SSH probe failed after companion upload burst; refusing to upload deploy.env or start base/bootstrap.sh."
   fi
   pass "Root SSH probe succeeded before deploy env upload"
 
@@ -931,10 +943,10 @@ phase2_gates() {
   wait_for_gate_c_timesync_remote 12 5 || true
 
   # Gate C: Validation passes
-  log "Gate C: Running validate_hardening.sh..."
+  log "Gate C: Running base/validate.sh..."
   local validate_json gate_c_fail attempt max_attempts=6 delay=10
   for (( attempt=1; attempt<=max_attempts; attempt++ )); do
-    validate_json="$(ssh_admin_sudo '/root/validate_hardening.sh --json --gate-c' 2>/dev/null)" || true
+    validate_json="$(ssh_admin_sudo '/root/base/validate.sh --json --gate-c' 2>/dev/null)" || true
     gate_c_fail="$(jq -r '.fail // 999' 2>/dev/null <<< "${validate_json:-}" || echo "999")"
     if [[ "${gate_c_fail}" == "0" ]]; then
       report_validation_result "Gate C" "${validate_json}" \
@@ -1100,13 +1112,13 @@ EOF
 
 # ── Phase 5: Verification ─────────────────────────────────────────────────
 
-phase5_fetch_validate_json() { ssh_admin_sudo '/root/validate_hardening.sh --json'; }
+phase5_fetch_validate_json() { ssh_admin_sudo '/root/base/validate.sh --json'; }
 phase5_noop_operator_confirm() { :; }
 
 phase5_verify() {
   # Contract anchors kept for docs/consistency checks:
   # Gate E: Checking dashboard accessibility...
-  # Running final validate_hardening.sh...
+  # Running final base/validate.sh...
   coolify_phase5_verify_shared phase5_fetch_validate_json external phase5_noop_operator_confirm
 }
 

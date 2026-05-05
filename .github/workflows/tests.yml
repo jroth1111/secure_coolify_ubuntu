@@ -35,16 +35,16 @@ jobs:
 
       - name: Bash syntax check
         run: |
-          bash -n bootstrap_hardening.sh
-          bash -n validate_hardening.sh
+          bash -n base/bootstrap.sh
+          bash -n base/validate.sh
           bash -n lib/common.sh
           bash -n lib/tailscale.sh
           bash -n lib/coolify-common.sh
 
       - name: Shellcheck
         run: |
-          shellcheck bootstrap_hardening.sh
-          shellcheck validate_hardening.sh
+          shellcheck base/bootstrap.sh
+          shellcheck base/validate.sh
           shellcheck lib/common.sh
           shellcheck lib/tailscale.sh
           shellcheck lib/coolify-common.sh

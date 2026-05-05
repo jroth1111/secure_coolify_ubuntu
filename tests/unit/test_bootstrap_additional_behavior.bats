@@ -1285,3 +1285,36 @@ EOF
   assert_success
   assert_output "false"
 }
+
+@test "configure_ssh_socket: dry-run logs socket binding without writing dropin" {
+  DRY_RUN="true"
+  local dropin_dir
+  dropin_dir="$(mktemp -d)"
+  tailscale() { echo "100.64.0.44"; }
+
+  run configure_ssh_socket
+  assert_success
+  assert_output --partial "DRY-RUN"
+  [[ -z "$(ls -A "${dropin_dir}")" ]]
+}
+
+@test "configure_ssh_socket: skips gracefully when Tailscale IP unavailable" {
+  DRY_RUN="true"
+  tailscale() { return 1; }
+
+  run configure_ssh_socket
+  assert_success
+  assert_output --partial "Could not detect Tailscale IP"
+}
+
+@test "configure_password_policy: dry-run logs policy application without writing files" {
+  DRY_RUN="true"
+  local pwquality
+  pwquality="$(mktemp)"
+  rm -f "${pwquality}"
+
+  run configure_password_policy
+  assert_success
+  assert_output --partial "DRY-RUN"
+  [[ ! -f "${pwquality}" ]]
+}

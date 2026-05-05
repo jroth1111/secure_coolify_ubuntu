@@ -47,7 +47,7 @@ EOF
 
     scp_root() { :; }
     ssh_root() {
-      if [[ "$1" == *"/root/bootstrap_hardening.sh"* ]]; then
+      if [[ "$1" == *"/root/base/bootstrap.sh"* ]]; then
         echo "progress"
         echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.25"
       fi
@@ -88,7 +88,7 @@ EOF
     scp_root() { :; }
     ssh_root() {
       printf "%s\n" "$1" >> "${cmd_file}"
-      if [[ "$1" == *"/root/bootstrap_hardening.sh"* && "$1" == *"/root/deploy.env"* && "$1" == *"--install-tailscale --force"* ]]; then
+      if [[ "$1" == *"/root/base/bootstrap.sh"* && "$1" == *"/root/deploy.env"* && "$1" == *"--install-tailscale --force"* ]]; then
         echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.25"
       fi
       return 0
@@ -131,7 +131,7 @@ EOF
       if [[ "$1" == "docker version >/dev/null 2>&1" ]]; then
         return 1
       fi
-      if [[ "$1" == *"validate_hardening.sh --json"* ]]; then
+      if [[ "$1" == *"base/validate.sh --json"* ]]; then
         echo "{\"fail\":0,\"checks\":[]}"
       fi
       return 0
@@ -201,7 +201,7 @@ EOF
       if [[ "$1" == "docker version >/dev/null 2>&1" ]]; then
         return 1
       fi
-      if [[ "$1" == *"validate_hardening.sh --json"* ]]; then
+      if [[ "$1" == *"base/validate.sh --json"* ]]; then
         echo "{\"fail\":0,\"checks\":[]}"
         return 0
       fi
@@ -332,7 +332,7 @@ EOF
       if [[ "$1" == "docker version >/dev/null 2>&1" ]]; then
         return 1
       fi
-      if [[ "$1" == *"validate_hardening.sh --json"* ]]; then
+      if [[ "$1" == *"base/validate.sh --json"* ]]; then
         printf "seen\n" > "${validate_seen_file}"
         echo "{\"fail\":0,\"checks\":[]}"
         return 0
@@ -388,7 +388,7 @@ EOF
         fi
         return 0
       fi
-      if [[ "$1" == *"validate_hardening.sh --json"* ]]; then
+      if [[ "$1" == *"base/validate.sh --json"* ]]; then
         validate_calls="$(cat "${validate_file}")"
         validate_calls=$((validate_calls + 1))
         echo "${validate_calls}" > "${validate_file}"
@@ -550,7 +550,7 @@ EOF
       return 0
     }
     ssh_admin_sudo() {
-      if [[ "$1" == *"validate_hardening.sh --json"* ]]; then
+      if [[ "$1" == *"base/validate.sh --json"* ]]; then
         printf "seen\n" > "${validate_seen_file}"
         echo "{\"fail\":0,\"checks\":[]}"
       fi

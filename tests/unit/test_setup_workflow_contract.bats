@@ -73,7 +73,8 @@ load '../helpers'
     SERVER_TIMEZONE="UTC"
     AUTO_YES="true"
     PREFLIGHT_ONLY="false"
-    for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base"
+    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     SCRIPT_DIR="${tmpdir}"
@@ -124,11 +125,12 @@ EOF
     SERVER_TIMEZONE="UTC"
     TAILSCALE_DIRECT_WAN="false"
 
-    cat > "${tmpdir}/bootstrap_hardening.sh" <<'\''EOF'\''
+    mkdir -p "${tmpdir}/base"
+    cat > "${tmpdir}/base/bootstrap.sh" <<'\''EOF'\''
 #!/usr/bin/env bash
 echo "bootstrap stub"
 EOF
-    chmod +x "${tmpdir}/bootstrap_hardening.sh"
+    chmod +x "${tmpdir}/base/bootstrap.sh"
 
     tailscale() { echo "100.64.0.44"; }
 
@@ -144,11 +146,12 @@ EOF
     source "'"${SETUP_SCRIPT}"'"
     tmpdir="$(mktemp -d)"
     SCRIPT_DIR="${tmpdir}"
-    cat > "${tmpdir}/validate_hardening.sh" <<'\''EOF'\''
+    mkdir -p "${tmpdir}/base"
+    cat > "${tmpdir}/base/validate.sh" <<'\''EOF'\''
 #!/usr/bin/env bash
 echo "{\"fail\":0,\"checks\":[]}"
 EOF
-    chmod +x "${tmpdir}/validate_hardening.sh"
+    chmod +x "${tmpdir}/base/validate.sh"
     TS_IP="100.64.0.25"
     ADMIN_USER="coolifyadmin"
 
@@ -190,11 +193,12 @@ EOF
     source "'"${SETUP_SCRIPT}"'"
     tmpdir="$(mktemp -d)"
     SCRIPT_DIR="${tmpdir}"
-    cat > "${tmpdir}/validate_hardening.sh" <<'\''EOF'\''
+    mkdir -p "${tmpdir}/base"
+    cat > "${tmpdir}/base/validate.sh" <<'\''EOF'\''
 #!/usr/bin/env bash
 echo "{\"fail\":0,\"checks\":[]}"
 EOF
-    chmod +x "${tmpdir}/validate_hardening.sh"
+    chmod +x "${tmpdir}/base/validate.sh"
     TS_IP="100.64.0.25"
     ADMIN_USER="coolifyadmin"
     pause_for_operator() { :; }
@@ -212,12 +216,13 @@ EOF
     source "'"${SETUP_SCRIPT}"'"
     tmpdir="$(mktemp -d)"
     SCRIPT_DIR="${tmpdir}"
-    cat > "${tmpdir}/validate_hardening.sh" <<EOF
+    mkdir -p "${tmpdir}/base"
+    cat > "${tmpdir}/base/validate.sh" <<EOF
 #!/usr/bin/env bash
 touch "${tmpdir}/validate_called"
 echo "{\"fail\":0,\"checks\":[]}"
 EOF
-    chmod +x "${tmpdir}/validate_hardening.sh"
+    chmod +x "${tmpdir}/base/validate.sh"
     TS_IP="100.64.0.25"
     ADMIN_USER="coolifyadmin"
     pause_for_operator() { :; }
@@ -244,12 +249,13 @@ EOF
     source "'"${SETUP_SCRIPT}"'"
     tmpdir="$(mktemp -d)"
     SCRIPT_DIR="${tmpdir}"
-    cat > "${tmpdir}/validate_hardening.sh" <<EOF
+    mkdir -p "${tmpdir}/base"
+    cat > "${tmpdir}/base/validate.sh" <<EOF
 #!/usr/bin/env bash
 touch "${tmpdir}/validate_called"
 echo "{\"fail\":0,\"checks\":[]}"
 EOF
-    chmod +x "${tmpdir}/validate_hardening.sh"
+    chmod +x "${tmpdir}/base/validate.sh"
     TS_IP="100.64.0.25"
     ADMIN_USER="coolifyadmin"
     pause_for_operator() { :; }
@@ -300,7 +306,8 @@ EOF
     source "'"${SETUP_SCRIPT}"'"
     tmpdir="$(mktemp -d)"
     SCRIPT_DIR="${tmpdir}"
-    for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base"
+    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     ssh-keygen -q -t ed25519 -N "" -f "${tmpdir}/id_ed25519" >/dev/null
@@ -438,11 +445,12 @@ EOF
     source "'"${SETUP_SCRIPT}"'"
     tmpdir="$(mktemp -d)"
     SCRIPT_DIR="${tmpdir}"
-    cat > "${tmpdir}/validate_hardening.sh" <<'\''EOF'\''
+    mkdir -p "${tmpdir}/base"
+    cat > "${tmpdir}/base/validate.sh" <<'\''EOF'\''
 #!/usr/bin/env bash
 echo "{\"fail\":0,\"checks\":[]}"
 EOF
-    chmod +x "${tmpdir}/validate_hardening.sh"
+    chmod +x "${tmpdir}/base/validate.sh"
     DEPLOY_MODE="tunnel"
     TS_IP="100.64.0.25"
     SERVER_IP="203.0.113.10"
@@ -501,12 +509,13 @@ EOF
     source "'"${SETUP_SCRIPT}"'"
     tmpdir="$(mktemp -d)"
     SCRIPT_DIR="${tmpdir}"
-    cat > "${tmpdir}/validate_hardening.sh" <<EOF
+    mkdir -p "${tmpdir}/base"
+    cat > "${tmpdir}/base/validate.sh" <<EOF
 #!/usr/bin/env bash
 touch "${tmpdir}/validate_called"
 echo "{\"fail\":0,\"checks\":[]}"
 EOF
-    chmod +x "${tmpdir}/validate_hardening.sh"
+    chmod +x "${tmpdir}/base/validate.sh"
     DEPLOY_MODE="tunnel"
     TS_IP="100.64.0.25"
     SERVER_IP="203.0.113.10"

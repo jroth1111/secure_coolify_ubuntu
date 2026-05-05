@@ -2,8 +2,8 @@
 
 # Derive PROJECT_ROOT from this helpers file's own location (tests/helpers.bash → project root)
 PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-SCRIPT="${PROJECT_ROOT}/bootstrap_hardening.sh"
-VALIDATE_SCRIPT="${PROJECT_ROOT}/validate_hardening.sh"
+SCRIPT="${PROJECT_ROOT}/base/bootstrap.sh"
+VALIDATE_SCRIPT="${PROJECT_ROOT}/base/validate.sh"
 DEPLOY_SCRIPT="${PROJECT_ROOT}/deploy.sh"
 SETUP_SCRIPT="${PROJECT_ROOT}/setup.sh"
 COMMON_LIB="${PROJECT_ROOT}/lib/coolify-common.sh"

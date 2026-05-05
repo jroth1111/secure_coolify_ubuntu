@@ -10,8 +10,8 @@ import re
 from pathlib import Path
 
 SCRIPT_TARGETS = (
-    "bootstrap_hardening.sh",
-    "validate_hardening.sh",
+    "base/bootstrap.sh",
+    "base/validate.sh",
     "deploy.sh",
     "setup.sh",
     "lib/common.sh",
@@ -20,7 +20,7 @@ SCRIPT_TARGETS = (
 )
 
 ALLOWED_TEST_FILES = {
-    "bootstrap_hardening.sh": {
+    "base/bootstrap.sh": {
         "tests/unit/test_bootstrap_additional_behavior.bats",
         "tests/unit/test_functions.bats",
         "tests/unit/test_admin.bats",
@@ -32,7 +32,7 @@ ALLOWED_TEST_FILES = {
         "tests/integration/test_validate_script.bats",
         "tests/integration/test_bootstrap_matrix.bats",
     },
-    "validate_hardening.sh": {
+    "base/validate.sh": {
         "tests/unit/test_validate_additional_behavior.bats",
         "tests/unit/test_validate_check_outcomes_robust.bats",
         "tests/unit/test_validate_functions.bats",
@@ -70,13 +70,13 @@ ALLOWED_TEST_FILES = {
 }
 
 SOURCE_PATTERNS = {
-    "bootstrap_hardening.sh": [
+    "base/bootstrap.sh": [
         r"\bsource_script\b",
-        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap_hardening\.sh)",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh)",
     ],
-    "validate_hardening.sh": [
+    "base/validate.sh": [
         r"\bsource_validate_script\b",
-        r"\bsource\b[^\n]*(?:VALIDATE_SCRIPT|validate_hardening\.sh)",
+        r"\bsource\b[^\n]*(?:VALIDATE_SCRIPT|validate\.sh)",
     ],
     "deploy.sh": [
         r"\bsource_deploy_script\b",
@@ -95,7 +95,7 @@ SOURCE_PATTERNS = {
     ],
     "lib/tailscale.sh": [
         r"\bsource_script\b",
-        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap_hardening\.sh|tailscale\.sh)",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh|tailscale\.sh)",
     ],
     "lib/coolify-common.sh": [
         r"\bsource_common_lib\b",
@@ -193,7 +193,7 @@ def run_command_token(line: str) -> str | None:
 
 
 def calls_function(body: str, fn: str, script_path: str) -> bool:
-    if script_path == "bootstrap_hardening.sh" and fn == "run":
+    if script_path == "base/bootstrap.sh" and fn == "run":
         return bool(re.search(r"\bscript_run\b", body))
 
     for raw in body.splitlines():

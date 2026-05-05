@@ -225,7 +225,7 @@ validate_inputs() {
   esac
 
   # Verify scripts are present in current directory
-  local scripts=(bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh)
+  local scripts=(base/bootstrap.sh base/validate.sh configure_coolify_binding.sh)
   for script in "${scripts[@]}"; do
     [[ -f "${SCRIPT_DIR}/${script}" ]] || die "Required script not found: ${SCRIPT_DIR}/${script}"
   done
@@ -321,13 +321,13 @@ phase1_harden() {
   pass "Environment file written"
 
   # Run hardening
-  log "Running bootstrap_hardening.sh (this may take a few minutes)..."
+  log "Running base/bootstrap.sh (this may take a few minutes)..."
   if ! run_with_heartbeat \
-    "bootstrap_hardening.sh (local server)" \
-    "${SCRIPT_DIR}/bootstrap_hardening.sh" --env-file "${deploy_env_file}" --install-tailscale --force; then
-    warn "bootstrap_hardening.sh failed. Last 50 lines from /var/log/bootstrap-hardening.log:"
+    "base/bootstrap.sh (local server)" \
+    "${SCRIPT_DIR}/base/bootstrap.sh" --env-file "${deploy_env_file}" --install-tailscale --force; then
+    warn "base/bootstrap.sh failed. Last 50 lines from /var/log/bootstrap-hardening.log:"
     tail -n 50 /var/log/bootstrap-hardening.log 2>/dev/null || true
-    die "bootstrap_hardening.sh failed. Check: /var/log/bootstrap-hardening.log"
+    die "base/bootstrap.sh failed. Check: /var/log/bootstrap-hardening.log"
   fi
   pass "Hardening completed"
 
@@ -407,10 +407,10 @@ phase2_gates() {
     warn "Gate C pre-check: timesync still not synchronized after $((wait_max_attempts * wait_delay))s; continuing to validator retries."
   fi
 
-  log "Gate C: Running validate_hardening.sh..."
+  log "Gate C: Running base/validate.sh..."
   local validate_json gate_c_fail attempt max_attempts=6 delay=10
   for (( attempt=1; attempt<=max_attempts; attempt++ )); do
-    validate_json="$("${SCRIPT_DIR}/validate_hardening.sh" --json --gate-c 2>/dev/null)" || true
+    validate_json="$("${SCRIPT_DIR}/base/validate.sh" --json --gate-c 2>/dev/null)" || true
     gate_c_fail="$(jq -r '.fail // 999' 2>/dev/null <<< "${validate_json:-}" || echo "999")"
     if [[ "${gate_c_fail}" == "0" ]]; then
       report_validation_result "Gate C" "${validate_json}" \
@@ -545,12 +545,12 @@ phase4_binding_dns() {
 
 # ── Phase 5: Verification ─────────────────────────────────────────────────
 
-phase5_fetch_validate_json() { "${SCRIPT_DIR}/validate_hardening.sh" --json; }
+phase5_fetch_validate_json() { "${SCRIPT_DIR}/base/validate.sh" --json; }
 
 phase5_verify() {
   # Contract anchors kept for docs/consistency checks:
   # Gate E: Operator verifies from laptop
-  # Running final validate_hardening.sh...
+  # Running final base/validate.sh...
   # setup.sh runs on the server itself; public-IP reachability checks are confirmed
   # from an operator laptop in coolify_phase5_verify_shared (public_probe_mode=operator).
   coolify_phase5_verify_shared phase5_fetch_validate_json operator pause_for_operator

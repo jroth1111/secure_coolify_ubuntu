@@ -27,8 +27,8 @@ repo = Path(sys.argv[1])
 contract_path = Path(sys.argv[2])
 
 SCRIPT_TARGETS = (
-    "bootstrap_hardening.sh",
-    "validate_hardening.sh",
+    "base/bootstrap.sh",
+    "base/validate.sh",
     "deploy.sh",
     "setup.sh",
     "lib/common.sh",
@@ -73,13 +73,13 @@ ROBUST_VALIDATE_CHECK_FUNCTIONS = {
 }
 
 SOURCE_PATTERNS = {
-    "bootstrap_hardening.sh": [
+    "base/bootstrap.sh": [
         r"\bsource_script\b",
-        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap_hardening\.sh)",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh)",
     ],
-    "validate_hardening.sh": [
+    "base/validate.sh": [
         r"\bsource_validate_script\b",
-        r"\bsource\b[^\n]*(?:VALIDATE_SCRIPT|validate_hardening\.sh)",
+        r"\bsource\b[^\n]*(?:VALIDATE_SCRIPT|validate\.sh)",
     ],
     "deploy.sh": [
         r"\bsource_deploy_script\b",
@@ -98,7 +98,7 @@ SOURCE_PATTERNS = {
     ],
     "lib/tailscale.sh": [
         r"\bsource_script\b",
-        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap_hardening\.sh|tailscale\.sh)",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh|tailscale\.sh)",
     ],
     "lib/coolify-common.sh": [
         r"\bsource_common_lib\b",
@@ -205,8 +205,8 @@ def run_command_token(line: str) -> str | None:
 
 
 def calls_function(body: str, fn: str, script_path: str) -> bool:
-    # bootstrap_hardening.sh defines run(); tests call it as script_run via helpers.
-    if script_path == "bootstrap_hardening.sh" and fn == "run":
+    # base/bootstrap.sh defines run(); tests call it as script_run via helpers.
+    if script_path == "base/bootstrap.sh" and fn == "run":
         return bool(re.search(r"\bscript_run\b", body))
 
     for raw in body.splitlines():

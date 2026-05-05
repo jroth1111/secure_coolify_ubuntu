@@ -118,7 +118,7 @@ load '../helpers'
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"
     ssh_admin_sudo() {
-      [[ "$1" == "/root/validate_hardening.sh --json" ]]
+      [[ "$1" == "/root/base/validate.sh --json" ]]
       echo "{\"fail\":0,\"checks\":[]}"
     }
     phase5_fetch_validate_json
@@ -170,11 +170,12 @@ load '../helpers'
     source "'"${SETUP_SCRIPT}"'"
     tmpdir="$(mktemp -d)"
     SCRIPT_DIR="${tmpdir}"
-    cat > "${tmpdir}/validate_hardening.sh" <<EOF
+    mkdir -p "${tmpdir}/base"
+    cat > "${tmpdir}/base/validate.sh" <<EOF
 #!/usr/bin/env bash
 echo "{\"fail\":0,\"checks\":[]}"
 EOF
-    chmod +x "${tmpdir}/validate_hardening.sh"
+    chmod +x "${tmpdir}/base/validate.sh"
     phase5_fetch_validate_json
   '
   assert_success
@@ -323,8 +324,8 @@ EOF
     sync_companion_scripts
     # 3 scripts + 1 lib file = 4 scp_admin invocations
     [[ "${upload_count}" -eq 4 ]]
-    # 3 script mv+chmod + 1 mkdir /root/lib + 1 lib mv+chmod = 5 ssh_admin_sudo invocations
-    [[ "${install_count}" -eq 5 ]]
+    # 3 script mkdir + 3 script mv+chmod + 1 mkdir /root/lib + 1 lib mv+chmod = 8 ssh_admin_sudo invocations
+    [[ "${install_count}" -eq 8 ]]
   '
   assert_success
 }
@@ -372,7 +373,8 @@ EOF
     counter_file="${tmpdir}/bootstrap-attempts"
     echo 0 > "${counter_file}"
     SCRIPT_DIR="${tmpdir}"
-    for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base"
+    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     mkdir -p "${tmpdir}/lib"
@@ -396,7 +398,7 @@ EOF
         echo "${count}" > "${probe_counter}"
         return 0
       fi
-      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
+      if [[ "$1" == *"/root/base/bootstrap.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
         attempt="$(cat "${counter_file}")"
         attempt=$((attempt + 1))
         echo "${attempt}" > "${counter_file}"
@@ -425,7 +427,8 @@ EOF
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"${tmpdir}\"" EXIT
     SCRIPT_DIR="${tmpdir}"
-    for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base"
+    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     mkdir -p "${tmpdir}/lib"
@@ -453,7 +456,7 @@ EOF
       return 0
     }
     ssh_root() {
-      if [[ "$1" == "chmod +x /root/bootstrap_hardening.sh" ]]; then
+      if [[ "$1" == "chmod +x /root/base/bootstrap.sh" ]]; then
         count="$(cat "${chmod_counter}")"
         count=$((count + 1))
         echo "${count}" > "${chmod_counter}"
@@ -465,7 +468,7 @@ EOF
         count=$((count + 1))
         echo "${count}" > "${chmod_counter}"
       fi
-      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
+      if [[ "$1" == *"/root/base/bootstrap.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
         echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.10"
       fi
       return 0
@@ -487,7 +490,8 @@ EOF
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"${tmpdir}\"" EXIT
     SCRIPT_DIR="${tmpdir}"
-    for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base"
+    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     mkdir -p "${tmpdir}/lib"
@@ -511,7 +515,7 @@ EOF
       if [[ "$1" == "true" || "$1" == chmod\ +x\ /root/* || "$1" == "chmod 600 /root/deploy.env" ]]; then
         return 0
       fi
-      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
+      if [[ "$1" == *"/root/base/bootstrap.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
         count="$(cat "${bootstrap_counter}")"
         count=$((count + 1))
         echo "${count}" > "${bootstrap_counter}"
@@ -542,7 +546,8 @@ EOF
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"${tmpdir}\"" EXIT
     SCRIPT_DIR="${tmpdir}"
-    for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base"
+    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     mkdir -p "${tmpdir}/lib"
@@ -570,7 +575,7 @@ EOF
       if [[ "$1" == "true" || "$1" == chmod\ +x\ /root/* || "$1" == "chmod 600 /root/deploy.env" ]]; then
         return 0
       fi
-      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
+      if [[ "$1" == *"/root/base/bootstrap.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
         count="$(cat "${bootstrap_counter}")"
         count=$((count + 1))
         echo "${count}" > "${bootstrap_counter}"
@@ -590,7 +595,7 @@ EOF
       return 1
     }
     ssh_admin_sudo() {
-      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
+      if [[ "$1" == *"/root/base/bootstrap.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
         count="$(cat "${admin_counter}")"
         count=$((count + 1))
         echo "${count}" > "${admin_counter}"
@@ -616,7 +621,8 @@ EOF
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"${tmpdir}\"" EXIT
     SCRIPT_DIR="${tmpdir}"
-    for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base"
+    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     mkdir -p "${tmpdir}/lib"
@@ -639,7 +645,7 @@ EOF
       return 0
     }
     ssh_root() {
-      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
+      if [[ "$1" == *"/root/base/bootstrap.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
         echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.10"
       fi
       return 0
@@ -724,12 +730,13 @@ EOF
     SERVER_TIMEZONE="UTC"
     TAILSCALE_DIRECT_WAN="false"
 
-    cat > "${tmpdir}/bootstrap_hardening.sh" <<EOF
+    mkdir -p "${tmpdir}/base"
+    cat > "${tmpdir}/base/bootstrap.sh" <<EOF
 #!/usr/bin/env bash
 cp "\$2" "${captured_env}"
 echo "bootstrap stub"
 EOF
-    chmod +x "${tmpdir}/bootstrap_hardening.sh"
+    chmod +x "${tmpdir}/base/bootstrap.sh"
 
     tailscale() { echo "100.64.0.44"; }
 
