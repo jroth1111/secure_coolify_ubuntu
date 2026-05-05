@@ -591,19 +591,30 @@ ip6tables_usable() {
 @test "docker-daemon: pre-existing daemon.json is not overwritten on re-run" {
   command -v docker >/dev/null 2>&1 || skip "Docker not installed"
   local daemon_json="/etc/docker/daemon.json"
+  local backup
   [ -f "${daemon_json}" ] || skip "daemon.json not present"
+
+  backup="$(mktemp)"
+  cp -a "${daemon_json}" "${backup}"
+
+  cleanup_daemon_json() {
+    cp -a "${backup}" "${daemon_json}"
+    rm -f "${backup}"
+  }
+  trap cleanup_daemon_json RETURN
 
   # Inject a custom marker
   local marker="__test_preserve_marker__"
   sed -i 's/}$/,"test-marker": "'"${marker}"'"}/' "${daemon_json}"
 
   # Re-run the script
-  bash "${SCRIPT}" \
+  run bash "${SCRIPT}" \
     --admin-user "${TEST_USER}" \
     --admin-pubkey "${TEST_PUBKEY}" \
     --ssh-port "${TEST_PORT}" \
     --wan-iface "${TEST_WAN}" \
     --force
+  assert_success
 
   run cat "${daemon_json}"
   assert_output --partial "${marker}"

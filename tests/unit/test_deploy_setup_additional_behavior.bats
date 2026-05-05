@@ -75,6 +75,45 @@ load '../helpers'
   assert_success
 }
 
+@test "deploy helper state functions: extract bootstrap tailscale IP and validate resume state" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    capture="$(mktemp)"
+    printf "noise\nHARDEN_RESULT_TAILSCALE_IP=100.64.0.44\n" > "${capture}"
+    extract_bootstrap_tailscale_ip "${capture}" > "${capture}.out"
+    extracted_ip="$(cat "${capture}.out")"
+    [[ "${extracted_ip}" == "100.64.0.44" ]]
+
+    SKIP_HARDEN="true"
+    DEPLOY_MODE="tunnel"
+    DOMAIN="coolify.example.com"
+    ssh_admin_sudo() {
+      printf "coolify.example.com\ttrue\n"
+    }
+    assert_resume_phase1_contract_remote
+  '
+  assert_success
+}
+
+@test "verify_post_reboot_services_remote: accepts healthy post-reboot services" {
+  run bash -c '
+    source "'"${DEPLOY_SCRIPT}"'"
+    ssh_admin_sudo() {
+      case "$1" in
+        "systemctl is-active --quiet tailscaled.service") return 0 ;;
+        "ufw status 2>/dev/null | grep -q \"^Status: active$\"") return 0 ;;
+        "systemctl is-active --quiet fail2ban.service") return 0 ;;
+        "fail2ban-client status sshd >/dev/null 2>&1") return 0 ;;
+        "test \"$(systemctl show docker.service --property=LoadState --value 2>/dev/null)\" = loaded") return 1 ;;
+      esac
+      return 1
+    }
+    verify_post_reboot_services_remote "Gate B.5"
+  '
+  assert_success
+  assert_output --partial "tailscaled.service is active"
+}
+
 @test "phase5_fetch_validate_json (deploy): requests remote validator json via sudo" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"
@@ -107,6 +146,21 @@ load '../helpers'
     setup_exit_trap
     [[ ! -e "${pending}" ]]
     [[ -z "${PENDING_DEPLOY_ENV_FILE}" ]]
+  '
+  assert_success
+}
+
+@test "setup reboot marker helpers: return overridable file paths" {
+  run bash -c '
+    source "'"${SETUP_SCRIPT}"'"
+    REBOOT_REQUIRED_FILE="/tmp/reboot-required.test"
+    REBOOT_REQUIRED_PKGS_FILE="/tmp/reboot-required.pkgs.test"
+    setup_reboot_required_file > /tmp/setup-reboot-required-file.out
+    setup_reboot_required_pkgs_file > /tmp/setup-reboot-required-pkgs-file.out
+    reboot_file="$(cat /tmp/setup-reboot-required-file.out)"
+    reboot_pkgs_file="$(cat /tmp/setup-reboot-required-pkgs-file.out)"
+    [[ "${reboot_file}" == "/tmp/reboot-required.test" ]]
+    [[ "${reboot_pkgs_file}" == "/tmp/reboot-required.pkgs.test" ]]
   '
   assert_success
 }
@@ -338,7 +392,7 @@ EOF
         echo "${count}" > "${probe_counter}"
         return 0
       fi
-      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force"* ]]; then
+      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
         attempt="$(cat "${counter_file}")"
         attempt=$((attempt + 1))
         echo "${attempt}" > "${counter_file}"
@@ -405,7 +459,7 @@ EOF
         count=$((count + 1))
         echo "${count}" > "${chmod_counter}"
       fi
-      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force"* ]]; then
+      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
         echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.10"
       fi
       return 0
@@ -448,7 +502,7 @@ EOF
       if [[ "$1" == "true" || "$1" == chmod\ +x\ /root/* || "$1" == "chmod 600 /root/deploy.env" ]]; then
         return 0
       fi
-      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force"* ]]; then
+      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
         count="$(cat "${bootstrap_counter}")"
         count=$((count + 1))
         echo "${count}" > "${bootstrap_counter}"
@@ -505,7 +559,7 @@ EOF
       if [[ "$1" == "true" || "$1" == chmod\ +x\ /root/* || "$1" == "chmod 600 /root/deploy.env" ]]; then
         return 0
       fi
-      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force"* ]]; then
+      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
         count="$(cat "${bootstrap_counter}")"
         count=$((count + 1))
         echo "${count}" > "${bootstrap_counter}"
@@ -525,7 +579,7 @@ EOF
       return 1
     }
     ssh_admin_sudo() {
-      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force"* ]]; then
+      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
         count="$(cat "${admin_counter}")"
         count=$((count + 1))
         echo "${count}" > "${admin_counter}"
@@ -572,7 +626,7 @@ EOF
       return 0
     }
     ssh_root() {
-      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file /root/deploy.env --install-tailscale --force"* ]]; then
+      if [[ "$1" == *"/root/bootstrap_hardening.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
         echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.10"
       fi
       return 0

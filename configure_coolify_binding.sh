@@ -135,6 +135,25 @@ delete_non_tailscale_rule_numbers() {
   printf '%s\n' "${rules[@]}"
 }
 
+verify_tailscale_ufw_rules() {
+  local ufw_status port
+  ufw_status="$(ufw status verbose 2>/dev/null || true)"
+  for port in 8000 6001 6002; do
+    if ! awk -v p="${port}/tcp" '
+        BEGIN { found=0 }
+        {
+          line=tolower($0)
+          if (index(line, tolower(p)) && index(line, "tailscale0") && index(line, "allow")) {
+            found=1
+          }
+        }
+        END { exit(found ? 0 : 1) }
+      ' <<< "${ufw_status}"; then
+      die "UFW rule missing for ${port}/tcp on tailscale0."
+    fi
+  done
+}
+
 log "Ensuring UFW restricts dashboard ports to tailscale0..."
 command -v ufw >/dev/null 2>&1 || die "ufw not found. This script requires ufw to enforce dashboard restrictions."
 
@@ -152,22 +171,7 @@ ufw allow in on tailscale0 proto tcp to any port 6001 comment "coolify-hardening
 ufw allow in on tailscale0 proto tcp to any port 6002 comment "coolify-hardening-terminal-tailscale" >/dev/null 2>&1 \
   || die "Failed to apply UFW rule for port 6002 on tailscale0."
 
-ufw_status="$(ufw status verbose 2>/dev/null || true)"
-for port in 8000 6001 6002; do
-  if ! awk -v p="${port}/tcp" '
-      BEGIN { found=0 }
-      {
-        line=tolower($0)
-        if (index(line, tolower(p)) && index(line, "tailscale0") && index(line, "allow")) {
-          found=1
-        }
-      }
-      END { exit(found ? 0 : 1) }
-    ' <<< "${ufw_status}"; then
-    die "UFW rule missing for ${port}/tcp on tailscale0 after apply."
-  fi
-done
-unset ufw_status port
+verify_tailscale_ufw_rules
 log "UFW rules verified for ports 8000, 6001, and 6002 on tailscale0."
 
 # Wait for Coolify to start (up to 60s)
@@ -179,6 +183,9 @@ for (( _i = 1; _i <= 12; _i++ )); do
   sleep 5
 done
 unset _i
+
+verify_tailscale_ufw_rules
+log "UFW rules still verified after Coolify startup wait."
 
 # Verify security posture
 log "Verifying bindings..."

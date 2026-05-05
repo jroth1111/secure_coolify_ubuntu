@@ -727,9 +727,20 @@ assert_resume_phase1_contract_remote() {
 
   state_line="$(ssh_admin_sudo 'bash -ceu '"'"'
     state_file="/var/lib/bootstrap-hardening/state"
+    state_lock_file="${state_file}.lock"
+    state_snapshot="$(mktemp)"
+    cleanup() {
+      rm -f "${state_snapshot}"
+    }
+    trap cleanup EXIT
     [[ -f "${state_file}" ]] || exit 4
+    if command -v flock >/dev/null 2>&1; then
+      flock -s "${state_lock_file}" bash -ceu '\''cat "$1" > "$2"'\'' _ "${state_file}" "${state_snapshot}"
+    else
+      cat "${state_file}" > "${state_snapshot}"
+    fi
     # shellcheck disable=SC1090
-    source "${state_file}"
+    source "${state_snapshot}"
     printf "%s\t%s\n" "${domain:-}" "${tunnel_mode:-}"
   '"'" 2>/dev/null || true)"
 

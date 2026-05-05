@@ -18,6 +18,7 @@ LOG_FILE="/var/log/bootstrap-hardening.log"
 REPORT_FILE="/var/log/bootstrap-hardening-report.json"
 STATE_DIR="/var/lib/bootstrap-hardening"
 STATE_FILE="${STATE_DIR}/state"
+STATE_LOCK_FILE="${STATE_FILE}.lock"
 HOSTS_FILE="${HOSTS_FILE:-/etc/hosts}"
 
 SSH_DROPIN_FILE="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
@@ -1493,7 +1494,7 @@ configure_swap() {
 }
 
 disable_unused_services() {
-  local services=(rpcbind avahi-daemon cups cups-browsed)
+  local services=(rpcbind avahi-daemon cups cups-browsed ModemManager udisks2 fwupd upower)
   local unit
   for svc in "${services[@]}"; do
     for unit in "${svc}.service" "${svc}.socket"; do
@@ -1773,6 +1774,34 @@ EOF
   if ! grep -qxF "${ADMIN_PUBKEY}" "${auth_file}"; then
     printf '%s\n' "${ADMIN_PUBKEY}" >> "${auth_file}"
   fi
+
+  # Lock root password — root login is blocked by sshd config but a set
+  # password is still a credential that could be leveraged via console or
+  # a misconfigured PAM rule.
+  if ! is_true "${DRY_RUN}"; then
+    local root_pw_status
+    root_pw_status="$(passwd -S root 2>/dev/null | awk '{print $2}')"
+    if [[ "${root_pw_status}" == "P" ]]; then
+      passwd -l root >/dev/null 2>&1
+      log "Root password locked."
+    fi
+  else
+    log "DRY-RUN: would lock root password."
+  fi
+
+  # Clear root authorized_keys — provisioning systems often inject keys
+  # into /root/.ssh/authorized_keys that are unrelated to the admin user.
+  # Root login is already blocked from external addresses, but stale keys
+  # are a credential that should not persist.
+  if ! is_true "${DRY_RUN}"; then
+    local root_auth_keys="/root/.ssh/authorized_keys"
+    if [[ -f "${root_auth_keys}" ]] && [[ -s "${root_auth_keys}" ]]; then
+      : > "${root_auth_keys}"
+      log "Cleared root authorized_keys."
+    fi
+  else
+    log "DRY-RUN: would clear root authorized_keys."
+  fi
 }
 
 restore_ssh_dropin() {
@@ -1972,6 +2001,32 @@ configure_ssh() {
     cp -a "${SSH_DROPIN_FILE}" "${backup}"
   fi
 
+  # Fix base sshd_config to not rely solely on drop-in overrides
+  local base_config="/etc/ssh/sshd_config"
+  if [[ -f "${base_config}" ]] && ! is_true "${DRY_RUN}"; then
+    sed -i 's/^PermitRootLogin yes/PermitRootLogin no/' "${base_config}"
+    sed -i 's/^X11Forwarding yes/X11Forwarding no/' "${base_config}"
+    log "Hardened base sshd_config (PermitRootLogin no, X11Forwarding no)."
+  elif [[ -f "${base_config}" ]]; then
+    log "DRY-RUN: would harden base sshd_config (PermitRootLogin no, X11Forwarding no)."
+  fi
+
+  # Neutralize cloud-init override that re-enables password auth
+  local cloud_init_ssh="/etc/ssh/sshd_config.d/50-cloud-init.conf"
+  local cloud_init_cfg="/etc/cloud/cloud.cfg.d/99-disable-ssh-password.cfg"
+  if ! is_true "${DRY_RUN}"; then
+    if [[ -f "${cloud_init_ssh}" ]]; then
+      echo "PasswordAuthentication no" > "${cloud_init_ssh}"
+      chmod 0644 "${cloud_init_ssh}"
+      log "Neutralized ${cloud_init_ssh} (set PasswordAuthentication no)."
+    fi
+    mkdir -p "$(dirname "${cloud_init_cfg}")"
+    echo "ssh_pwauth: false" > "${cloud_init_cfg}"
+    log "Prevented cloud-init from re-enabling SSH password auth."
+  else
+    log "DRY-RUN: would neutralize cloud-init SSH password auth override."
+  fi
+
   write_file "${SSH_DROPIN_FILE}" "0644" "root" "root" <<EOF
 # Managed by ${SCRIPT_NAME}
 Port ${SSH_PORT}
@@ -1987,14 +2042,16 @@ AllowAgentForwarding no
 AllowTcpForwarding no
 Compression no
 MaxAuthTries 3
+MaxSessions 3
 LoginGraceTime 30
 ClientAliveInterval 300
 ClientAliveCountMax 2
-# Keep OpenSSH secure defaults; only prioritize modern algorithms.
-Ciphers ^chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
-MACs ^hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
-KexAlgorithms ^sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org
-HostKeyAlgorithms ^ssh-ed25519,rsa-sha2-512,rsa-sha2-256
+PerSourceMaxStartups 3
+# Modern algorithms only — explicit allowlist, no legacy defaults.
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com
+KexAlgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org
+HostKeyAlgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256
 Banner /etc/issue.net
 
 # Coolify connects to its own host as root via localhost / Docker bridge.
@@ -2033,6 +2090,75 @@ EOF
   fi
 
   rm -f "${SSH_DROPIN_FILE}".bak.*
+
+  # Remove weak DSA host key — deprecated in OpenSSH 7.0+, not negotiated
+  # by our HostKeyAlgorithms list, but the key file should not exist.
+  if [[ -f /etc/ssh/ssh_host_dsa_key ]] && ! is_true "${DRY_RUN}"; then
+    rm -f /etc/ssh/ssh_host_dsa_key /etc/ssh/ssh_host_dsa_key.pub
+    log "Removed deprecated DSA host key."
+  elif [[ -f /etc/ssh/ssh_host_dsa_key ]]; then
+    log "DRY-RUN: would remove deprecated DSA host key."
+  fi
+}
+
+configure_ssh_socket() {
+  # Bind ssh.socket to Tailscale IP + localhost instead of 0.0.0.0:22.
+  # Defense-in-depth: even if UFW is flushed, SSH is not exposed publicly.
+  local socket_unit="/etc/systemd/system/ssh.socket"
+  local ts_ip=""
+
+  ts_ip="$(tailscale ip -4 2>/dev/null || true)"
+  if [[ -z "${ts_ip}" ]]; then
+    warn "Could not detect Tailscale IP; skipping ssh.socket binding."
+    return 0
+  fi
+
+  if ! is_true "${DRY_RUN}"; then
+    mkdir -p /etc/systemd/system/ssh.socket.d
+    cat > /etc/systemd/system/ssh.socket.d/10-bind-tailscale.conf <<SOCKETEOF
+[Socket]
+# Override default ListenStream=0.0.0.0:22 — bind to Tailscale + localhost only
+ListenStream=
+ListenStream=${ts_ip}:22
+ListenStream=127.0.0.1:22
+ListenStream=[::1]:22
+SOCKETEOF
+    systemctl daemon-reload
+    systemctl restart ssh.socket
+    log "Bound ssh.socket to ${ts_ip}:22, 127.0.0.1:22, [::1]:22."
+  else
+    log "DRY-RUN: would bind ssh.socket to ${ts_ip}:22 and localhost."
+  fi
+}
+
+configure_password_policy() {
+  local pwquality="/etc/security/pwquality.conf"
+
+  if ! is_true "${DRY_RUN}"; then
+    cat > "${pwquality}" <<'PWEOF'
+# Managed by bootstrap_hardening.sh
+minlen = 12
+minclass = 3
+dcredit = -1
+ucredit = -1
+lcredit = -1
+ocredit = -1
+maxrepeat = 3
+maxsequence = 4
+dictcheck = 1
+usercheck = 1
+enforcing = 1
+retry = 3
+PWEOF
+    chmod 0644 "${pwquality}"
+    log "Applied password quality policy."
+
+    sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS   90/' /etc/login.defs
+    sed -i 's/^PASS_MIN_DAYS.*/PASS_MIN_DAYS   1/' /etc/login.defs
+    log "Set PASS_MAX_DAYS=90, PASS_MIN_DAYS=1 in login.defs."
+  else
+    log "DRY-RUN: would apply password quality policy and login.defs."
+  fi
 }
 
 configure_ufw() {
@@ -2122,15 +2248,20 @@ rsyslog_collect_log_targets() {
 
 ensure_logrotate_create_directive() {
   local file="$1"
+  local log_owner="syslog"
   local log_group="$2"
-  local create_line="create 640 syslog ${log_group}"
+  if [[ $# -ge 3 ]]; then
+    log_owner="$2"
+    log_group="$3"
+  fi
+  local create_line="create 640 ${log_owner} ${log_group}"
 
   if [[ ! -f "${file}" ]]; then
     warn "Logrotate file ${file} not found; skipping create directive check."
     return 0
   fi
 
-  if grep -Eq "^[[:space:]]*create[[:space:]]+640[[:space:]]+syslog[[:space:]]+${log_group}([[:space:]]|$)" "${file}"; then
+  if grep -Eq "^[[:space:]]*create[[:space:]]+640[[:space:]]+${log_owner}[[:space:]]+${log_group}([[:space:]]|$)" "${file}"; then
     return 0
   fi
 
@@ -2159,10 +2290,21 @@ ensure_logrotate_create_directive() {
 
 configure_rsyslog_targets() {
   local target
+  local log_owner="syslog"
   local log_group="adm"
 
+  if ! getent passwd "${log_owner}" >/dev/null 2>&1; then
+    warn "User '${log_owner}' not found; using fallback owner root for managed log files."
+    log_owner="root"
+  fi
+
   if ! getent group "${log_group}" >/dev/null 2>&1; then
-    log_group="syslog"
+    if getent group syslog >/dev/null 2>&1; then
+      log_group="syslog"
+    else
+      warn "Neither 'adm' nor 'syslog' group found; using fallback group root for managed log files."
+      log_group="root"
+    fi
   fi
 
   if getent group syslog >/dev/null 2>&1; then
@@ -2178,7 +2320,7 @@ configure_rsyslog_targets() {
   while IFS= read -r target; do
     [[ -n "${target}" ]] || continue
     if is_true "${DRY_RUN}"; then
-      log "DRY-RUN: ensure ${target} exists (0640 syslog:${log_group})"
+      log "DRY-RUN: ensure ${target} exists (0640 ${log_owner}:${log_group})"
       continue
     fi
     local target_dir
@@ -2187,12 +2329,12 @@ configure_rsyslog_targets() {
       install -d -m 0755 "${target_dir}"
     fi
     touch "${target}"
-    chown "syslog:${log_group}" "${target}"
+    chown "${log_owner}:${log_group}" "${target}"
     chmod 0640 "${target}"
   done < <(rsyslog_collect_log_targets)
 
-  ensure_logrotate_create_directive "/etc/logrotate.d/ufw" "${log_group}"
-  ensure_logrotate_create_directive "/etc/logrotate.d/rsyslog" "${log_group}"
+  ensure_logrotate_create_directive "/etc/logrotate.d/ufw" "${log_owner}" "${log_group}"
+  ensure_logrotate_create_directive "/etc/logrotate.d/rsyslog" "${log_owner}" "${log_group}"
 
   if unit_available "rsyslog.service"; then
     run systemctl restart rsyslog
@@ -2777,31 +2919,68 @@ is_container_runtime() {
 
 assert_rsyslog_posture() {
   local log_dir_owner log_dir_group log_dir_mode log_dir_group_digit
-  local target q_target
+  local target q_target target_owner target_group target_mode
+  local expected_dir_group="syslog"
+  local expected_target_owner="syslog"
+  local expected_target_group="adm"
+  local require_dir_group_write="true"
+
+  if ! getent group syslog >/dev/null 2>&1; then
+    expected_dir_group="root"
+    require_dir_group_write="false"
+  fi
+  if ! getent passwd syslog >/dev/null 2>&1; then
+    expected_target_owner="root"
+  fi
+  if ! getent group "${expected_target_group}" >/dev/null 2>&1; then
+    if getent group syslog >/dev/null 2>&1; then
+      expected_target_group="syslog"
+    else
+      expected_target_group="root"
+    fi
+  fi
 
   log_dir_owner="$(stat -c '%U' /var/log 2>/dev/null || true)"
   log_dir_group="$(stat -c '%G' /var/log 2>/dev/null || true)"
   log_dir_mode="$(stat -c '%a' /var/log 2>/dev/null || true)"
   [[ "${log_dir_owner}" == "root" ]] || die "Post-check failed: /var/log owner is ${log_dir_owner:-unknown}, expected root."
-  [[ "${log_dir_group}" == "syslog" ]] || die "Post-check failed: /var/log group is ${log_dir_group:-unknown}, expected syslog."
+  [[ "${log_dir_group}" == "${expected_dir_group}" ]] || die "Post-check failed: /var/log group is ${log_dir_group:-unknown}, expected ${expected_dir_group}."
   [[ "${log_dir_mode}" =~ ^[0-7]{3,4}$ ]] || die "Post-check failed: /var/log mode unreadable (${log_dir_mode:-unknown})."
-  log_dir_group_digit="${log_dir_mode: -2:1}"
-  if (( (10#${log_dir_group_digit} & 2) == 0 )); then
-    die "Post-check failed: /var/log mode ${log_dir_mode} lacks group write; rsyslog cannot create missing log targets."
+  if is_true "${require_dir_group_write}"; then
+    log_dir_group_digit="${log_dir_mode: -2:1}"
+    if (( (10#${log_dir_group_digit} & 2) == 0 )); then
+      die "Post-check failed: /var/log mode ${log_dir_mode} lacks group write; rsyslog cannot create missing log targets."
+    fi
   fi
 
   while IFS= read -r target; do
     [[ -n "${target}" ]] || continue
     [[ -f "${target}" ]] || die "Post-check failed: rsyslog target ${target} is missing."
+    target_owner="$(stat -c '%U' "${target}" 2>/dev/null || true)"
+    target_group="$(stat -c '%G' "${target}" 2>/dev/null || true)"
+    target_mode="$(stat -c '%a' "${target}" 2>/dev/null || true)"
+    [[ "${target_owner}" == "${expected_target_owner}" ]] || die "Post-check failed: ${target} owner is ${target_owner:-unknown}, expected ${expected_target_owner}."
+    [[ "${target_group}" == "${expected_target_group}" ]] || die "Post-check failed: ${target} group is ${target_group:-unknown}, expected ${expected_target_group}."
+    [[ "${target_mode}" == "640" ]] || die "Post-check failed: ${target} mode is ${target_mode:-unknown}, expected 640."
     printf -v q_target '%q' "${target}"
-    su -s /bin/sh -c "test -w ${q_target}" syslog \
-      || die "Post-check failed: rsyslog user cannot write ${target}."
+    if getent passwd syslog >/dev/null 2>&1; then
+      su -s /bin/sh -c "test -w ${q_target}" syslog \
+        || die "Post-check failed: rsyslog user cannot write ${target}."
+    fi
   done < <(rsyslog_collect_log_targets)
 
-  grep -Eq '^[[:space:]]*create[[:space:]]+640[[:space:]]+syslog[[:space:]]+(adm|syslog)([[:space:]]|$)' /etc/logrotate.d/ufw \
-    || die "Post-check failed: /etc/logrotate.d/ufw missing create 640 syslog <group> directive."
-  grep -Eq '^[[:space:]]*create[[:space:]]+640[[:space:]]+syslog[[:space:]]+(adm|syslog)([[:space:]]|$)' /etc/logrotate.d/rsyslog \
-    || die "Post-check failed: /etc/logrotate.d/rsyslog missing create 640 syslog <group> directive."
+  if [[ -f /etc/logrotate.d/ufw ]]; then
+    grep -Eq "^[[:space:]]*create[[:space:]]+640[[:space:]]+${expected_target_owner}[[:space:]]+${expected_target_group}([[:space:]]|$)" /etc/logrotate.d/ufw \
+      || die "Post-check failed: /etc/logrotate.d/ufw missing create 640 ${expected_target_owner} ${expected_target_group} directive."
+  else
+    warn "Post-check: /etc/logrotate.d/ufw not found; skipping create directive assertion."
+  fi
+  if [[ -f /etc/logrotate.d/rsyslog ]]; then
+    grep -Eq "^[[:space:]]*create[[:space:]]+640[[:space:]]+${expected_target_owner}[[:space:]]+${expected_target_group}([[:space:]]|$)" /etc/logrotate.d/rsyslog \
+      || die "Post-check failed: /etc/logrotate.d/rsyslog missing create 640 ${expected_target_owner} ${expected_target_group} directive."
+  else
+    warn "Post-check: /etc/logrotate.d/rsyslog not found; skipping create directive assertion."
+  fi
 }
 
 run_post_checks() {
@@ -2958,10 +3137,22 @@ run_post_checks() {
   [[ "${current_timezone}" == "${TIMEZONE}" ]] \
     || die "Post-check failed: timezone is ${current_timezone:-unknown}, expected ${TIMEZONE}."
 
-  local run_ssh_pref
-  run_ssh_pref="$(tailscale_runssh_pref_value 5 1)"
-  [[ "${run_ssh_pref}" == "false" ]] \
-    || die "Post-check failed: tailscale RunSSH is ${run_ssh_pref:-unknown}, expected false."
+  if command -v tailscale >/dev/null 2>&1; then
+    if tailscale status --json >/dev/null 2>&1; then
+      local run_ssh_pref
+      run_ssh_pref="$(tailscale_runssh_pref_value 5 1)"
+      [[ "${run_ssh_pref}" == "false" ]] \
+        || die "Post-check failed: tailscale RunSSH is ${run_ssh_pref:-unknown}, expected false."
+    elif is_true "${INSTALL_TAILSCALE}"; then
+      die "Post-check failed: tailscale CLI is present but status is unavailable after INSTALL_TAILSCALE=true."
+    else
+      warn "Post-check: tailscale CLI present but status unavailable; skipping RunSSH verification because INSTALL_TAILSCALE=false."
+    fi
+  elif is_true "${INSTALL_TAILSCALE}"; then
+    die "Post-check failed: tailscale CLI not found after INSTALL_TAILSCALE=true."
+  else
+    warn "Post-check: tailscale CLI not found; skipping RunSSH verification because INSTALL_TAILSCALE=false."
+  fi
 
   if [[ -f "${APPORT_DEFAULT_FILE}" ]]; then
     local apport_enabled
@@ -2974,7 +3165,11 @@ run_post_checks() {
   fi
 
   systemctl is-active --quiet fail2ban || die "Post-check failed: fail2ban is not active."
-  systemctl is-active --quiet rsyslog || die "Post-check failed: rsyslog is not active."
+  if unit_available "rsyslog.service"; then
+    systemctl is-active --quiet rsyslog || die "Post-check failed: rsyslog is not active."
+  else
+    warn "Post-check: rsyslog.service not installed; skipping active-state verification."
+  fi
   assert_rsyslog_posture
 
   [[ -f /etc/issue.net ]] || die "Post-check failed: /etc/issue.net missing."
@@ -3016,6 +3211,7 @@ run_post_checks() {
 
 write_state() {
   local cidr_csv=""
+  local tmp_state=""
   if is_true "${DRY_RUN}"; then
     log "DRY-RUN: write ${STATE_FILE}"
     return 0
@@ -3024,7 +3220,8 @@ write_state() {
   cidr_csv="$(IFS=,; echo "${DOCKER_SSH_CIDRS[*]}")"
 
   install -d -m 0750 "${STATE_DIR}"
-  cat > "${STATE_FILE}" <<EOF
+  tmp_state="$(mktemp)"
+  cat > "${tmp_state}" <<EOF
 script_version=${SCRIPT_VERSION}
 applied_at=$(date -Iseconds)
 admin_user=${ADMIN_USER}
@@ -3037,6 +3234,8 @@ swap_size=${SWAP_SIZE}
 journal_retention=${JOURNAL_RETENTION}
 update_profile=${UPDATE_PROFILE}
 timezone=${TIMEZONE}
+docker_present=${DOCKER_PRESENT}
+docker_rules_applied=${DOCKER_RULES_APPLIED}
 strict_docker_ssh_cidrs=${STRICT_DOCKER_SSH_CIDRS}
 docker_ssh_cidrs=${cidr_csv}
 docker_nproc_hard=${DOCKER_NPROC_HARD}
@@ -3047,12 +3246,22 @@ bind_dashboard_to_tailscale=${BIND_DASHBOARD_TO_TAILSCALE}
 install_tailscale=${INSTALL_TAILSCALE}
 EOF
 
-  # Add detected Tailscale IP if binding was configured
   if is_true "${BIND_DASHBOARD_TO_TAILSCALE}" && [[ -n "${DETECTED_TAILSCALE_IP}" ]]; then
-    echo "tailscale_ip=${DETECTED_TAILSCALE_IP}" >> "${STATE_FILE}"
+    echo "tailscale_ip=${DETECTED_TAILSCALE_IP}" >> "${tmp_state}"
   fi
 
-  chmod 0640 "${STATE_FILE}"
+  if command -v flock >/dev/null 2>&1; then
+    exec 9>"${STATE_LOCK_FILE}"
+    flock 9
+  fi
+
+  install -m 0640 "${tmp_state}" "${STATE_FILE}"
+  rm -f "${tmp_state}"
+
+  if command -v flock >/dev/null 2>&1; then
+    flock -u 9 || true
+    exec 9>&-
+  fi
 }
 
 generate_report() {
@@ -3309,12 +3518,57 @@ configure_docker_ssh_cidr_sync_timer() {
 set -Eeuo pipefail
 
 STATE_FILE="/var/lib/bootstrap-hardening/state"
+STATE_LOCK_FILE="${STATE_FILE}.lock"
 SSH_DROPIN_FILE="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
 RULE_COMMENT="coolify-hardening-ssh-docker-bridge"
 
 [[ -f "${STATE_FILE}" ]] || exit 0
+
+copy_state_file() {
+  local dest="$1"
+  if command -v flock >/dev/null 2>&1; then
+    flock -s "${STATE_LOCK_FILE}" bash -ceu 'cat "$1" > "$2"' _ "${STATE_FILE}" "${dest}"
+  else
+    cat "${STATE_FILE}" > "${dest}"
+  fi
+}
+
+update_state_docker_cidrs() {
+  local cidr_csv="$1"
+  local tmp_state
+  tmp_state="$(mktemp)"
+
+  if command -v flock >/dev/null 2>&1; then
+    exec 9>"${STATE_LOCK_FILE}"
+    flock 9
+  fi
+
+  awk -v cidr_csv="${cidr_csv}" '
+    BEGIN { updated=0 }
+    /^docker_ssh_cidrs=/ {
+      print "docker_ssh_cidrs=" cidr_csv
+      updated=1
+      next
+    }
+    { print }
+    END {
+      if (!updated) print "docker_ssh_cidrs=" cidr_csv
+    }
+  ' "${STATE_FILE}" > "${tmp_state}"
+  install -m 0640 "${tmp_state}" "${STATE_FILE}"
+  rm -f "${tmp_state}"
+
+  if command -v flock >/dev/null 2>&1; then
+    flock -u 9 || true
+    exec 9>&-
+  fi
+}
+
+state_snapshot="$(mktemp)"
+copy_state_file "${state_snapshot}"
 # shellcheck disable=SC1090
-source "${STATE_FILE}"
+source "${state_snapshot}"
+rm -f "${state_snapshot}"
 
 is_true() {
   case "${1,,}" in
@@ -3443,21 +3697,7 @@ if command -v ufw >/dev/null 2>&1; then
 fi
 
 cidr_csv="$(IFS=,; echo "${cidrs[*]}")"
-tmp_state="$(mktemp)"
-awk -v cidr_csv="${cidr_csv}" '
-  BEGIN { updated=0 }
-  /^docker_ssh_cidrs=/ {
-    print "docker_ssh_cidrs=" cidr_csv
-    updated=1
-    next
-  }
-  { print }
-  END {
-    if (!updated) print "docker_ssh_cidrs=" cidr_csv
-  }
-' "${STATE_FILE}" > "${tmp_state}"
-install -m 0640 "${tmp_state}" "${STATE_FILE}"
-rm -f "${tmp_state}"
+update_state_docker_cidrs "${cidr_csv}"
 EOF
 
   write_file "${DOCKER_SSH_CIDR_SYNC_SERVICE}" "0644" "root" "root" <<EOF
@@ -3548,6 +3788,8 @@ main() {
   log "Applying account and SSH hardening."
   ensure_admin_access
   configure_ssh
+  configure_ssh_socket
+  configure_password_policy
 
   log "Applying auditd baseline."
   configure_auditd

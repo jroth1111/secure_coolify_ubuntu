@@ -1713,11 +1713,17 @@ coolify_mark_bind_dashboard_state_script() {
   cat <<'EOF'
 set -Eeuo pipefail
 state_file="/var/lib/bootstrap-hardening/state"
+state_lock_file="${state_file}.lock"
 tmp="$(mktemp)"
 
 if [[ ! -f "${state_file}" ]]; then
   rm -f "${tmp}"
   exit 0
+fi
+
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"${state_lock_file}"
+  flock 9
 fi
 
 awk '
@@ -1737,6 +1743,11 @@ awk '
 
 install -m 0640 "${tmp}" "${state_file}"
 rm -f "${tmp}"
+
+if command -v flock >/dev/null 2>&1; then
+  flock -u 9 || true
+  exec 9>&-
+fi
 EOF
 }
 

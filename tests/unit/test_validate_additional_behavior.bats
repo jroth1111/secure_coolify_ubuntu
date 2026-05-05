@@ -90,6 +90,8 @@ wan_iface=eth0
 tailscale_direct_wan=true
 update_profile=balanced
 timezone=Australia/Melbourne
+docker_present=true
+docker_rules_applied=true
 allowed_privileged_containers=coolify-proxy,forgejo-dind
 STATE
 
@@ -101,6 +103,8 @@ STATE
   [ "${WAN_IFACE}" = "eth0" ]
   [ "${TAILSCALE_DIRECT_WAN}" = "true" ]
   [ "${UPDATE_PROFILE}" = "balanced" ]
+  [ "${DOCKER_PRESENT}" = "true" ]
+  [ "${DOCKER_RULES_APPLIED}" = "true" ]
   [ "${CONFIGURED_TIMEZONE}" = "Australia/Melbourne" ]
   [ "${ALLOWED_PRIVILEGED_CONTAINERS}" = "coolify-proxy,forgejo-dind" ]
 
@@ -2073,6 +2077,113 @@ EOF
   rm -f "${sync_script}"
 }
 
+@test "docker_user_lifecycle_check: records info in gate-c mode when Docker hardening was not expected" {
+  GATE_C_MODE="true"
+  DOCKER_PRESENT="false"
+  DOCKER_RULES_APPLIED="false"
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  docker_user_lifecycle_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-user: unit file" "INFO"
+  assert_json_fail_count "${json}" "0"
+}
+
+@test "docker_daemon_check: records info in gate-c mode when Docker hardening was not expected" {
+  GATE_C_MODE="true"
+  DOCKER_PRESENT="false"
+  DOCKER_RULES_APPLIED="false"
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  docker_daemon_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_status "${json}" "docker-daemon: daemon.json" "INFO"
+  assert_json_fail_count "${json}" "0"
+}
+
+@test "docker_hardening_expected: gate-c requires state-based Docker hardening signal" {
+  GATE_C_MODE="true"
+  DOCKER_PRESENT="false"
+  DOCKER_RULES_APPLIED="false"
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  run docker_hardening_expected
+  [ "${status}" -eq 1 ]
+
+  DOCKER_PRESENT="true"
+  run docker_hardening_expected
+  assert_success
+}
+
+@test "docker_ssh_cidr_sync_check: defers compatibility fallback enforcement in gate-c mode until Docker was hardened" {
+  local sync_script
+  sync_script="$(mktemp)"
+  cat > "${sync_script}" <<'EOF'
+#!/usr/bin/env bash
+normalize_cidr() { :; }
+EOF
+  chmod 755 "${sync_script}"
+
+  GATE_C_MODE="true"
+  DOCKER_PRESENT="false"
+  DOCKER_RULES_APPLIED="false"
+  STRICT_DOCKER_SSH_CIDRS="true"
+  DOCKER_SSH_CIDRS="10.0.0.0/8,172.16.0.0/12"
+  DOCKER_SSH_CIDR_SYNC_SCRIPT="${sync_script}"
+  DOCKER_SSH_CIDR_SYNC_SERVICE="docker-ssh-cidr-sync.service"
+  DOCKER_SSH_CIDR_SYNC_TIMER="docker-ssh-cidr-sync.timer"
+
+  command() {
+    if [[ "${1:-}" == "-v" && "${2:-}" == "docker" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "docker-ssh-cidr-sync.timer" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "show" && "${2:-}" == "docker-ssh-cidr-sync.service" && "${3:-}" == "--property=ActiveState" ]]; then
+      echo inactive
+      return 0
+    fi
+    if [[ "${1:-}" == "show" && "${2:-}" == "docker-ssh-cidr-sync.service" && "${3:-}" == "--property=Result" ]]; then
+      echo success
+      return 0
+    fi
+    return 1
+  }
+
+  docker_ssh_cidr_sync_check
+  local json
+  json="$(emit_validate_results_json)"
+  assert_json_check_missing "${json}" "docker-ssh-cidr-sync: compatibility fallback cleared"
+  assert_json_fail_count "${json}" "0"
+
+  rm -f "${sync_script}"
+}
+
 @test "fail2ban_check: records fail/info when fail2ban is absent" {
   systemctl() { return 1; }
   fail2ban_check
@@ -2835,6 +2946,51 @@ EOF
   run main
   assert_success
   assert_output --partial '"pass"'
+}
+
+@test "main: skips cloudflared runtime checks in gate-c mode" {
+  parse_cli_args() { JSON_MODE="true"; GATE_C_MODE="true"; }
+  detect_container_runtime() { :; }
+  load_state_context() { :; }
+  ssh_check() { record "PASS" "ssh: ok"; }
+  ufw_check() { record "PASS" "ufw: ok"; }
+  docker_user_check() { record "PASS" "docker-user: ok"; }
+  docker_user_lifecycle_check() { record "PASS" "docker-user-lifecycle: ok"; }
+  docker_ssh_cidr_sync_check() { record "PASS" "docker-ssh-cidr-sync: ok"; }
+  docker_daemon_check() { record "PASS" "daemon: ok"; }
+  docker_trust_boundary_check() { record "PASS" "trust: ok"; }
+  sysctl_check() { record "PASS" "sysctl: ok"; }
+  fail2ban_check() { record "PASS" "fail2ban: ok"; }
+  auditd_check() { record "PASS" "auditd: ok"; }
+  unattended_upgrades_check() { record "PASS" "updates: ok"; }
+  reboot_required_check() { record "INFO" "reboot: ok"; }
+  journald_check() { record "PASS" "journald: ok"; }
+  rsyslog_check() { record "PASS" "rsyslog: ok"; }
+  timesync_check() { record "PASS" "timesync: ok"; }
+  timezone_check() { record "PASS" "timezone: ok"; }
+  swap_check() { record "INFO" "swap: skipped"; }
+  bootloader_check() { record "PASS" "bootloader: ok"; }
+  banner_check() { record "PASS" "banner: ok"; }
+  admin_sudo_check() { record "PASS" "sudo: ok"; }
+  apparmor_check() { record "PASS" "apparmor: ok"; }
+  disabled_services_check() { record "PASS" "services: ok"; }
+  apport_check() { record "PASS" "apport: ok"; }
+  cron_check() { record "PASS" "cron: ok"; }
+  networkd_wait_online_check() { record "PASS" "networkd: ok"; }
+  private_domain_hosts_check() { record "PASS" "hosts: ok"; }
+  tailscale_check() { record "PASS" "tailscale: ok"; }
+  coolify_binding_check() { record "PASS" "binding: ok"; }
+  coolify_ssh_check() { record "FAIL" "coolify ssh: should skip"; }
+  coolify_container_check() { record "FAIL" "containers: should skip"; }
+  coolify_instance_settings_check() { record "FAIL" "settings: should skip"; }
+  validate_timer_check() { record "PASS" "timer: ok"; }
+  listening_ports_info() { record "INFO" "ports: info"; }
+  cloudflared_check() { record "FAIL" "cloudflared: should skip"; }
+
+  run main
+  assert_success
+  assert_output --partial 'gate-c: cloudflared checks'
+  refute_output --partial 'cloudflared: should skip'
 }
 
 @test "apport_check: records disabled apport posture" {

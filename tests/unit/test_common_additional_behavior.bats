@@ -360,6 +360,66 @@ setup() {
   [ "${CF_TUNNEL_API_TOKEN}" = "tunnel-token" ]
 }
 
+@test "private TLS helper inputs: load secrets, normalize CA inputs, and resolve issuer metadata" {
+  local kid_file hmac_file
+  kid_file="$(mktemp)"
+  hmac_file="$(mktemp)"
+  printf 'kid-123\n' > "${kid_file}"
+  printf 'hmac-456\n' > "${hmac_file}"
+
+  ZEROSSL_EAB_KID_FILE="${kid_file}"
+  ZEROSSL_EAB_HMAC_FILE="${hmac_file}"
+  load_private_tls_ca_secrets_from_files
+  [ "${ZEROSSL_EAB_KID}" = "kid-123" ]
+  [ "${ZEROSSL_EAB_HMAC}" = "hmac-456" ]
+
+  PRIVATE_TLS_CA=$'zerossl\n'
+  ZEROSSL_EAB_KID=$'kid-123\r\n'
+  ZEROSSL_EAB_HMAC=$'hmac-456\n'
+  finalize_private_tls_ca_inputs
+  [ "${PRIVATE_TLS_CA}" = "zerossl" ]
+  [ "${ZEROSSL_EAB_KID}" = "kid-123" ]
+  [ "${ZEROSSL_EAB_HMAC}" = "hmac-456" ]
+
+  run private_tls_resolver_name
+  assert_success
+  assert_output "privatedns"
+
+  PRIVATE_TLS_CA="zerossl"
+  run private_tls_ca_expected_caa_issuer
+  assert_success
+  assert_output "sectigo.com"
+
+  rm -f "${kid_file}" "${hmac_file}"
+}
+
+@test "cf_verify_private_tls_ca_caa: accepts authorized issuer in tunnel mode" {
+  DEPLOY_MODE="tunnel"
+  PRIVATE_TLS_CA="zerossl"
+  DOMAIN="coolify.example.com"
+  CF_ZONE_NAME="example.com"
+  CF_ZONE_ID="zone-123"
+
+  cf_api() {
+    case "$2" in
+      */dns_records\?type=CAA\&name=coolify.example.com)
+        printf '%s' '{"success":true,"result":[{"name":"coolify.example.com","data":{"tag":"issue","value":"sectigo.com"}}]}'
+        ;;
+      */dns_records\?type=CAA\&name=example.com)
+        printf '%s' '{"success":true,"result":[{"name":"example.com","data":{"tag":"issue","value":"sectigo.com"}}]}'
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  }
+  cf_expect_success() { :; }
+
+  run cf_verify_private_tls_ca_caa
+  assert_success
+  assert_output --partial "sectigo.com is authorized"
+}
+
 @test "cf_tunnel_api: prefers dedicated tunnel token over DNS token" {
   CF_API_TOKEN="dns-token"
   CF_TUNNEL_API_TOKEN="tunnel-token"
@@ -504,6 +564,34 @@ setup() {
     grep -q "/zones/zone-123/dns_records/aaaa-1" <<< "${deleted}"
     grep -q '"'"'"type":"CNAME"'"'"' <<< "${posted}"
     grep -q '"'"'"content":"tunnel.example.com"'"'"' <<< "${posted}"
+  '
+  assert_success
+}
+
+@test "cf_delete_dns_records_by_type: deletes every conflicting record for requested types" {
+  run bash -c '
+    source "'"${COMMON_LIB}"'"
+    CF_ZONE_ID="zone-123"
+    deleted=""
+    cf_expect_success() { :; }
+    cf_api() {
+      local method="$1" endpoint="$2"
+      case "${method}|${endpoint}" in
+        GET*AAAA*|GET*CNAME*)
+          echo "{\"success\":true,\"result\":[{\"id\":\"rec-1\"},{\"id\":\"rec-2\"}]}"
+          ;;
+        DELETE*)
+          deleted+="${endpoint}"$'\''\n'\''
+          echo "{\"success\":true}"
+          ;;
+        *)
+          return 1
+          ;;
+      esac
+    }
+    cf_delete_dns_records_by_type "app.example.com" AAAA CNAME
+    grep -q "/zones/zone-123/dns_records/rec-1" <<< "${deleted}"
+    grep -q "/zones/zone-123/dns_records/rec-2" <<< "${deleted}"
   '
   assert_success
 }
@@ -1063,6 +1151,7 @@ EOF
   run coolify_mark_bind_dashboard_state_script
   assert_success
   assert_output --partial "bind_dashboard_to_tailscale=true"
+  assert_output --partial 'state_lock_file='
   assert_output --partial 'install -m 0640'
 }
 

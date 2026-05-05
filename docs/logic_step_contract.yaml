@@ -708,6 +708,15 @@ entries:
     records info when Docker is not installed'
   - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_user_lifecycle_check:
     fails when docker-user-hardening unit is missing'
+- id: LS-VAL-015A
+  script_path: validate_hardening.sh
+  function: docker_hardening_expected
+  criticality: utility
+  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_hardening_expected:
+    gate-c requires state-based Docker hardening signal'
+  checks:
+  - 'tests/unit/test_validate_additional_behavior.bats::docker_hardening_expected:
+    gate-c requires state-based Docker hardening signal'
 - id: LS-VAL-016
   script_path: validate_hardening.sh
   function: fail2ban_check
@@ -2280,3 +2289,157 @@ entries:
   behavior_test: "tests/unit/test_common_additional_behavior.bats::coolify_dashboard_http_code_is_healthy: rejects auth-only and missing-route responses"
   checks:
   - "tests/unit/test_common_additional_behavior.bats::coolify_dashboard_http_code_is_healthy: rejects auth-only and missing-route responses"
+- id: LS-BOOT-088
+  script_path: bootstrap_hardening.sh
+  function: install_fail2ban_without_autostart
+  criticality: security
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::install_fail2ban_without_autostart: dry-run installs package without enabling service"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::install_fail2ban_without_autostart: dry-run installs package without enabling service"
+- id: LS-BOOT-089
+  script_path: bootstrap_hardening.sh
+  function: emit_tailscale_result_sentinel
+  criticality: orchestration
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::emit_tailscale_result_sentinel: prints machine-readable sentinel when IPv4 exists"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::emit_tailscale_result_sentinel: prints machine-readable sentinel when IPv4 exists"
+- id: LS-BOOT-090
+  script_path: bootstrap_hardening.sh
+  function: docker_daemon_ready
+  criticality: utility
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
+- id: LS-BOOT-091
+  script_path: bootstrap_hardening.sh
+  function: wait_for_systemd_unit_success
+  criticality: utility
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
+- id: LS-BOOT-092
+  script_path: bootstrap_hardening.sh
+  function: wait_for_docker_daemon_ready
+  criticality: utility
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
+- id: LS-BOOT-093
+  script_path: bootstrap_hardening.sh
+  function: docker_user_rules_present
+  criticality: security
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
+- id: LS-BOOT-094
+  script_path: bootstrap_hardening.sh
+  function: ensure_docker_user_service_applied
+  criticality: security
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions: converge when Docker and managed rules become ready"
+- id: LS-BOOT-095
+  script_path: bootstrap_hardening.sh
+  function: wait_for_fail2ban_sshd_jail
+  criticality: security
+  behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::wait_for_fail2ban_sshd_jail: returns success after jail becomes queryable"
+  checks:
+  - "tests/unit/test_bootstrap_additional_behavior.bats::wait_for_fail2ban_sshd_jail: returns success after jail becomes queryable"
+- id: LS-DEP-033
+  script_path: deploy.sh
+  function: extract_bootstrap_tailscale_ip
+  criticality: orchestration
+  behavior_test: "tests/unit/test_deploy_setup_additional_behavior.bats::deploy helper state functions: extract bootstrap tailscale IP and validate resume state"
+  checks:
+  - "tests/unit/test_deploy_setup_additional_behavior.bats::deploy helper state functions: extract bootstrap tailscale IP and validate resume state"
+- id: LS-DEP-034
+  script_path: deploy.sh
+  function: assert_resume_phase1_contract_remote
+  criticality: orchestration
+  behavior_test: "tests/unit/test_deploy_setup_additional_behavior.bats::deploy helper state functions: extract bootstrap tailscale IP and validate resume state"
+  checks:
+  - "tests/unit/test_deploy_setup_additional_behavior.bats::deploy helper state functions: extract bootstrap tailscale IP and validate resume state"
+- id: LS-DEP-035
+  script_path: deploy.sh
+  function: verify_post_reboot_services_remote
+  criticality: orchestration
+  behavior_test: "tests/unit/test_deploy_setup_additional_behavior.bats::verify_post_reboot_services_remote: accepts healthy post-reboot services"
+  checks:
+  - "tests/unit/test_deploy_setup_additional_behavior.bats::verify_post_reboot_services_remote: accepts healthy post-reboot services"
+- id: LS-SET-017
+  script_path: setup.sh
+  function: setup_reboot_required_file
+  criticality: utility
+  behavior_test: "tests/unit/test_deploy_setup_additional_behavior.bats::setup reboot marker helpers: return overridable file paths"
+  checks:
+  - "tests/unit/test_deploy_setup_additional_behavior.bats::setup reboot marker helpers: return overridable file paths"
+- id: LS-SET-018
+  script_path: setup.sh
+  function: setup_reboot_required_pkgs_file
+  criticality: utility
+  behavior_test: "tests/unit/test_deploy_setup_additional_behavior.bats::setup reboot marker helpers: return overridable file paths"
+  checks:
+  - "tests/unit/test_deploy_setup_additional_behavior.bats::setup reboot marker helpers: return overridable file paths"
+- id: LS-COM-069
+  script_path: lib/coolify-common.sh
+  function: load_private_tls_ca_secrets_from_files
+  criticality: utility
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load secrets, normalize CA inputs, and resolve issuer metadata"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load secrets, normalize CA inputs, and resolve issuer metadata"
+- id: LS-COM-070
+  script_path: lib/coolify-common.sh
+  function: finalize_private_tls_ca_inputs
+  criticality: utility
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load secrets, normalize CA inputs, and resolve issuer metadata"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load secrets, normalize CA inputs, and resolve issuer metadata"
+- id: LS-COM-071
+  script_path: lib/coolify-common.sh
+  function: private_tls_resolver_name
+  criticality: utility
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load secrets, normalize CA inputs, and resolve issuer metadata"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load secrets, normalize CA inputs, and resolve issuer metadata"
+- id: LS-COM-072
+  script_path: lib/coolify-common.sh
+  function: private_tls_ca_expected_caa_issuer
+  criticality: utility
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load secrets, normalize CA inputs, and resolve issuer metadata"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load secrets, normalize CA inputs, and resolve issuer metadata"
+- id: LS-COM-073
+  script_path: lib/coolify-common.sh
+  function: cf_verify_private_tls_ca_caa
+  criticality: security
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::cf_verify_private_tls_ca_caa: accepts authorized issuer in tunnel mode"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::cf_verify_private_tls_ca_caa: accepts authorized issuer in tunnel mode"
+- id: LS-COM-074
+  script_path: lib/coolify-common.sh
+  function: cf_delete_dns_records_by_type
+  criticality: orchestration
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::cf_delete_dns_records_by_type: deletes every conflicting record for requested types"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::cf_delete_dns_records_by_type: deletes every conflicting record for requested types"
+- id: LS-COM-075
+  script_path: lib/coolify-common.sh
+  function: coolify_phase5_private_tls_diagnostic
+  criticality: security
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::coolify_phase5_private_tls_diagnostic: identifies routes hidden behind default cert"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::coolify_phase5_private_tls_diagnostic: identifies routes hidden behind default cert"
+- id: LS-COM-076
+  script_path: lib/coolify-common.sh
+  function: coolify_restore_public_dashboard_tls_script
+  criticality: security
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::coolify_restore_public_dashboard_tls_script: emits public TLS restoration script"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::coolify_restore_public_dashboard_tls_script: emits public TLS restoration script"
+- id: LS-COM-077
+  script_path: lib/coolify-common.sh
+  function: print_private_tls_ca_notice
+  criticality: utility
+  behavior_test: "tests/unit/test_common_additional_behavior.bats::print_private_tls_ca_notice: warns clearly when ZeroSSL fallback is selected"
+  checks:
+  - "tests/unit/test_common_additional_behavior.bats::print_private_tls_ca_notice: warns clearly when ZeroSSL fallback is selected"

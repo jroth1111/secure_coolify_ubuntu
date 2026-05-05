@@ -16,6 +16,7 @@ set -Eeuo pipefail
 # Usage: sudo ./validate_hardening.sh [--json|--health-check]
 
 STATE_FILE="/var/lib/bootstrap-hardening/state"
+STATE_LOCK_FILE="${STATE_FILE}.lock"
 JOURNALD_DROPIN="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
 AUDITD_CONF="/etc/audit/auditd.conf"
 HOSTS_FILE="${HOSTS_FILE:-/etc/hosts}"
@@ -135,6 +136,7 @@ DOCKER_SSH_CIDRS="10.0.0.0/8,172.16.0.0/12"
 ALLOWED_PRIVILEGED_CONTAINERS=""
 TAILSCALE_DIRECT_WAN="auto"
 UPDATE_PROFILE=""
+DOCKER_PRESENT="false"
 DOCKER_RULES_APPLIED="false"
 CONFIGURED_TIMEZONE=""
 COOLIFY_ENV_FILE="/data/coolify/source/.env"
@@ -149,9 +151,22 @@ NETWORKD_WAIT_ONLINE_DROPIN="/etc/systemd/system/systemd-networkd-wait-online.se
 APT_HELPER_BIN="${APT_HELPER_BIN:-/usr/lib/apt/apt-helper}"
 
 load_state_context() {
+  local state_snapshot
   [[ -f "${STATE_FILE}" ]] || return 0
+  state_snapshot="$(mktemp)"
+  if command -v flock >/dev/null 2>&1; then
+    if ! flock -s "${STATE_LOCK_FILE}" bash -ceu 'cat "$1" > "$2"' _ "${STATE_FILE}" "${state_snapshot}"; then
+      rm -f "${state_snapshot}"
+      return 0
+    fi
+  else
+    cat "${STATE_FILE}" > "${state_snapshot}"
+  fi
+
   # shellcheck disable=SC1090
-  source "${STATE_FILE}"
+  source "${state_snapshot}"
+  rm -f "${state_snapshot}"
+
   ADMIN_USER="${admin_user:-}"
   DOMAIN="${domain:-}"
   SSH_PORT="${ssh_port:-22}"
@@ -166,6 +181,7 @@ load_state_context() {
   ALLOWED_PRIVILEGED_CONTAINERS="${allowed_privileged_containers:-}"
   TAILSCALE_DIRECT_WAN="${tailscale_direct_wan:-auto}"
   UPDATE_PROFILE="${update_profile:-}"
+  DOCKER_PRESENT="${docker_present:-false}"
   DOCKER_RULES_APPLIED="${docker_rules_applied:-false}"
   CONFIGURED_TIMEZONE="${timezone:-}"
 }
@@ -175,6 +191,18 @@ is_true() {
     1|true|yes|y|on) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+docker_hardening_expected() {
+  if is_true "${DOCKER_PRESENT:-false}" || is_true "${DOCKER_RULES_APPLIED:-false}"; then
+    return 0
+  fi
+
+  if [[ "${GATE_C_MODE}" == "true" ]]; then
+    return 1
+  fi
+
+  command -v docker >/dev/null 2>&1
 }
 
 regex_escape() {
@@ -357,6 +385,32 @@ ssh_check() {
       record "PASS" "ssh: Match localhost root=prohibit-password"
     else
       record "FAIL" "ssh: Match localhost root" "expected prohibit-password/without-password, got ${match_root_val:-<empty>}"
+    fi
+
+    # Root password should be locked
+    local root_pw_status
+    root_pw_status="$(passwd -S root 2>/dev/null | awk '{print $2}')" || true
+    if [[ "${root_pw_status}" == "L" ]]; then
+      record "PASS" "ssh: root password locked"
+    elif [[ -n "${root_pw_status}" ]]; then
+      record "FAIL" "ssh: root password locked" "expected L (locked), got ${root_pw_status}"
+    fi
+
+    # Root authorized_keys should be empty (provisioning keys cleared)
+    local root_auth="/root/.ssh/authorized_keys"
+    if [[ -f "${root_auth}" ]]; then
+      if [[ ! -s "${root_auth}" ]] || grep -qE "^[[:space:]]*$" "${root_auth}" && ! grep -qE "[^[:space:]]" "${root_auth}"; then
+        record "PASS" "ssh: root authorized_keys empty"
+      else
+        record "FAIL" "ssh: root authorized_keys empty" "file contains keys — provisioning artifacts not cleaned"
+      fi
+    fi
+
+    # DSA host key should not exist (deprecated)
+    if [[ ! -f /etc/ssh/ssh_host_dsa_key ]]; then
+      record "PASS" "ssh: no deprecated DSA host key"
+    else
+      record "FAIL" "ssh: DSA host key" "/etc/ssh/ssh_host_dsa_key exists — deprecated and should be removed"
     fi
 
     if grep -qE "^allowusers .*\\broot\\b" <<< "${match_local}"; then
@@ -586,8 +640,20 @@ docker_user_check() {
     return
   fi
 
-  local rules
-  rules="$(iptables -t filter -S DOCKER-USER 2>/dev/null)" || { record "FAIL" "docker-user: IPv4" "DOCKER-USER chain absent (Docker may need restart)"; return; }
+  local rules attempt chain_ready="false"
+  for (( attempt=1; attempt<=10; attempt++ )); do
+    rules="$(iptables -t filter -S DOCKER-USER 2>/dev/null)" || rules=""
+    if [[ -n "${rules}" ]]; then
+      chain_ready="true"
+      break
+    fi
+    (( attempt < 10 )) || break
+    sleep 2
+  done
+  if [[ "${chain_ready}" != "true" ]]; then
+    record "FAIL" "docker-user: IPv4" "DOCKER-USER chain absent (Docker may need restart)"
+    return
+  fi
 
   if grep -q "coolify-hardening-wan-drop" <<< "${rules}"; then
     record "PASS" "docker-user: IPv4 wan-drop"
@@ -626,10 +692,10 @@ docker_user_check() {
 docker_user_lifecycle_check() {
   local unit_file="/etc/systemd/system/docker-user-hardening.service"
   if [[ ! -f "${unit_file}" ]]; then
-    if command -v docker >/dev/null 2>&1; then
+    if docker_hardening_expected; then
       record "FAIL" "docker-user: unit file" "not found at ${unit_file}"
     else
-      record "INFO" "docker-user: unit file" "Docker not installed; skipped"
+      record "INFO" "docker-user: unit file" "Docker hardening not yet expected; skipped"
     fi
     return
   fi
@@ -730,7 +796,18 @@ docker_ssh_cidr_sync_check() {
     fi
   fi
 
+  local docker_runtime_ready="false"
+  local docker_sock="${DOCKER_SOCK:-/var/run/docker.sock}"
   if command -v docker >/dev/null 2>&1; then
+    if command -v systemctl >/dev/null 2>&1 \
+      && systemctl is-active --quiet docker.service 2>/dev/null; then
+      docker_runtime_ready="true"
+    elif [[ -S "${docker_sock}" ]] && docker info >/dev/null 2>&1; then
+      docker_runtime_ready="true"
+    fi
+  fi
+
+  if docker_hardening_expected && [[ "${docker_runtime_ready}" == "true" ]]; then
     local cidr
     local -a compat_cidrs=()
     local -A seen_compat=()
@@ -753,6 +830,9 @@ docker_ssh_cidr_sync_check() {
     else
       record "PASS" "docker-ssh-cidr-sync: compatibility fallback cleared"
     fi
+  elif docker_hardening_expected && [[ "${GATE_C_MODE}" != "true" ]]; then
+    record "INFO" "docker-ssh-cidr-sync: compatibility fallback cleared" \
+      "Docker runtime not ready; compatibility fallback still tolerated"
   fi
 }
 
@@ -825,7 +905,17 @@ fail2ban_check() {
     return
   fi
 
-  if fail2ban-client status sshd >/dev/null 2>&1; then
+  local attempt jail_ready="false"
+  for (( attempt=1; attempt<=12; attempt++ )); do
+    if fail2ban-client status sshd >/dev/null 2>&1; then
+      jail_ready="true"
+      break
+    fi
+    (( attempt < 12 )) || break
+    sleep 2
+  done
+
+  if [[ "${jail_ready}" == "true" ]]; then
     record "PASS" "fail2ban: sshd jail enabled"
   else
     record "FAIL" "fail2ban: sshd jail" "jail not active"
@@ -873,7 +963,17 @@ fail2ban_check() {
       record "FAIL" "fail2ban: banaction=ufw" "UFW not active — fail2ban bans will silently fail"
     fi
   else
-    if iptables -L f2b-sshd >/dev/null 2>&1; then
+    local chain_ready="false"
+    for (( attempt=1; attempt<=12; attempt++ )); do
+      if iptables -L f2b-sshd >/dev/null 2>&1; then
+        chain_ready="true"
+        break
+      fi
+      (( attempt < 12 )) || break
+      sleep 2
+    done
+
+    if [[ "${chain_ready}" == "true" ]]; then
       record "PASS" "fail2ban: f2b-sshd iptables chain present"
     else
       record "FAIL" "fail2ban: f2b-sshd iptables chain" "chain missing — fail2ban may not have hooked into iptables"
@@ -1032,27 +1132,53 @@ rsyslog_collect_log_targets() {
 
 rsyslog_check() {
   local mode owner group group_digit
-  local target q_target
+  local target q_target target_owner target_group target_mode
   local target_count=0
+  local expected_dir_group="syslog"
+  local expected_target_owner="syslog"
+  local expected_target_group="adm"
+  local rsyslog_service_loaded="false"
+
+  if ! getent group syslog >/dev/null 2>&1; then
+    expected_dir_group="root"
+  fi
+  if ! getent passwd syslog >/dev/null 2>&1; then
+    expected_target_owner="root"
+  fi
+  if ! getent group "${expected_target_group}" >/dev/null 2>&1; then
+    if getent group syslog >/dev/null 2>&1; then
+      expected_target_group="syslog"
+    else
+      expected_target_group="root"
+    fi
+  fi
+  if systemctl show -p LoadState --value rsyslog 2>/dev/null | grep -qx 'loaded'; then
+    rsyslog_service_loaded="true"
+  fi
 
   owner="$(stat -c '%U' /var/log 2>/dev/null || true)"
   group="$(stat -c '%G' /var/log 2>/dev/null || true)"
   mode="$(stat -c '%a' /var/log 2>/dev/null || true)"
 
-  if [[ "${owner}" == "root" && "${group}" == "syslog" ]]; then
+  if [[ "${owner}" == "root" && "${group}" == "${expected_dir_group}" ]]; then
     record "PASS" "rsyslog: /var/log owner/group"
   else
     record "FAIL" "rsyslog: /var/log owner/group" \
-      "expected root:syslog, got ${owner:-unknown}:${group:-unknown}"
+      "expected root:${expected_dir_group}, got ${owner:-unknown}:${group:-unknown}"
   fi
 
   if [[ "${mode}" =~ ^[0-7]{3,4}$ ]]; then
-    group_digit="${mode: -2:1}"
-    if (( (10#${group_digit} & 2) != 0 )); then
-      record "PASS" "rsyslog: /var/log group-write enabled"
+    if [[ "${expected_dir_group}" == "syslog" ]]; then
+      group_digit="${mode: -2:1}"
+      if (( (10#${group_digit} & 2) != 0 )); then
+        record "PASS" "rsyslog: /var/log group-write enabled"
+      else
+        record "FAIL" "rsyslog: /var/log group-write" \
+          "mode ${mode} lacks group write; rsyslog cannot create missing targets"
+      fi
     else
-      record "FAIL" "rsyslog: /var/log group-write" \
-        "mode ${mode} lacks group write; rsyslog cannot create missing targets"
+      record "INFO" "rsyslog: /var/log group-write" \
+        "not required when syslog group is unavailable"
     fi
   else
     record "FAIL" "rsyslog: /var/log mode" "unreadable (${mode:-unknown})"
@@ -1063,11 +1189,24 @@ rsyslog_check() {
     ((++target_count))
     if [[ -f "${target}" ]]; then
       record "PASS" "rsyslog: target exists (${target})"
-      printf -v q_target '%q' "${target}"
-      if su -s /bin/sh -c "test -w ${q_target}" syslog >/dev/null 2>&1; then
-        record "PASS" "rsyslog: target writable by syslog (${target})"
+      target_owner="$(stat -c '%U' "${target}" 2>/dev/null || true)"
+      target_group="$(stat -c '%G' "${target}" 2>/dev/null || true)"
+      target_mode="$(stat -c '%a' "${target}" 2>/dev/null || true)"
+      if [[ "${target_owner}" == "${expected_target_owner}" && "${target_group}" == "${expected_target_group}" && "${target_mode}" == "640" ]]; then
+        record "PASS" "rsyslog: target ownership (${target})"
       else
-        record "FAIL" "rsyslog: target writable by syslog (${target})" "permission denied"
+        record "FAIL" "rsyslog: target ownership (${target})" \
+          "expected ${expected_target_owner}:${expected_target_group} mode 640, got ${target_owner:-unknown}:${target_group:-unknown} mode ${target_mode:-unknown}"
+      fi
+      printf -v q_target '%q' "${target}"
+      if getent passwd syslog >/dev/null 2>&1; then
+        if su -s /bin/sh -c "test -w ${q_target}" syslog >/dev/null 2>&1; then
+          record "PASS" "rsyslog: target writable by syslog (${target})"
+        else
+          record "FAIL" "rsyslog: target writable by syslog (${target})" "permission denied"
+        fi
+      else
+        record "INFO" "rsyslog: target writable by syslog (${target})" "syslog user unavailable; ownership fallback in effect"
       fi
     else
       record "FAIL" "rsyslog: target exists (${target})" "missing"
@@ -1079,23 +1218,27 @@ rsyslog_check() {
   fi
 
   if [[ -f /etc/logrotate.d/rsyslog ]] \
-    && grep -Eq '^[[:space:]]*create[[:space:]]+640[[:space:]]+syslog[[:space:]]+(adm|syslog)([[:space:]]|$)' /etc/logrotate.d/rsyslog; then
+    && grep -Eq "^[[:space:]]*create[[:space:]]+640[[:space:]]+${expected_target_owner}[[:space:]]+${expected_target_group}([[:space:]]|$)" /etc/logrotate.d/rsyslog; then
     record "PASS" "rsyslog: logrotate create directive"
+  elif [[ ! -f /etc/logrotate.d/rsyslog ]]; then
+    record "INFO" "rsyslog: logrotate create directive" "/etc/logrotate.d/rsyslog missing; rsyslog package may be absent"
   else
     record "FAIL" "rsyslog: logrotate create directive" \
-      "missing in /etc/logrotate.d/rsyslog (expected create 640 syslog <group>)"
+      "missing in /etc/logrotate.d/rsyslog (expected create 640 ${expected_target_owner} ${expected_target_group})"
   fi
 
   if [[ -f /etc/logrotate.d/ufw ]] \
-    && grep -Eq '^[[:space:]]*create[[:space:]]+640[[:space:]]+syslog[[:space:]]+(adm|syslog)([[:space:]]|$)' /etc/logrotate.d/ufw; then
+    && grep -Eq "^[[:space:]]*create[[:space:]]+640[[:space:]]+${expected_target_owner}[[:space:]]+${expected_target_group}([[:space:]]|$)" /etc/logrotate.d/ufw; then
     record "PASS" "rsyslog: ufw logrotate create directive"
   else
     record "FAIL" "rsyslog: ufw logrotate create directive" \
-      "missing in /etc/logrotate.d/ufw (expected create 640 syslog <group>)"
+      "missing in /etc/logrotate.d/ufw (expected create 640 ${expected_target_owner} ${expected_target_group})"
   fi
 
-  if systemctl is-active --quiet rsyslog 2>/dev/null; then
+  if [[ "${rsyslog_service_loaded}" == "true" ]] && systemctl is-active --quiet rsyslog 2>/dev/null; then
     record "PASS" "rsyslog: service active"
+  elif [[ "${rsyslog_service_loaded}" != "true" ]]; then
+    record "INFO" "rsyslog: service active" "service not running (unit absent)"
   else
     record "FAIL" "rsyslog: service active" "service not running"
   fi
@@ -1384,10 +1527,10 @@ admin_sudo_check() {
 docker_daemon_check() {
   local daemon_json="/etc/docker/daemon.json"
   if [[ ! -f "${daemon_json}" ]]; then
-    if command -v docker >/dev/null 2>&1; then
+    if docker_hardening_expected; then
       record "FAIL" "docker-daemon: daemon.json" "file missing (no log rotation)"
     else
-      record "INFO" "docker-daemon: daemon.json" "Docker not installed; skipped"
+      record "INFO" "docker-daemon: daemon.json" "Docker hardening not yet expected; skipped"
     fi
     return
   fi
@@ -1611,7 +1754,7 @@ apparmor_check() {
 
 disabled_services_check() {
   local svc
-  for svc in rpcbind avahi-daemon cups; do
+  for svc in rpcbind avahi-daemon cups ModemManager udisks2 fwupd upower; do
     local state="not-found"
     state="$(systemctl is-enabled "${svc}.service" 2>/dev/null || true)"
     state="${state%%$'\n'*}"
@@ -2861,14 +3004,15 @@ main() {
   coolify_binding_check
   if [[ "${GATE_C_MODE}" == "true" ]]; then
     record "INFO" "gate-c: coolify runtime checks" "skipped in --gate-c mode"
+    record "INFO" "gate-c: cloudflared checks" "skipped in --gate-c mode"
   else
     coolify_ssh_check
     coolify_container_check
     coolify_instance_settings_check
+    cloudflared_check
   fi
   validate_timer_check
   listening_ports_info
-  cloudflared_check
 
   if [[ "${HEALTH_CHECK_MODE}" == "true" ]]; then
     if ((FAIL_COUNT > 0)); then

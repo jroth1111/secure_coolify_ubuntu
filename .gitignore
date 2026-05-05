@@ -1,3 +1,4 @@
+.env
 codebase/
 tests/lib/bats-assert/.git.embedded/
 tests/lib/bats-support/.git.embedded/

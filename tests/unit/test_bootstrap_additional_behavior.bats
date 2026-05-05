@@ -209,6 +209,8 @@ EOF
   JOURNAL_RETENTION="3month"
   UPDATE_PROFILE="security-only"
   TIMEZONE="UTC"
+  DOCKER_PRESENT="true"
+  DOCKER_RULES_APPLIED="true"
   STRICT_DOCKER_SSH_CIDRS="true"
   DOCKER_SSH_CIDRS=("172.20.0.0/16")
   DOCKER_NPROC_HARD="8192"
@@ -221,6 +223,10 @@ EOF
 
   write_state
   run grep -q '^domain=vps\.example\.com$' "${STATE_FILE}"
+  assert_success
+  run grep -q '^docker_present=true$' "${STATE_FILE}"
+  assert_success
+  run grep -q '^docker_rules_applied=true$' "${STATE_FILE}"
   assert_success
 
   rm -rf "${tmpdir}"
@@ -621,6 +627,140 @@ EOF
   rm -f "${install_log}"
 }
 
+@test "configure_rsyslog_targets: falls back to root owner when syslog user is absent" {
+  DRY_RUN="false"
+  rsyslog_collect_log_targets() {
+    printf '%s\n' "/var/log/ufw.log"
+  }
+  local chown_log directive_log
+  chown_log="$(mktemp)"
+  directive_log="$(mktemp)"
+
+  getent() {
+    [[ "${1:-}" == "group" && "${2:-}" == "adm" ]]
+  }
+  install() { :; }
+  touch() { :; }
+  chown() { printf '%s\n' "$*" >> "${chown_log}"; }
+  chmod() { :; }
+  ensure_logrotate_create_directive() { printf '%s|%s|%s\n' "$1" "$2" "$3" >> "${directive_log}"; }
+  unit_available() { return 1; }
+
+  run configure_rsyslog_targets
+  assert_success
+  assert_output --partial "fallback owner root"
+  run grep -F -- 'root:adm /var/log/ufw.log' "${chown_log}"
+  assert_success
+  run grep -F -- '/etc/logrotate.d/ufw|root|adm' "${directive_log}"
+  assert_success
+
+  rm -f "${chown_log}" "${directive_log}"
+}
+
+@test "install_fail2ban_without_autostart: dry-run installs package without enabling service" {
+  DRY_RUN="true"
+  retry_apt_update() { echo apt-update; }
+  run_apt_command() { printf 'APT %s\n' "$*"; }
+
+  run install_fail2ban_without_autostart
+  assert_success
+  assert_output --partial "Installing required package: fail2ban"
+  assert_output --partial "APT env DEBIAN_FRONTEND=noninteractive"
+  assert_output --partial "fail2ban"
+}
+
+@test "emit_tailscale_result_sentinel: prints machine-readable sentinel when IPv4 exists" {
+  get_tailscale_ip() { echo "100.90.80.70"; }
+
+  run emit_tailscale_result_sentinel
+  assert_success
+  assert_output "HARDEN_RESULT_TAILSCALE_IP=100.90.80.70"
+}
+
+@test "docker helper readiness functions: converge when Docker and managed rules become ready" {
+  sleep() { :; }
+
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "docker.service" ]]; then
+      return 0
+    fi
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "docker-user-hardening.service" ]]; then
+      return 1
+    fi
+    if [[ "${1:-}" == "show" && "${2:-}" == "docker-user-hardening.service" ]]; then
+      if [[ "${3:-}" == "--property=ActiveState" ]]; then
+        echo inactive
+        return 0
+      fi
+      if [[ "${3:-}" == "--property=Result" ]]; then
+        echo success
+        return 0
+      fi
+    fi
+    if [[ "${1:-}" == "start" && "${2:-}" == "docker-user-hardening.service" ]]; then
+      return 0
+    fi
+    return 1
+  }
+  docker() {
+    [[ "${1:-}" == "info" ]]
+  }
+  iptables() {
+    if [[ "${1:-}" == "-S" && "${2:-}" == "DOCKER-USER" ]]; then
+      echo '-A DOCKER-USER -m comment --comment coolify-hardening'
+      return 0
+    fi
+    return 1
+  }
+
+  run docker_daemon_ready
+  assert_success
+
+  run wait_for_systemd_unit_success "docker-user-hardening.service" 1 0
+  assert_success
+
+  local docker_ready_calls=0
+  docker_daemon_ready() {
+    docker_ready_calls=$((docker_ready_calls + 1))
+    [[ "${docker_ready_calls}" -ge 2 ]]
+  }
+  DOCKER_PRESENT="true"
+  run wait_for_docker_daemon_ready 2 0
+  assert_success
+
+  unset -f docker_daemon_ready
+  docker_daemon_ready() { return 0; }
+  run docker_user_rules_present
+  assert_success
+
+  run() { "$@"; }
+  wait_for_docker_daemon_ready() { return 0; }
+  wait_for_systemd_unit_success() { return 0; }
+  docker_user_rules_present() { return 0; }
+  DOCKER_RULES_APPLIED="false"
+  ensure_docker_user_service_applied "Gate D"
+  [ "${DOCKER_RULES_APPLIED}" = "true" ]
+}
+
+@test "wait_for_fail2ban_sshd_jail: returns success after jail becomes queryable" {
+  local attempts=0
+  sleep() { :; }
+  systemctl() {
+    if [[ "${1:-}" == "is-active" && "${2:-}" == "--quiet" && "${3:-}" == "fail2ban" ]]; then
+      attempts=$((attempts + 1))
+      [[ "${attempts}" -ge 2 ]]
+      return
+    fi
+    return 1
+  }
+  fail2ban-client() {
+    [[ "${1:-}" == "status" && "${2:-}" == "sshd" && "${attempts}" -ge 2 ]]
+  }
+
+  run wait_for_fail2ban_sshd_jail 2 0
+  assert_success
+}
+
 @test "configure_docker_daemon: skips when Docker absent" {
   DRY_RUN="true"
   DOCKER_PRESENT="false"
@@ -660,6 +800,76 @@ EOF
   assert_success
   assert_output --partial "post-apply checks skipped"
   refute_output --partial "unexpected-die"
+}
+
+@test "run_post_checks: skips RunSSH verification when tailscale status is unavailable and install was not requested" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    DRY_RUN="false"
+    INSTALL_TAILSCALE="false"
+    DOCKER_PRESENT="false"
+    TUNNEL_MODE="false"
+    SSH_PORT="2222"
+    TAILSCALE_IFACE="tailscale0"
+    WAN_IFACE="eth0"
+    TIMEZONE="UTC"
+    JOURNALD_DROPIN="$(mktemp)"
+    AUDIT_RULES_FILE="$(mktemp)"
+    APT_AUTO_FILE="$(mktemp)"
+    APPORT_DEFAULT_FILE="$(mktemp)"
+    printf "Storage=persistent\n" > "${JOURNALD_DROPIN}"
+    printf "identity\nsudoers-change\nuser_commands\n" > "${AUDIT_RULES_FILE}"
+    printf "APT::Periodic::Unattended-Upgrade \"1\";\n" > "${APT_AUTO_FILE}"
+
+    assert_sshd_effective() { return 0; }
+    assert_sshd_match_localhost() { return 0; }
+    sshd() { :; }
+    ufw() {
+      if [[ "$1" == "status" && "${2:-}" == "verbose" ]]; then
+        printf "Status: active\n2222/tcp ALLOW IN on tailscale0\n"
+        return 0
+      fi
+      printf "Status: active\n"
+    }
+    unit_available() { return 1; }
+    is_container_runtime() { return 0; }
+    rsyslog_collect_log_targets() { :; }
+    assert_rsyslog_posture() { :; }
+    journalctl() { :; }
+    timedatectl() {
+      if [[ "$1" == "show" && "$2" == "--property=Timezone" && "$3" == "--value" ]]; then
+        printf "UTC\n"
+      fi
+    }
+    sysctl() {
+      if [[ "$1" == "-n" && "$2" == "net.ipv4.tcp_syncookies" ]]; then
+        printf "1\n"
+      elif [[ "$1" == "-n" && "$2" == "net.ipv4.ip_forward" ]]; then
+        printf "1\n"
+      fi
+    }
+    systemctl() {
+      if [[ "$1" == "is-active" && "$2" == "--quiet" && "$3" == "auditd" ]]; then
+        return 1
+      fi
+      if [[ "$1" == "is-active" && "$2" == "--quiet" && ( "$3" == "fail2ban" || "$3" == "rsyslog" ) ]]; then
+        return 0
+      fi
+      return 1
+    }
+    command() {
+      if [[ "$1" == "-v" && "$2" == "tailscale" ]]; then
+        return 0
+      fi
+      builtin command "$@"
+    }
+    tailscale() { return 1; }
+
+    run_post_checks
+  '
+  assert_success
+  assert_output --partial "skipping RunSSH verification"
+  assert_output --partial "rsyslog.service not installed"
 }
 
 @test "on_err: reports failing command context" {
