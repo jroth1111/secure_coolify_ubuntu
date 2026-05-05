@@ -229,6 +229,11 @@ validate_inputs() {
   for script in "${scripts[@]}"; do
     [[ -f "${SCRIPT_DIR}/${script}" ]] || die "Required script not found: ${SCRIPT_DIR}/${script}"
   done
+
+  local lib_files=(lib/tailscale.sh)
+  for libfile in "${lib_files[@]}"; do
+    [[ -f "${SCRIPT_DIR}/${libfile}" ]] || die "Required library not found: ${SCRIPT_DIR}/${libfile}"
+  done
 }
 
 verify_docker_user_gate_local() {

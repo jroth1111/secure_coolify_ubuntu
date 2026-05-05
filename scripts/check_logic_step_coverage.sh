@@ -31,6 +31,8 @@ SCRIPT_TARGETS = (
     "validate_hardening.sh",
     "deploy.sh",
     "setup.sh",
+    "lib/common.sh",
+    "lib/tailscale.sh",
     "lib/coolify-common.sh",
 )
 
@@ -86,6 +88,17 @@ SOURCE_PATTERNS = {
     "setup.sh": [
         r"\bsource_setup_script\b",
         r"\bsource\b[^\n]*(?:SETUP_SCRIPT|setup\.sh)",
+    ],
+    "lib/common.sh": [
+        r"\bsource_common_lib\b",
+        r"\bsource_deploy_script\b",
+        r"\bsource_setup_script\b",
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:COMMON_LIB|common\.sh|coolify-common\.sh|DEPLOY_SCRIPT|SETUP_SCRIPT|SCRIPT)",
+    ],
+    "lib/tailscale.sh": [
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap_hardening\.sh|tailscale\.sh)",
     ],
     "lib/coolify-common.sh": [
         r"\bsource_common_lib\b",

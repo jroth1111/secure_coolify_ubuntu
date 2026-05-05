@@ -443,6 +443,20 @@ sync_companion_scripts() {
     ssh_admin_sudo "bash -c 'mv /tmp/${script} /root/${script} && chmod 755 /root/${script}'" \
       || die "Failed to install ${script} to /root/"
   done
+
+  local lib_files=(lib/tailscale.sh)
+  ssh_admin_sudo 'install -d -m 0755 -o root -g root /root/lib' \
+    || die "Failed to create /root/lib on server"
+  for libfile in "${lib_files[@]}"; do
+    local libpath="${SCRIPT_DIR}/${libfile}"
+    local libname
+    libname="$(basename "${libfile}")"
+    [[ -f "${libpath}" ]] || die "Library not found: ${libpath}"
+    scp_admin "${libpath}" "${ADMIN_USER}@${TS_IP}:/tmp/${libname}" \
+      || die "Failed to upload ${libfile}"
+    ssh_admin_sudo "bash -c 'mv /tmp/${libname} /root/lib/${libname} && chmod 644 /root/lib/${libname}'" \
+      || die "Failed to install ${libfile} to /root/lib/"
+  done
   pass "Companion scripts synced to server"
 }
 
@@ -542,6 +556,23 @@ EOF
     retry_root_transport "Setting execute bit on /root/${script}" \
       ssh_root "chmod +x /root/${script}" \
       || die "Failed to set execute bit on /root/${script}"
+  done
+
+  retry_root_transport "Creating /root/lib on ${SERVER_IP}" \
+    ssh_root "install -d -m 0755 -o root -g root /root/lib" \
+    || die "Failed to create /root/lib on ${SERVER_IP}"
+  local lib_files=(lib/tailscale.sh)
+  for libfile in "${lib_files[@]}"; do
+    local libpath="${SCRIPT_DIR}/${libfile}"
+    local libname
+    libname="$(basename "${libfile}")"
+    [[ -f "${libpath}" ]] || die "Library not found: ${libpath}"
+    retry_root_transport "Uploading ${libfile} to ${SERVER_IP}" \
+      scp_root "${libpath}" "root@${SERVER_IP}:/root/lib/${libname}" \
+      || die "Failed to upload ${libfile} to ${SERVER_IP}"
+    retry_root_transport "Setting permissions on /root/lib/${libname}" \
+      ssh_root "chmod 644 /root/lib/${libname}" \
+      || die "Failed to set permissions on /root/lib/${libname}"
   done
   pass "Scripts uploaded"
 

@@ -14,6 +14,8 @@ SCRIPT_TARGETS = (
     "validate_hardening.sh",
     "deploy.sh",
     "setup.sh",
+    "lib/common.sh",
+    "lib/tailscale.sh",
     "lib/coolify-common.sh",
 )
 
@@ -47,6 +49,17 @@ ALLOWED_TEST_FILES = {
         "tests/unit/test_setup_workflow_contract.bats",
         "tests/unit/test_deploy_setup_additional_behavior.bats",
     },
+    "lib/common.sh": {
+        "tests/unit/test_common_additional_behavior.bats",
+        "tests/integration/test_deploy.bats",
+        "tests/unit/test_deploy_setup_additional_behavior.bats",
+        "tests/unit/test_deploy_workflow_contract.bats",
+        "tests/unit/test_setup_workflow_contract.bats",
+    },
+    "lib/tailscale.sh": {
+        "tests/unit/test_tailscale.bats",
+        "tests/unit/test_bootstrap_additional_behavior.bats",
+    },
     "lib/coolify-common.sh": {
         "tests/unit/test_common_additional_behavior.bats",
         "tests/integration/test_deploy.bats",
@@ -72,6 +85,17 @@ SOURCE_PATTERNS = {
     "setup.sh": [
         r"\bsource_setup_script\b",
         r"\bsource\b[^\n]*(?:SETUP_SCRIPT|setup\.sh)",
+    ],
+    "lib/common.sh": [
+        r"\bsource_common_lib\b",
+        r"\bsource_deploy_script\b",
+        r"\bsource_setup_script\b",
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:COMMON_LIB|common\.sh|coolify-common\.sh|DEPLOY_SCRIPT|SETUP_SCRIPT|SCRIPT)",
+    ],
+    "lib/tailscale.sh": [
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap_hardening\.sh|tailscale\.sh)",
     ],
     "lib/coolify-common.sh": [
         r"\bsource_common_lib\b",

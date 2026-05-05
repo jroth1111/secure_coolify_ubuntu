@@ -37,11 +37,17 @@ jobs:
         run: |
           bash -n bootstrap_hardening.sh
           bash -n validate_hardening.sh
+          bash -n lib/common.sh
+          bash -n lib/tailscale.sh
+          bash -n lib/coolify-common.sh
 
       - name: Shellcheck
         run: |
           shellcheck bootstrap_hardening.sh
           shellcheck validate_hardening.sh
+          shellcheck lib/common.sh
+          shellcheck lib/tailscale.sh
+          shellcheck lib/coolify-common.sh
 
   tests-pr-fast:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main')

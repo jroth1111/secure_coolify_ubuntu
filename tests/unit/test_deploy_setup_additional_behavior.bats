@@ -310,7 +310,7 @@ EOF
   assert_output --partial "alice@100.64.0.10 sudo echo ok"
 }
 
-@test "sync_companion_scripts: uploads and installs all companion scripts" {
+@test "sync_companion_scripts: uploads and installs all companion scripts and lib files" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"
     SCRIPT_DIR="'"${PROJECT_ROOT}"'"
@@ -321,8 +321,10 @@ EOF
     scp_admin() { upload_count=$((upload_count + 1)); return 0; }
     ssh_admin_sudo() { install_count=$((install_count + 1)); return 0; }
     sync_companion_scripts
-    [[ "${upload_count}" -eq 3 ]]
-    [[ "${install_count}" -eq 3 ]]
+    # 3 scripts + 1 lib file = 4 scp_admin invocations
+    [[ "${upload_count}" -eq 4 ]]
+    # 3 script mv+chmod + 1 mkdir /root/lib + 1 lib mv+chmod = 5 ssh_admin_sudo invocations
+    [[ "${install_count}" -eq 5 ]]
   '
   assert_success
 }
@@ -373,6 +375,8 @@ EOF
     for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
+    mkdir -p "${tmpdir}/lib"
+    : > "${tmpdir}/lib/tailscale.sh"
     SERVER_IP="203.0.113.10"
     ADMIN_USER="alice"
     ADMIN_PUBKEY="ssh-ed25519 AAAA test@example"
@@ -424,6 +428,8 @@ EOF
     for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
+    mkdir -p "${tmpdir}/lib"
+    : > "${tmpdir}/lib/tailscale.sh"
     SERVER_IP="203.0.113.10"
     ADMIN_USER="alice"
     ADMIN_PUBKEY="ssh-ed25519 AAAA test@example"
@@ -467,7 +473,8 @@ EOF
     run_with_heartbeat() { local label="$1"; shift; "$@"; }
     sleep() { :; }
     phase1_upload_harden
-    [[ "$(cat "${upload_counter}")" -eq 5 ]]
+    # 3 scripts (bootstrap retried once = 4) + 1 lib/tailscale.sh + 1 deploy.env = 6 scp_root calls
+    [[ "$(cat "${upload_counter}")" -eq 6 ]]
     [[ "$(cat "${chmod_counter}")" -eq 4 ]]
     [[ "${TS_IP}" == "100.64.0.10" ]]
   '
@@ -483,6 +490,8 @@ EOF
     for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
+    mkdir -p "${tmpdir}/lib"
+    : > "${tmpdir}/lib/tailscale.sh"
     SERVER_IP="203.0.113.10"
     ROOT_SSH_HOST="${SERVER_IP}"
     ADMIN_USER="alice"
@@ -536,6 +545,8 @@ EOF
     for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
+    mkdir -p "${tmpdir}/lib"
+    : > "${tmpdir}/lib/tailscale.sh"
     SERVER_IP="203.0.113.10"
     ROOT_SSH_HOST="${SERVER_IP}"
     ADMIN_USER="alice"
@@ -608,6 +619,8 @@ EOF
     for script in bootstrap_hardening.sh validate_hardening.sh configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
+    mkdir -p "${tmpdir}/lib"
+    : > "${tmpdir}/lib/tailscale.sh"
     captured_env="${tmpdir}/deploy.env.captured"
     SERVER_IP="203.0.113.10"
     ADMIN_USER="alice"

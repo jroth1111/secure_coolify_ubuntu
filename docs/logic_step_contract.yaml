@@ -293,7 +293,7 @@ entries:
   - 'tests/unit/test_bootstrap_additional_behavior.bats::generate_report: dry-run
     exits cleanly without writing report file'
 - id: LS-BOOT-033
-  script_path: bootstrap_hardening.sh
+  script_path: lib/tailscale.sh
   function: get_tailscale_ip
   criticality: utility
   behavior_test: 'tests/unit/test_tailscale.bats::get_tailscale_ip: returns cached
@@ -312,7 +312,7 @@ entries:
   - 'tests/unit/test_bootstrap_additional_behavior.bats::install_docker_user_assets:
     dry-run logs docker-user asset writes'
 - id: LS-BOOT-035
-  script_path: bootstrap_hardening.sh
+  script_path: lib/tailscale.sh
   function: install_tailscale
   criticality: utility
   behavior_test: 'tests/unit/test_tailscale.bats::install_tailscale: dry-run logs
@@ -496,7 +496,7 @@ entries:
   - 'tests/unit/test_functions.bats::validate_pubkey: rejects garbage'
   - 'tests/unit/test_functions.bats::validate_pubkey: accepts ed25519 key'
 - id: LS-BOOT-056
-  script_path: bootstrap_hardening.sh
+  script_path: lib/tailscale.sh
   function: verify_tailscale_iface
   criticality: security
   behavior_test: 'tests/unit/test_tailscale.bats::verify_tailscale_iface: fails when
@@ -1321,7 +1321,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::collect_common_inputs: preserves
     pre-populated values without prompting'
 - id: LS-COM-010
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: confirm
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::confirm: AUTO_YES=true
@@ -1429,7 +1429,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_set_wildcard_domain_script:
     emits DB update with ON_ERROR_STOP'
 - id: LS-COM-022
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: die
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::die helper: exits
@@ -1438,7 +1438,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::die helper: exits non-zero with
     fatal message'
 - id: LS-COM-023
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: fail
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::step/pass/fail
@@ -1474,7 +1474,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::summary_box_print_continuation:
     formats continuation line with indent'
 - id: LS-COM-024
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: is_true
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::is_true (common):
@@ -1483,7 +1483,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::is_true (common): truthy and
     falsy values return expected status'
 - id: LS-COM-025
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: log
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::log/warn helpers:
@@ -1492,7 +1492,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::log/warn helpers: emit expected
     prefixes'
 - id: LS-COM-026
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: pass
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::step/pass/fail
@@ -1510,7 +1510,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::print_deployment_summary: prints
     completion banner and key endpoints'
 - id: LS-COM-031
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: prompt_choice
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::prompt_choice:
@@ -1519,7 +1519,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::prompt_choice: invalid value
     fails validation'
 - id: LS-COM-032
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: prompt_secret
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::prompt_secret:
@@ -1528,7 +1528,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::prompt_secret: reads secret
     from stdin and sets variable'
 - id: LS-COM-033
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: prompt_value
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::prompt_value: AUTO_YES
@@ -1555,7 +1555,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::resolve_app_domain: derives
     app domain by selected mode'
 - id: LS-COM-036
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: step
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::step/pass/fail
@@ -1564,7 +1564,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::step/pass/fail helpers: print
     formatted status output'
 - id: LS-COM-037
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: warn
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::log/warn helpers:
@@ -1909,7 +1909,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::read_secret_file and load_cloudflare_tokens_from_files:
     read secure token files'
 - id: LS-COM-050
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: local_tz_offset
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
@@ -1918,7 +1918,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
 - id: LS-COM-051
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: read_secret_file
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::read_secret_file
@@ -1927,7 +1927,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::read_secret_file and load_cloudflare_tokens_from_files:
     read secure token files'
 - id: LS-COM-052
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: run_report_close_current_step
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
@@ -1936,7 +1936,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
 - id: LS-COM-053
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: run_report_finalize
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::run_report lifecycle:
@@ -1945,7 +1945,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::run_report lifecycle: emits
     structured JSON with steps and gates'
 - id: LS-COM-054
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: run_report_init
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::run_report lifecycle:
@@ -1954,7 +1954,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::run_report lifecycle: emits
     structured JSON with steps and gates'
 - id: LS-COM-055
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: run_report_record_gate
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
@@ -1963,7 +1963,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
 - id: LS-COM-056
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: run_report_step_start
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
@@ -1972,7 +1972,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
 - id: LS-COM-057
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: utc_now
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
@@ -2003,7 +2003,7 @@ entries:
   - 'tests/unit/test_validate_functions.bats::unit_available (validate): returns failure
     for missing unit'
 - id: LS-COM-058
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: run_with_heartbeat
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::run_with_heartbeat:
@@ -2014,7 +2014,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::run_with_heartbeat: propagates
     command failure with failed marker'
 - id: LS-COM-059
-  script_path: lib/coolify-common.sh
+  script_path: lib/common.sh
   function: stream_command_output
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::stream_command_output:
@@ -2079,14 +2079,14 @@ entries:
   checks:
   - "tests/unit/test_bootstrap_additional_behavior.bats::ensure_system_group: dry-run logs missing system group creation"
 - id: LS-BOOT-081
-  script_path: bootstrap_hardening.sh
+  script_path: lib/tailscale.sh
   function: ensure_tailscale_ssh_disabled
   criticality: security
   behavior_test: "tests/unit/test_tailscale.bats::ensure_tailscale_ssh_disabled: retries transient unknown RunSSH reads before accepting false"
   checks:
   - "tests/unit/test_tailscale.bats::ensure_tailscale_ssh_disabled: retries transient unknown RunSSH reads before accepting false"
 - id: LS-BOOT-082
-  script_path: bootstrap_hardening.sh
+  script_path: lib/tailscale.sh
   function: ensure_tailscaled_notify_access
   criticality: security
   behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::ensure_tailscaled_notify_access: dry-run prepares NotifyAccess restart"
@@ -2114,7 +2114,7 @@ entries:
   checks:
   - "tests/unit/test_bootstrap_additional_behavior.bats::run_apt_command: streams filtered output and preserves exit status"
 - id: LS-BOOT-086
-  script_path: bootstrap_hardening.sh
+  script_path: lib/tailscale.sh
   function: tailscale_runssh_pref_value
   criticality: utility
   behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::tailscale_runssh_pref_value: returns parsed RunSSH preference"
@@ -2297,7 +2297,7 @@ entries:
   checks:
   - "tests/unit/test_bootstrap_additional_behavior.bats::install_fail2ban_without_autostart: dry-run installs package without enabling service"
 - id: LS-BOOT-089
-  script_path: bootstrap_hardening.sh
+  script_path: lib/tailscale.sh
   function: emit_tailscale_result_sentinel
   criticality: orchestration
   behavior_test: "tests/unit/test_bootstrap_additional_behavior.bats::emit_tailscale_result_sentinel: prints machine-readable sentinel when IPv4 exists"
