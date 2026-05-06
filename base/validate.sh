@@ -46,101 +46,80 @@ source "${SCRIPT_DIR}/../overlays/docker-host/checks/docker_daemon_check.sh"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/../overlays/docker-host/checks/docker_trust_boundary_check.sh"
 
-parse_cli_args() {
-  local arg
-  for arg in "$@"; do
-    case "${arg}" in
-      --json) JSON_MODE="true" ;;
-      --health-check) HEALTH_CHECK_MODE="true" ;;
-      --gate-c) GATE_C_MODE="true" ;;
-      *)
-        printf 'Error: unknown option: %s\n' "${arg}" >&2
-        exit 1
-        ;;
-    esac
-  done
+# shellcheck source=./checks/_runtime.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/_runtime.sh"
+# shellcheck source=./checks/ssh_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/ssh_check.sh"
+# shellcheck source=./checks/ufw_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/ufw_check.sh"
+# shellcheck source=./checks/sysctl_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/sysctl_check.sh"
+# shellcheck source=./checks/fail2ban_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/fail2ban_check.sh"
+# shellcheck source=./checks/auditd_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/auditd_check.sh"
+# shellcheck source=./checks/journald_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/journald_check.sh"
+# shellcheck source=./checks/rsyslog_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/rsyslog_check.sh"
+# shellcheck source=./checks/timesync_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/timesync_check.sh"
+# shellcheck source=./checks/timezone_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/timezone_check.sh"
+# shellcheck source=./checks/swap_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/swap_check.sh"
+# shellcheck source=./checks/bootloader_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/bootloader_check.sh"
+# shellcheck source=./checks/reboot_required_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/reboot_required_check.sh"
+# shellcheck source=./checks/banner_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/banner_check.sh"
+# shellcheck source=./checks/admin_sudo_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/admin_sudo_check.sh"
+# shellcheck source=./checks/apparmor_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/apparmor_check.sh"
+# shellcheck source=./checks/disabled_services_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/disabled_services_check.sh"
+# shellcheck source=./checks/apport_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/apport_check.sh"
+# shellcheck source=./checks/cron_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/cron_check.sh"
+# shellcheck source=./checks/networkd_wait_online_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/networkd_wait_online_check.sh"
+# shellcheck source=./checks/tailscale_check.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/checks/tailscale_check.sh"
 
-  if [[ "${JSON_MODE}" == "true" && "${HEALTH_CHECK_MODE}" == "true" ]]; then
-    printf 'Error: --json and --health-check are mutually exclusive.\n' >&2
-    exit 1
-  fi
-}
 
-detect_container_runtime() {
-  if [[ -f /.dockerenv || "${container:-}" == "docker" ]]; then
-    IS_CONTAINER="true"
-  fi
-}
 
 PASS_COUNT=0
 FAIL_COUNT=0
 INFO_COUNT=0
 declare -a RESULTS=()
 
-record() {
-  local status="$1"
-  local name="$2"
-  local detail="${3:-}"
 
-  case "${status}" in
-    PASS) ((++PASS_COUNT)) ;;
-    FAIL) ((++FAIL_COUNT)) ;;
-    INFO) ((++INFO_COUNT)) ;;
-  esac
 
-  if [[ "${JSON_MODE}" == "true" ]]; then
-    RESULTS+=("$(jq -nc \
-      --arg check "${name}" \
-      --arg status "${status}" \
-      --arg detail "${detail}" \
-      '{check:$check,status:$status,detail:$detail}')")
-  elif [[ "${HEALTH_CHECK_MODE}" != "true" ]]; then
-    printf '%-6s %-45s %s\n' "[${status}]" "${name}" "${detail}"
-  else
-    :
-  fi
-}
 
-check() {
-  local name="$1"
-  shift
-  if "$@" >/dev/null 2>&1; then
-    record "PASS" "${name}"
-  else
-    record "FAIL" "${name}" "$*"
-  fi
-}
-
-unit_available() {
-  local unit_name="$1"
-  command -v systemctl >/dev/null 2>&1 || return 1
-  local load_state
-  load_state="$(systemctl show --property=LoadState --value "${unit_name}" 2>/dev/null || true)"
-  [[ -n "${load_state}" && "${load_state}" != "not-found" ]]
-}
-
-ifupdown_is_authoritative() {
-  unit_available "networking.service" || return 1
-
-  local path
-  for path in /etc/network/interfaces /etc/network/interfaces.d/*; do
-    [[ -f "${path}" ]] || continue
-    if awk '
-      /^[[:space:]]*#/ { next }
-      /^[[:space:]]*iface[[:space:]]+/ {
-        if ($2 != "lo") {
-          found=1
-          exit
-        }
-      }
-      END { exit(found ? 0 : 1) }
-    ' "${path}"; then
-      return 0
-    fi
-  done
-
-  return 1
-}
 
 # Load state file for context (non-fatal if missing)
 ADMIN_USER=""
@@ -171,416 +150,20 @@ TAILSCALED_NOTIFY_DROPIN="/etc/systemd/system/tailscaled.service.d/10-notify-acc
 NETWORKD_WAIT_ONLINE_DROPIN="/etc/systemd/system/systemd-networkd-wait-online.service.d/10-any-timeout.conf"
 APT_HELPER_BIN="${APT_HELPER_BIN:-/usr/lib/apt/apt-helper}"
 
-load_state_context() {
-  local state_snapshot
-  [[ -f "${STATE_FILE}" ]] || return 0
-  state_snapshot="$(mktemp)"
-  if command -v flock >/dev/null 2>&1; then
-    if ! flock -s "${STATE_LOCK_FILE}" bash -ceu 'cat "$1" > "$2"' _ "${STATE_FILE}" "${state_snapshot}"; then
-      rm -f "${state_snapshot}"
-      return 0
-    fi
-  else
-    cat "${STATE_FILE}" > "${state_snapshot}"
-  fi
-
-  # shellcheck disable=SC1090
-  source "${state_snapshot}"
-  rm -f "${state_snapshot}"
-
-  ADMIN_USER="${admin_user:-}"
-  DOMAIN="${domain:-}"
-  SSH_PORT="${ssh_port:-22}"
-  TUNNEL_MODE="${tunnel_mode:-false}"
-  WAN_IFACE="${wan_iface:-}"
-  swap_size="${swap_size:-2G}"
-  BIND_DASHBOARD_TO_TAILSCALE="${bind_dashboard_to_tailscale:-false}"
-  TAILSCALE_IP="${tailscale_ip:-}"
-  TAILSCALE_CIDR="${tailscale_cidr:-100.64.0.0/10}"
-  STRICT_DOCKER_SSH_CIDRS="${strict_docker_ssh_cidrs:-false}"
-  DOCKER_SSH_CIDRS="${docker_ssh_cidrs:-10.0.0.0/8,172.16.0.0/12}"
-  ALLOWED_PRIVILEGED_CONTAINERS="${allowed_privileged_containers:-}"
-  TAILSCALE_DIRECT_WAN="${tailscale_direct_wan:-auto}"
-  UPDATE_PROFILE="${update_profile:-}"
-  DOCKER_PRESENT="${docker_present:-false}"
-  DOCKER_RULES_APPLIED="${docker_rules_applied:-false}"
-  CONFIGURED_TIMEZONE="${timezone:-}"
-}
-
-is_true() {
-  case "${1,,}" in
-    1|true|yes|y|on) return 0 ;;
-    *) return 1 ;;
-  esac
-}
 
 
-regex_escape() {
-  printf '%s' "$1" | sed -e 's/[][\\/.*^$(){}+?|]/\\&/g'
-}
-
-is_tailscale_ipv4() {
-  local ip="$1"
-  local o1 o2 o3 o4
-  IFS='.' read -r o1 o2 o3 o4 <<< "${ip}"
-  [[ "${o1:-}" =~ ^[0-9]+$ && "${o2:-}" =~ ^[0-9]+$ && "${o3:-}" =~ ^[0-9]+$ && "${o4:-}" =~ ^[0-9]+$ ]] || return 1
-  (( o1 == 100 )) || return 1
-  (( o2 >= 64 && o2 <= 127 )) || return 1
-  (( o3 >= 0 && o3 <= 255 )) || return 1
-  (( o4 >= 0 && o4 <= 255 )) || return 1
-}
-
-private_domain_hosts_check() {
-  if [[ -z "${DOMAIN}" ]]; then
-    record "INFO" "hosts: private domain loopback override" "domain not recorded in state; skipped"
-    return
-  fi
-
-  if [[ ! -f "${HOSTS_FILE}" ]]; then
-    record "FAIL" "hosts: private domain loopback override" "${HOSTS_FILE} not found"
-    return
-  fi
-
-  local pair host label loopback_hits
-  for pair in "${DOMAIN}:dashboard domain" "ws.${DOMAIN}:websocket domain"; do
-    host="${pair%%:*}"
-    label="${pair##*:}"
-    loopback_hits="$(awk -v target="${host}" '
-      $0 !~ /^[[:space:]]*#/ && NF > 1 {
-        ip = $1
-        if (ip ~ /^127\./ || ip == "::1") {
-          for (i = 2; i <= NF; i++) {
-            if ($i == target) {
-              print ip
-              break
-            }
-          }
-        }
-      }
-    ' "${HOSTS_FILE}" | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-
-    if [[ -n "${loopback_hits}" ]]; then
-      record "FAIL" "hosts: ${label} not loopback-pinned" \
-        "${host} mapped to ${loopback_hits} in ${HOSTS_FILE}"
-    else
-      record "PASS" "hosts: ${label} not loopback-pinned"
-    fi
-  done
-}
-
-tailscale_runssh_pref_value() {
-  local attempts="${1:-5}"
-  local delay_seconds="${2:-1}"
-  local attempt=1
-  local run_ssh_pref="unknown"
-
-  while (( attempt <= attempts )); do
-    run_ssh_pref="$(tailscale debug prefs 2>/dev/null | jq -r 'if has("RunSSH") then (.RunSSH|tostring) else "unknown" end' 2>/dev/null || echo "unknown")"
-    if [[ "${run_ssh_pref}" == "true" || "${run_ssh_pref}" == "false" ]]; then
-      printf '%s\n' "${run_ssh_pref}"
-      return 0
-    fi
-    if (( attempt < attempts )); then
-      sleep "${delay_seconds}"
-    fi
-    attempt=$((attempt + 1))
-  done
-
-  printf '%s\n' "${run_ssh_pref:-unknown}"
-}
 
 
-infer_update_profile() {
-  local apt_local="$1"
-  local updates_origin='origin=Ubuntu,codename=${distro_codename}-updates,label=Ubuntu'
-  local docker_origin_archive='origin=Docker,label=Docker CE,archive=${distro_codename},component=stable'
-  local docker_origin_suite='origin=Docker,label=Docker CE,suite=${distro_codename},component=stable'
 
-  if grep -qF "${updates_origin}" "${apt_local}" \
-    || grep -qF "${docker_origin_archive}" "${apt_local}" \
-    || grep -qF "${docker_origin_suite}" "${apt_local}"; then
-    printf 'balanced\n'
-  else
-    printf 'security-only\n'
-  fi
-}
+
+
+
 
 # ── SSH effective config ──
 
-ssh_check() {
-  local effective
-  effective="$(sshd -T 2>/dev/null)" || { record "FAIL" "ssh: sshd -T" "cannot query"; return; }
-
-  local field val expected
-  declare -A ssh_expects=(
-    [permitrootlogin]="no"
-    [passwordauthentication]="no"
-    [pubkeyauthentication]="yes"
-    [permitemptypasswords]="no"
-    [compression]="no"
-  )
-
-  for field in "${!ssh_expects[@]}"; do
-    expected="${ssh_expects[${field}]}"
-    val="$(grep -m1 "^${field} " <<< "${effective}" | awk '{print $2}')"
-    if [[ "${val}" == "${expected}" ]]; then
-      record "PASS" "ssh: ${field}=${val}"
-    else
-      record "FAIL" "ssh: ${field}" "expected ${expected}, got ${val:-<empty>}"
-    fi
-  done
-
-  if grep -q "chacha20-poly1305@openssh.com" <<< "${effective}"; then
-    record "PASS" "ssh: cipher restrictions present"
-  else
-    record "FAIL" "ssh: cipher restrictions" "chacha20-poly1305 not in ciphers"
-  fi
-
-  if grep -q "sntrup761x25519-sha512@openssh.com" <<< "${effective}"; then
-    record "PASS" "ssh: post-quantum KEX algorithm present"
-  else
-    record "FAIL" "ssh: post-quantum KEX algorithm" "sntrup761x25519-sha512@openssh.com not in kexalgorithms"
-  fi
-
-  if [[ -n "${ADMIN_USER}" ]]; then
-    if grep -qE "^allowusers .*\\b${ADMIN_USER}\\b" <<< "${effective}"; then
-      record "PASS" "ssh: AllowUsers includes ${ADMIN_USER}"
-    else
-      record "FAIL" "ssh: AllowUsers" "${ADMIN_USER} not listed"
-    fi
-  fi
-
-  # Verify Match Address block: root key-only login from localhost/Docker bridge CIDRs
-  local match_local
-  match_local="$(sshd -T -C addr=127.0.0.1,user=root,host=localhost,laddr=127.0.0.1 2>/dev/null)" || true
-  if [[ -n "${match_local}" ]]; then
-    local match_root_val
-    match_root_val="$(grep -m1 "^permitrootlogin " <<< "${match_local}" | awk '{print $2}')"
-    if grep -qE "^permitrootlogin (prohibit-password|without-password)$" <<< "${match_local}"; then
-      record "PASS" "ssh: Match localhost root=prohibit-password"
-    else
-      record "FAIL" "ssh: Match localhost root" "expected prohibit-password/without-password, got ${match_root_val:-<empty>}"
-    fi
-
-    # Root password should be locked
-    local root_pw_status
-    root_pw_status="$(passwd -S root 2>/dev/null | awk '{print $2}')" || true
-    if [[ "${root_pw_status}" == "L" ]]; then
-      record "PASS" "ssh: root password locked"
-    elif [[ -n "${root_pw_status}" ]]; then
-      record "FAIL" "ssh: root password locked" "expected L (locked), got ${root_pw_status}"
-    fi
-
-    # Root authorized_keys should be empty (provisioning keys cleared)
-    local root_auth="/root/.ssh/authorized_keys"
-    if [[ -f "${root_auth}" ]]; then
-      if [[ ! -s "${root_auth}" ]] || grep -qE "^[[:space:]]*$" "${root_auth}" && ! grep -qE "[^[:space:]]" "${root_auth}"; then
-        record "PASS" "ssh: root authorized_keys empty"
-      else
-        record "FAIL" "ssh: root authorized_keys empty" "file contains keys — provisioning artifacts not cleaned"
-      fi
-    fi
-
-    # DSA host key should not exist (deprecated)
-    if [[ ! -f /etc/ssh/ssh_host_dsa_key ]]; then
-      record "PASS" "ssh: no deprecated DSA host key"
-    else
-      record "FAIL" "ssh: DSA host key" "/etc/ssh/ssh_host_dsa_key exists — deprecated and should be removed"
-    fi
-
-    if grep -qE "^allowusers .*\\broot\\b" <<< "${match_local}"; then
-      record "PASS" "ssh: Match localhost AllowUsers includes root"
-    else
-      record "FAIL" "ssh: Match localhost AllowUsers" "root not listed"
-    fi
-  fi
-
-  local ssh_dropin match_line cidr
-  ssh_dropin="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
-  if [[ -f "${ssh_dropin}" ]]; then
-    match_line="$(grep -m1 '^Match Address ' "${ssh_dropin}" || true)"
-    if [[ -n "${match_line}" ]]; then
-      while IFS= read -r cidr; do
-        if grep -qE "(^|,|[[:space:]])$(regex_escape "${cidr}")($|,|[[:space:]])" <<< "${match_line}"; then
-          record "PASS" "ssh: Match includes Docker CIDR ${cidr}"
-        else
-          record "FAIL" "ssh: Match Docker CIDR ${cidr}" "missing from sshd Match Address block"
-        fi
-      done < <(load_docker_ssh_cidrs)
-    else
-      record "FAIL" "ssh: Match Address block" "missing in ${ssh_dropin}"
-    fi
-
-    if grep -q '^Ciphers \^' "${ssh_dropin}"; then
-      record "PASS" "ssh: Ciphers policy uses operator mode"
-    else
-      record "FAIL" "ssh: Ciphers policy mode" "expected '^' operator to preserve OpenSSH defaults"
-    fi
-
-    if grep -q '^MACs \^' "${ssh_dropin}"; then
-      record "PASS" "ssh: MACs policy uses operator mode"
-    else
-      record "FAIL" "ssh: MACs policy mode" "expected '^' operator to preserve OpenSSH defaults"
-    fi
-
-    if grep -q '^KexAlgorithms \^' "${ssh_dropin}"; then
-      record "PASS" "ssh: KexAlgorithms policy uses operator mode"
-    else
-      record "FAIL" "ssh: KexAlgorithms policy mode" "expected '^' operator to preserve OpenSSH defaults"
-    fi
-
-    if grep -q '^HostKeyAlgorithms \^' "${ssh_dropin}"; then
-      record "PASS" "ssh: HostKeyAlgorithms policy uses operator mode"
-    else
-      record "FAIL" "ssh: HostKeyAlgorithms policy mode" "expected '^' operator to preserve OpenSSH defaults"
-    fi
-  else
-    record "FAIL" "ssh: Match Address block" "${ssh_dropin} not found"
-  fi
-
-  # Verify external addresses still deny root
-  local match_external
-  match_external="$(sshd -T -C addr=203.0.113.1,user=root,host=example.com,laddr=0.0.0.0 2>/dev/null)" || true
-  if [[ -n "${match_external}" ]]; then
-    local ext_root_val
-    ext_root_val="$(grep -m1 "^permitrootlogin " <<< "${match_external}" | awk '{print $2}')"
-    if [[ "${ext_root_val}" == "no" ]]; then
-      record "PASS" "ssh: external root login denied"
-    else
-      record "FAIL" "ssh: external root login" "expected no, got ${ext_root_val:-<empty>}"
-    fi
-  fi
-}
 
 # ── UFW ──
 
-ufw_check() {
-  local ufw_out
-  ufw_out="$(ufw status verbose 2>/dev/null)" || { record "FAIL" "ufw: status query" "cannot run ufw"; return; }
-  ufw_has_port_on_iface() {
-    local port="$1" iface="$2" proto="${3:-tcp}" iface_re
-    iface_re="$(regex_escape "${iface}")"
-    grep -qE "(^|[[:space:]])${port}/${proto}([[:space:]]|$).*(on[[:space:]]+${iface_re}.*ALLOW IN|ALLOW IN.*on[[:space:]]+${iface_re})([[:space:]]|$)" <<< "${ufw_out}"
-  }
-  ufw_has_port_anywhere_unscoped() {
-    local port="$1" proto="${2:-tcp}"
-    grep -qE "(^|[[:space:]])${port}/${proto}([[:space:]]|$)[[:space:]]+ALLOW IN[[:space:]]+Anywhere([[:space:]]+\\(v6\\))?$" <<< "${ufw_out}"
-  }
-
-  if grep -q "^Status: active$" <<< "${ufw_out}"; then
-    record "PASS" "ufw: active"
-  else
-    record "FAIL" "ufw: active" "UFW is not active"
-    return
-  fi
-
-  if ufw_has_port_on_iface "${SSH_PORT}" "${TAILSCALE_IFACE}"; then
-    record "PASS" "ufw: SSH on ${TAILSCALE_IFACE}"
-  else
-    record "FAIL" "ufw: SSH on ${TAILSCALE_IFACE}" "rule missing"
-  fi
-
-  # Coolify SSHes from its Docker bridge CIDRs to the host.
-  local cidr escaped_cidr
-  while IFS= read -r cidr; do
-    escaped_cidr="$(regex_escape "${cidr}")"
-    if grep -qE "(^|[[:space:]])${SSH_PORT}/tcp([[:space:]]|$).*ALLOW.*${escaped_cidr}" <<< "${ufw_out}"; then
-      record "PASS" "ufw: SSH from Docker bridge (${cidr})"
-    else
-      record "FAIL" "ufw: SSH from Docker bridge (${cidr})" "${cidr} → port ${SSH_PORT}/tcp rule missing — Coolify cannot reach host"
-    fi
-    # Also check for orphaned non-tcp rules (legacy drift)
-    if grep -qE "(^|[[:space:]])${SSH_PORT}([[:space:]]|$).*ALLOW.*${escaped_cidr}" <<< "${ufw_out}" \
-      && ! grep -qE "(^|[[:space:]])${SSH_PORT}/tcp([[:space:]]|$).*ALLOW.*${escaped_cidr}" <<< "${ufw_out}"; then
-      record "FAIL" "ufw: SSH from Docker bridge (${cidr})" \
-        "${cidr} → port ${SSH_PORT} must be tcp-only; broad rule allows non-SSH protocols"
-    fi
-  done < <(load_docker_ssh_cidrs)
-
-  # Check for orphaned non-tcp SSH rules from Docker bridges (even if tcp rules exist)
-  while IFS= read -r cidr; do
-    escaped_cidr="$(regex_escape "${cidr}")"
-    # Match "22 " (port without /tcp) followed by ALLOW and the CIDR
-    if grep -qE "(^|[[:space:]])${SSH_PORT}([[:space:]]+ALLOW[[:space:]]|ALLOW[[:space:]]IN[[:space:]]).*${escaped_cidr}" <<< "${ufw_out}"; then
-      record "FAIL" "ufw: orphaned non-tcp SSH rule (${cidr})" \
-        "${cidr} → port ${SSH_PORT} rule without 'proto tcp' must be removed"
-    fi
-  done < <(load_docker_ssh_cidrs)
-
-  # Coolify dashboard (8000), Soketi (6001), terminal (6002) on Tailscale only.
-  for port_label in "8000:dashboard" "6001:soketi" "6002:terminal"; do
-    local port="${port_label%%:*}" label="${port_label##*:}"
-    if ufw_has_port_on_iface "${port}" "${TAILSCALE_IFACE}"; then
-      record "PASS" "ufw: Coolify ${label} (${port}) on ${TAILSCALE_IFACE}"
-    else
-      record "FAIL" "ufw: Coolify ${label} (${port})" "port ${port} not allowed on ${TAILSCALE_IFACE}"
-    fi
-  done
-
-  if [[ -n "${WAN_IFACE}" ]]; then
-    # SSH must not be on WAN
-    if ufw_has_port_on_iface "${SSH_PORT}" "${WAN_IFACE}" \
-      || ufw_has_port_anywhere_unscoped "${SSH_PORT}"; then
-      record "FAIL" "ufw: SSH NOT on WAN" "SSH allowed on ${WAN_IFACE}"
-    else
-      record "PASS" "ufw: SSH NOT on WAN"
-    fi
-
-    # Coolify ports must not be on WAN (must only be on tailscale0)
-    for port_label in "8000:dashboard" "6001:soketi" "6002:terminal"; do
-      local port="${port_label%%:*}" label="${port_label##*:}"
-      if ufw_has_port_on_iface "${port}" "${WAN_IFACE}" \
-         || ufw_has_port_anywhere_unscoped "${port}"; then
-        record "FAIL" "ufw: ${label} (${port}) NOT on WAN" \
-          "port ${port} allowed on WAN — must be tailscale0-only"
-      else
-        record "PASS" "ufw: ${label} (${port}) NOT on WAN"
-      fi
-    done
-
-    if is_true "${TUNNEL_MODE}"; then
-      if ufw_has_port_on_iface "80" "${WAN_IFACE}" \
-        || ufw_has_port_anywhere_unscoped "80"; then
-        record "FAIL" "ufw: tunnel-mode no port 80" "WAN 80 rule exists"
-      else
-        record "PASS" "ufw: tunnel-mode no port 80"
-      fi
-      if ufw_has_port_on_iface "443" "${WAN_IFACE}" \
-        || ufw_has_port_anywhere_unscoped "443"; then
-        record "FAIL" "ufw: tunnel-mode no port 443" "WAN 443 rule exists"
-      else
-        record "PASS" "ufw: tunnel-mode no port 443"
-      fi
-    fi
-
-    case "${TAILSCALE_DIRECT_WAN,,}" in
-      true|1|yes|y|on)
-        if ufw_has_port_on_iface "41641" "${WAN_IFACE}" "udp" \
-          || ufw_has_port_anywhere_unscoped "41641" "udp"; then
-          record "PASS" "ufw: tailscale direct UDP 41641 on WAN"
-        else
-          record "FAIL" "ufw: tailscale direct UDP 41641 on WAN" "TAILSCALE_DIRECT_WAN enabled but rule missing"
-        fi
-        ;;
-      false|0|no|n|off)
-        if ufw_has_port_on_iface "41641" "${WAN_IFACE}" "udp" \
-          || ufw_has_port_anywhere_unscoped "41641" "udp"; then
-          record "FAIL" "ufw: tailscale direct UDP 41641 closed" "TAILSCALE_DIRECT_WAN disabled but WAN rule exists"
-        else
-          record "PASS" "ufw: tailscale direct UDP 41641 closed"
-        fi
-        ;;
-      *)
-        if ufw_has_port_on_iface "41641" "${WAN_IFACE}" "udp" \
-          || ufw_has_port_anywhere_unscoped "41641" "udp"; then
-          record "INFO" "ufw: tailscale direct UDP 41641" "rule present (legacy state: tailscale_direct_wan unset)"
-        else
-          record "INFO" "ufw: tailscale direct UDP 41641" "rule absent (legacy state: tailscale_direct_wan unset)"
-        fi
-        ;;
-    esac
-  fi
-}
 
 # ── DOCKER-USER iptables (IPv4 + IPv6) ──
 
@@ -593,686 +176,33 @@ ufw_check() {
 
 # ── Sysctl ──
 
-sysctl_check() {
-  local key expected val
-  declare -A sysctl_expects=(
-    [net.ipv4.tcp_syncookies]="1"
-    [net.ipv4.ip_forward]="1"
-    [net.ipv4.conf.all.rp_filter]="2"
-    [net.ipv4.tcp_max_syn_backlog]="2048"
-    [net.ipv4.tcp_synack_retries]="2"
-    [fs.protected_hardlinks]="1"
-    [fs.protected_symlinks]="1"
-    [fs.suid_dumpable]="0"
-    [kernel.unprivileged_bpf_disabled]="2"
-    [kernel.kexec_load_disabled]="1"
-    [kernel.sysrq]="4"
-    [kernel.randomize_va_space]="2"
-    [kernel.dmesg_restrict]="1"
-    [kernel.perf_event_paranoid]="3"
-    [kernel.yama.ptrace_scope]="1"
-    [kernel.kptr_restrict]="2"
-    [vm.overcommit_memory]="1"
-    [vm.swappiness]="10"
-  )
-
-  for key in "${!sysctl_expects[@]}"; do
-    expected="${sysctl_expects[${key}]}"
-    val="$(sysctl -n "${key}" 2>/dev/null || echo "?")"
-    if [[ "${val}" == "${expected}" ]]; then
-      record "PASS" "sysctl: ${key}=${val}"
-    elif [[ "${val}" == "?" && "${IS_CONTAINER}" == "true" ]]; then
-      record "INFO" "sysctl: ${key}" "unavailable in container namespace"
-    else
-      record "FAIL" "sysctl: ${key}" "expected ${expected}, got ${val}"
-    fi
-  done
-
-  # BBR congestion control (informational — depends on kernel module availability)
-  local bbr_val
-  bbr_val="$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "?")"
-  if [[ "${bbr_val}" == "bbr" ]]; then
-    record "PASS" "sysctl: tcp_congestion_control=bbr"
-  elif [[ "${bbr_val}" == "?" && "${IS_CONTAINER}" == "true" ]]; then
-    record "INFO" "sysctl: tcp_congestion_control" "unavailable in container namespace"
-  else
-    record "INFO" "sysctl: tcp_congestion_control=${bbr_val}" "BBR not active (kernel module may be unavailable)"
-  fi
-
-  local qdisc_val
-  qdisc_val="$(sysctl -n net.core.default_qdisc 2>/dev/null || echo "?")"
-  if [[ "${qdisc_val}" == "fq" ]]; then
-    record "PASS" "sysctl: default_qdisc=fq"
-  elif [[ "${qdisc_val}" == "?" && "${IS_CONTAINER}" == "true" ]]; then
-    record "INFO" "sysctl: default_qdisc" "unavailable in container namespace"
-  else
-    record "INFO" "sysctl: default_qdisc=${qdisc_val}" "fq not active (BBR may be unavailable)"
-  fi
-}
 
 # ── fail2ban ──
 
-fail2ban_check() {
-  if systemctl is-active --quiet fail2ban 2>/dev/null; then
-    record "PASS" "fail2ban: active"
-  else
-    record "FAIL" "fail2ban: active" "service not running"
-    return
-  fi
-
-  local attempt jail_ready="false"
-  for (( attempt=1; attempt<=12; attempt++ )); do
-    if fail2ban-client status sshd >/dev/null 2>&1; then
-      jail_ready="true"
-      break
-    fi
-    (( attempt < 12 )) || break
-    sleep 2
-  done
-
-  if [[ "${jail_ready}" == "true" ]]; then
-    record "PASS" "fail2ban: sshd jail enabled"
-  else
-    record "FAIL" "fail2ban: sshd jail" "jail not active"
-  fi
-
-  local _jail_file="/etc/fail2ban/jail.d/coolify-hardening.local"
-  if [[ -f "${_jail_file}" ]] && grep -Fq "${TAILSCALE_CIDR}" "${_jail_file}"; then
-    record "PASS" "fail2ban: ignoreip includes Tailscale CIDR"
-  elif [[ ! -f "${_jail_file}" ]]; then
-    record "FAIL" "fail2ban: ignoreip" "jail file missing"
-  else
-    record "FAIL" "fail2ban: ignoreip" "${TAILSCALE_CIDR} not in ignoreip"
-  fi
-
-  if [[ -f "${FAIL2BAN_LOCAL_FILE}" ]] \
-    && grep -Eq '^[[:space:]]*allowipv6[[:space:]]*=[[:space:]]*auto([[:space:]]|$)' "${FAIL2BAN_LOCAL_FILE}"; then
-    record "PASS" "fail2ban: allowipv6=auto"
-  elif [[ ! -f "${FAIL2BAN_LOCAL_FILE}" ]]; then
-    record "FAIL" "fail2ban: allowipv6" "${FAIL2BAN_LOCAL_FILE} missing"
-  else
-    record "FAIL" "fail2ban: allowipv6" "expected allowipv6 = auto in ${FAIL2BAN_LOCAL_FILE}"
-  fi
-
-  # Functional check: verify fail2ban's ban backend is operational.
-  # When banaction=ufw, fail2ban delegates to UFW instead of creating iptables chains directly.
-  # When banaction=iptables-multiport (default), it creates f2b-* chains.
-  local banaction
-  banaction="$(
-    awk -F= '
-      /^[[:space:]]*banaction[[:space:]]*=/ {
-        value=$2
-        sub(/[[:space:]]*#.*$/, "", value)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-        print value
-        exit
-      }
-    ' /etc/fail2ban/jail.d/coolify-hardening.local 2>/dev/null || true
-  )"
-  banaction="${banaction:-iptables-multiport}"
-
-  if [[ "${banaction}" == "ufw" ]]; then
-    if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "^Status: active"; then
-      record "PASS" "fail2ban: banaction=ufw and UFW active"
-    else
-      record "FAIL" "fail2ban: banaction=ufw" "UFW not active — fail2ban bans will silently fail"
-    fi
-  else
-    local chain_ready="false"
-    for (( attempt=1; attempt<=12; attempt++ )); do
-      if iptables -L f2b-sshd >/dev/null 2>&1; then
-        chain_ready="true"
-        break
-      fi
-      (( attempt < 12 )) || break
-      sleep 2
-    done
-
-    if [[ "${chain_ready}" == "true" ]]; then
-      record "PASS" "fail2ban: f2b-sshd iptables chain present"
-    else
-      record "FAIL" "fail2ban: f2b-sshd iptables chain" "chain missing — fail2ban may not have hooked into iptables"
-    fi
-  fi
-}
 
 # ── auditd ──
 
-auditd_check() {
-  if systemctl is-active --quiet auditd 2>/dev/null; then
-    record "PASS" "auditd: active"
-  elif [[ "${IS_CONTAINER}" == "true" ]]; then
-    record "INFO" "auditd: active" "not active in container test environment"
-  else
-    record "FAIL" "auditd: active" "service not running"
-    return
-  fi
-
-  local rules
-  rules="$(auditctl -l 2>/dev/null)" || { record "FAIL" "auditd: rules" "cannot list"; return; }
-
-  if grep -q "identity" <<< "${rules}"; then
-    record "PASS" "auditd: identity rules loaded"
-  else
-    record "FAIL" "auditd: identity rules" "not loaded"
-  fi
-
-  if grep -q "sudoers-change" <<< "${rules}"; then
-    record "PASS" "auditd: sudoers rules loaded"
-  else
-    record "FAIL" "auditd: sudoers rules" "not loaded"
-  fi
-
-  if grep -q "kernel-module" <<< "${rules}"; then
-    record "PASS" "auditd: kernel-module rules loaded"
-  else
-    record "FAIL" "auditd: kernel-module rules" "not loaded"
-  fi
-
-  if grep -q "user_commands" <<< "${rules}"; then
-    record "PASS" "auditd: user_commands execve rules loaded"
-  else
-    record "FAIL" "auditd: user_commands execve rules" "not loaded"
-  fi
-
-  if [[ -f "${AUDITD_CONF}" ]]; then
-    if grep -qE '^[[:space:]]*max_log_file_action[[:space:]]*=[[:space:]]*keep_logs' "${AUDITD_CONF}"; then
-      record "PASS" "auditd: max_log_file_action=keep_logs"
-    else
-      record "FAIL" "auditd: max_log_file_action" "expected keep_logs in ${AUDITD_CONF}"
-    fi
-
-    if grep -qE '^[[:space:]]*disk_full_action[[:space:]]*=[[:space:]]*suspend' "${AUDITD_CONF}" \
-      && grep -qE '^[[:space:]]*disk_error_action[[:space:]]*=[[:space:]]*suspend' "${AUDITD_CONF}"; then
-      record "PASS" "auditd: disk failure actions configured"
-    else
-      record "FAIL" "auditd: disk failure actions" "expected disk_full_action/disk_error_action=suspend"
-    fi
-
-    local space_left space_left_action admin_space_left admin_space_left_action
-    space_left="$(grep -E '^[[:space:]]*space_left[[:space:]]*=' "${AUDITD_CONF}" | tail -1 | sed 's/.*=[[:space:]]*//')"
-    space_left_action="$(grep -E '^[[:space:]]*space_left_action[[:space:]]*=' "${AUDITD_CONF}" | tail -1 | sed 's/.*=[[:space:]]*//')"
-    if [[ "${space_left:-0}" =~ ^[0-9]+$ ]] && (( space_left > 0 )) && [[ "${space_left_action}" == "syslog" ]]; then
-      record "PASS" "auditd: space_left=${space_left}, space_left_action=syslog"
-    else
-      record "FAIL" "auditd: space_left thresholds" "expected space_left>0 and space_left_action=syslog"
-    fi
-
-    admin_space_left="$(grep -E '^[[:space:]]*admin_space_left[[:space:]]*=' "${AUDITD_CONF}" | tail -1 | sed 's/.*=[[:space:]]*//')"
-    admin_space_left_action="$(grep -E '^[[:space:]]*admin_space_left_action[[:space:]]*=' "${AUDITD_CONF}" | tail -1 | sed 's/.*=[[:space:]]*//')"
-    if [[ "${admin_space_left:-0}" =~ ^[0-9]+$ ]] && (( admin_space_left > 0 )) && [[ "${admin_space_left_action}" == "suspend" ]]; then
-      record "PASS" "auditd: admin_space_left=${admin_space_left}, admin_space_left_action=suspend"
-    else
-      record "FAIL" "auditd: admin_space_left thresholds" "expected admin_space_left>0 and admin_space_left_action=suspend"
-    fi
-  else
-    record "INFO" "auditd: policy config" "${AUDITD_CONF} not found"
-  fi
-
-  local audit_status lost backlog
-  audit_status="$(auditctl -s 2>/dev/null || true)"
-  if [[ -n "${audit_status}" ]]; then
-    lost="$(awk '/^lost[[:space:]]/ {print $2; exit}' <<< "${audit_status}")"
-    backlog="$(awk '/^backlog[[:space:]]/ {print $2; exit}' <<< "${audit_status}")"
-    if [[ "${lost:-0}" =~ ^[0-9]+$ ]] && [[ "${lost}" == "0" ]]; then
-      record "PASS" "auditd: queue loss (lost=0)"
-    elif [[ "${lost:-}" =~ ^[0-9]+$ ]] && (( lost > 100 )); then
-      record "FAIL" "auditd: queue loss" "lost=${lost} (>100 events dropped)"
-    elif [[ "${lost:-}" =~ ^[0-9]+$ ]]; then
-      record "INFO" "auditd: queue loss" "lost=${lost} (minor — below threshold)"
-    else
-      record "INFO" "auditd: queue loss" "unable to parse 'lost' from auditctl -s"
-    fi
-    [[ -n "${backlog}" ]] && record "INFO" "auditd: backlog" "backlog=${backlog}"
-  else
-    record "INFO" "auditd: queue status" "auditctl -s unavailable"
-  fi
-}
 
 # ── journald ──
 
-journald_check() {
-  if [[ -f "${JOURNALD_DROPIN}" ]] && grep -q "^Storage=persistent$" "${JOURNALD_DROPIN}"; then
-    record "PASS" "journald: persistent storage config"
-  else
-    record "FAIL" "journald: persistent storage config" "drop-in missing or not persistent"
-  fi
 
-  # Verify persistent storage directory exists (journald creates /var/log/journal when Storage=persistent)
-  if [[ -d /var/log/journal ]]; then
-    record "PASS" "journald: /var/log/journal directory exists"
-  else
-    record "FAIL" "journald: /var/log/journal" "directory missing — persistent storage not active"
-  fi
 
-  if [[ -f "${JOURNALD_DROPIN}" ]] && grep -q "^SystemKeepFree=500M$" "${JOURNALD_DROPIN}"; then
-    record "PASS" "journald: keep-free policy"
-  else
-    record "FAIL" "journald: keep-free policy" "SystemKeepFree=500M missing"
-  fi
-
-  local usage
-  usage="$(journalctl --disk-usage 2>/dev/null | head -1)" || true
-  if [[ -n "${usage}" ]]; then
-    record "INFO" "journald: disk usage" "${usage}"
-  fi
-}
-
-rsyslog_collect_log_targets() {
-  local cfg
-  local -a cfgs=()
-
-  [[ -f /etc/rsyslog.conf ]] && cfgs+=("/etc/rsyslog.conf")
-  for cfg in /etc/rsyslog.d/*.conf; do
-    [[ -f "${cfg}" ]] || continue
-    cfgs+=("${cfg}")
-  done
-
-  ((${#cfgs[@]} > 0)) || return 0
-
-  awk '
-    /^[[:space:]]*#/ { next }
-    {
-      for (i = 1; i <= NF; i++) {
-        tok = $i
-        if (tok ~ /^-?\/var\/log\//) {
-          sub(/^-/, "", tok)
-          sub(/[;,]+$/, "", tok)
-          print tok
-        }
-      }
-    }
-  ' "${cfgs[@]}" | sort -u
-}
-
-rsyslog_check() {
-  local mode owner group group_digit
-  local target q_target target_owner target_group target_mode
-  local target_count=0
-  local expected_dir_group="syslog"
-  local expected_target_owner="syslog"
-  local expected_target_group="adm"
-  local rsyslog_service_loaded="false"
-
-  if ! getent group syslog >/dev/null 2>&1; then
-    expected_dir_group="root"
-  fi
-  if ! getent passwd syslog >/dev/null 2>&1; then
-    expected_target_owner="root"
-  fi
-  if ! getent group "${expected_target_group}" >/dev/null 2>&1; then
-    if getent group syslog >/dev/null 2>&1; then
-      expected_target_group="syslog"
-    else
-      expected_target_group="root"
-    fi
-  fi
-  if systemctl show -p LoadState --value rsyslog 2>/dev/null | grep -qx 'loaded'; then
-    rsyslog_service_loaded="true"
-  fi
-
-  owner="$(stat -c '%U' /var/log 2>/dev/null || true)"
-  group="$(stat -c '%G' /var/log 2>/dev/null || true)"
-  mode="$(stat -c '%a' /var/log 2>/dev/null || true)"
-
-  if [[ "${owner}" == "root" && "${group}" == "${expected_dir_group}" ]]; then
-    record "PASS" "rsyslog: /var/log owner/group"
-  else
-    record "FAIL" "rsyslog: /var/log owner/group" \
-      "expected root:${expected_dir_group}, got ${owner:-unknown}:${group:-unknown}"
-  fi
-
-  if [[ "${mode}" =~ ^[0-7]{3,4}$ ]]; then
-    if [[ "${expected_dir_group}" == "syslog" ]]; then
-      group_digit="${mode: -2:1}"
-      if (( (10#${group_digit} & 2) != 0 )); then
-        record "PASS" "rsyslog: /var/log group-write enabled"
-      else
-        record "FAIL" "rsyslog: /var/log group-write" \
-          "mode ${mode} lacks group write; rsyslog cannot create missing targets"
-      fi
-    else
-      record "INFO" "rsyslog: /var/log group-write" \
-        "not required when syslog group is unavailable"
-    fi
-  else
-    record "FAIL" "rsyslog: /var/log mode" "unreadable (${mode:-unknown})"
-  fi
-
-  while IFS= read -r target; do
-    [[ -n "${target}" ]] || continue
-    ((++target_count))
-    if [[ -f "${target}" ]]; then
-      record "PASS" "rsyslog: target exists (${target})"
-      target_owner="$(stat -c '%U' "${target}" 2>/dev/null || true)"
-      target_group="$(stat -c '%G' "${target}" 2>/dev/null || true)"
-      target_mode="$(stat -c '%a' "${target}" 2>/dev/null || true)"
-      if [[ "${target_owner}" == "${expected_target_owner}" && "${target_group}" == "${expected_target_group}" && "${target_mode}" == "640" ]]; then
-        record "PASS" "rsyslog: target ownership (${target})"
-      else
-        record "FAIL" "rsyslog: target ownership (${target})" \
-          "expected ${expected_target_owner}:${expected_target_group} mode 640, got ${target_owner:-unknown}:${target_group:-unknown} mode ${target_mode:-unknown}"
-      fi
-      printf -v q_target '%q' "${target}"
-      if getent passwd syslog >/dev/null 2>&1; then
-        if su -s /bin/sh -c "test -w ${q_target}" syslog >/dev/null 2>&1; then
-          record "PASS" "rsyslog: target writable by syslog (${target})"
-        else
-          record "FAIL" "rsyslog: target writable by syslog (${target})" "permission denied"
-        fi
-      else
-        record "INFO" "rsyslog: target writable by syslog (${target})" "syslog user unavailable; ownership fallback in effect"
-      fi
-    else
-      record "FAIL" "rsyslog: target exists (${target})" "missing"
-    fi
-  done < <(rsyslog_collect_log_targets)
-
-  if (( target_count == 0 )); then
-    record "INFO" "rsyslog: configured /var/log targets" "none found in rsyslog config"
-  fi
-
-  if [[ -f /etc/logrotate.d/rsyslog ]] \
-    && grep -Eq "^[[:space:]]*create[[:space:]]+640[[:space:]]+${expected_target_owner}[[:space:]]+${expected_target_group}([[:space:]]|$)" /etc/logrotate.d/rsyslog; then
-    record "PASS" "rsyslog: logrotate create directive"
-  elif [[ ! -f /etc/logrotate.d/rsyslog ]]; then
-    record "INFO" "rsyslog: logrotate create directive" "/etc/logrotate.d/rsyslog missing; rsyslog package may be absent"
-  else
-    record "FAIL" "rsyslog: logrotate create directive" \
-      "missing in /etc/logrotate.d/rsyslog (expected create 640 ${expected_target_owner} ${expected_target_group})"
-  fi
-
-  if [[ -f /etc/logrotate.d/ufw ]] \
-    && grep -Eq "^[[:space:]]*create[[:space:]]+640[[:space:]]+${expected_target_owner}[[:space:]]+${expected_target_group}([[:space:]]|$)" /etc/logrotate.d/ufw; then
-    record "PASS" "rsyslog: ufw logrotate create directive"
-  else
-    record "FAIL" "rsyslog: ufw logrotate create directive" \
-      "missing in /etc/logrotate.d/ufw (expected create 640 ${expected_target_owner} ${expected_target_group})"
-  fi
-
-  if [[ "${rsyslog_service_loaded}" == "true" ]] && systemctl is-active --quiet rsyslog 2>/dev/null; then
-    record "PASS" "rsyslog: service active"
-  elif [[ "${rsyslog_service_loaded}" != "true" ]]; then
-    record "INFO" "rsyslog: service active" "service not running (unit absent)"
-  else
-    record "FAIL" "rsyslog: service active" "service not running"
-  fi
-
-  local active_since
-  active_since="$(systemctl show -p ActiveEnterTimestamp --value rsyslog 2>/dev/null || true)"
-  if [[ -n "${active_since}" ]]; then
-    if journalctl -u rsyslog --since "${active_since}" --no-pager -o cat 2>/dev/null \
-      | grep -Eq 'suspended \(module '\''builtin:omfile'\''\)|Permission denied|open error|e/2007|e/2433'; then
-      record "FAIL" "rsyslog: runtime log-write health" \
-        "omfile suspend/permission errors present since last restart"
-    else
-      record "PASS" "rsyslog: runtime log-write health"
-    fi
-  else
-    record "INFO" "rsyslog: runtime log-write health" "unable to determine service activation timestamp"
-  fi
-}
 
 # ── NTP / Timesync ──
 
-timesync_check() {
-  local ntp_val
-  ntp_val="$(timedatectl show --property=NTP --value 2>/dev/null || echo "?")"
-  if [[ "${ntp_val}" == "yes" ]]; then
-    record "PASS" "timesync: NTP active"
-  elif [[ "${IS_CONTAINER}" == "true" ]]; then
-    record "INFO" "timesync: NTP" "unavailable in container"
-  else
-    record "FAIL" "timesync: NTP" "not active"
-  fi
 
-  local synced_val
-  synced_val="$(timedatectl show --property=NTPSynchronized --value 2>/dev/null || echo "?")"
-  if [[ "${synced_val}" == "yes" ]]; then
-    record "PASS" "timesync: NTPSynchronized"
-  elif [[ "${IS_CONTAINER}" == "true" || "${ntp_val}" != "yes" ]]; then
-    record "INFO" "timesync: NTPSynchronized" "skipped (NTP not active or container)"
-  else
-    record "FAIL" "timesync: NTPSynchronized" "not yet synchronized"
-  fi
-}
-
-timezone_check() {
-  local current_tz=""
-  if command -v timedatectl >/dev/null 2>&1; then
-    current_tz="$(timedatectl show --property=Timezone --value 2>/dev/null || true)"
-  fi
-  if [[ -z "${current_tz}" || "${current_tz}" == "n/a" ]]; then
-    if [[ -f /etc/timezone ]]; then
-      current_tz="$(tr -d '[:space:]' < /etc/timezone 2>/dev/null || true)"
-    elif [[ -L /etc/localtime ]]; then
-      current_tz="$(readlink /etc/localtime 2>/dev/null || true)"
-      current_tz="${current_tz#*/zoneinfo/}"
-    fi
-  fi
-  if [[ -z "${current_tz}" || "${current_tz}" == "n/a" ]]; then
-    record "INFO" "timezone: current timezone" "unable to determine timezone from timedatectl or system files"
-    return
-  fi
-  record "INFO" "timezone: current" "${current_tz}"
-
-  if [[ -z "${CONFIGURED_TIMEZONE}" ]]; then
-    record "INFO" "timezone: configured value" "state missing timezone; cannot verify expected value"
-    return
-  fi
-
-  if [[ "${current_tz}" == "${CONFIGURED_TIMEZONE}" ]]; then
-    record "PASS" "timezone: configured (${CONFIGURED_TIMEZONE})"
-  else
-    record "FAIL" "timezone: configured (${CONFIGURED_TIMEZONE})" \
-      "current timezone is ${current_tz}"
-  fi
-}
 
 # ── Swap ──
 
-swap_check() {
-  local swap_size="${swap_size:-2G}"
-  if [[ "${swap_size}" == "0" ]]; then
-    record "INFO" "swap: disabled" "swap creation was skipped (--swap-size 0)"
-    return
-  fi
 
-  if swapon --show --noheadings 2>/dev/null | grep -q .; then
-    local swap_total swap_output
-    # swapon --show output format: NAME TYPE SIZE USED PRIO
-    # SIZE column position varies; use --bytes and sum the SIZE column (3rd field)
-    swap_output="$(swapon --show --noheadings --bytes 2>/dev/null)" || true
-    if [[ -n "${swap_output}" ]]; then
-      swap_total="$(awk '{sum+=$3} END {printf "%.0fM", sum/1048576}' <<< "${swap_output}")"
-      record "PASS" "swap: active (${swap_total})"
-    else
-      record "PASS" "swap: active"
-    fi
-  elif [[ "${IS_CONTAINER}" == "true" ]]; then
-    record "INFO" "swap: status" "unavailable in container"
-  else
-    record "FAIL" "swap: active" "no swap detected"
-  fi
 
-  if [[ -f /swapfile ]]; then
-    local perms
-    perms="$(stat -c '%a' /swapfile 2>/dev/null || echo "?")"
-    if [[ "${perms}" == "600" ]]; then
-      record "PASS" "swap: /swapfile permissions 0600"
-    else
-      record "FAIL" "swap: /swapfile permissions" "expected 600, got ${perms}"
-    fi
-  fi
 
-  local fstab_count
-  # Match any /swapfile fstab entry regardless of options format.
-  # Old Ubuntu: "/swapfile none swap sw 0 0"
-  # Modern Ubuntu: "/swapfile swap swap defaults 0 0"
-  fstab_count="$(grep -cE '^/swapfile[[:space:]]' /etc/fstab 2>/dev/null || true)"
-  fstab_count="${fstab_count:-0}"
-  if [[ "${fstab_count}" == "1" ]]; then
-    record "PASS" "swap: single fstab entry"
-  elif [[ "${fstab_count}" == "0" && "${IS_CONTAINER}" == "true" ]]; then
-    record "INFO" "swap: fstab" "not applicable in container"
-  elif (( fstab_count > 1 )); then
-    record "FAIL" "swap: fstab" "duplicate entries (${fstab_count})"
-  else
-    record "FAIL" "swap: fstab" "entry not found in /etc/fstab — swap will not persist on reboot"
-  fi
-}
-
-resolve_root_disk() {
-  local root_src root_pk
-  root_src="$(findmnt -n -o SOURCE / 2>/dev/null || true)"
-  [[ "${root_src}" =~ ^/dev/ ]] || return 1
-
-  root_pk="$(lsblk -no PKNAME "${root_src}" 2>/dev/null | head -n1 || true)"
-  if [[ -z "${root_pk}" ]]; then
-    case "${root_src}" in
-      /dev/nvme*n[0-9]p[0-9]*) root_pk="${root_src#/dev/}"; root_pk="${root_pk%p*}" ;;
-      /dev/*[0-9]) root_pk="${root_src#/dev/}"; root_pk="${root_pk%%[0-9]*}" ;;
-      /dev/*) root_pk="${root_src#/dev/}" ;;
-    esac
-  fi
-  [[ -n "${root_pk}" ]] || return 1
-  printf '/dev/%s\n' "${root_pk}"
-}
-
-bootloader_check() {
-  if [[ "${IS_CONTAINER}" == "true" ]]; then
-    record "INFO" "bootloader: partition safety" "unavailable in container"
-    return
-  fi
-
-  if [[ -d /sys/firmware/efi ]]; then
-    record "PASS" "bootloader: UEFI mode"
-    return
-  fi
-
-  local root_disk pttype
-  root_disk="$(resolve_root_disk 2>/dev/null || true)"
-  if [[ -z "${root_disk}" || ! -b "${root_disk}" ]]; then
-    record "INFO" "bootloader: BIOS/GPT safety" "unable to resolve root disk"
-    return
-  fi
-
-  pttype="$(lsblk -dn -o PTTYPE "${root_disk}" 2>/dev/null | head -n1 | tr -d '[:space:]')"
-  if [[ "${pttype}" != "gpt" ]]; then
-    record "PASS" "bootloader: BIOS non-GPT mode (${pttype:-unknown})"
-    return
-  fi
-
-  if ! command -v sgdisk >/dev/null 2>&1; then
-    record "FAIL" "bootloader: BIOS/GPT safety" "sgdisk missing; cannot verify EF02 BIOS boot partition"
-    return
-  fi
-
-  if sgdisk -p "${root_disk}" 2>/dev/null | awk '/^[[:space:]]*[0-9]+[[:space:]]+[0-9]+/{ if ($6=="EF02") found=1 } END{ exit(found?0:1) }'; then
-    record "PASS" "bootloader: BIOS/GPT has EF02 partition (${root_disk})"
-  else
-    record "FAIL" "bootloader: BIOS/GPT missing EF02 partition (${root_disk})" \
-      "GRUB BIOS installs may fall back to unreliable blocklists"
-  fi
-}
-
-reboot_required_check() {
-  if [[ -f /run/reboot-required ]]; then
-    local pkgs
-    pkgs="$(tr '\n' ',' < /run/reboot-required.pkgs 2>/dev/null | sed 's/,$//' || true)"
-    if [[ -n "${pkgs}" ]]; then
-      record "FAIL" "reboot: pending" "reboot required by updated packages (${pkgs})"
-    else
-      record "FAIL" "reboot: pending" "reboot required"
-    fi
-  else
-    record "PASS" "reboot: not required"
-  fi
-}
 
 # ── Banner ──
 
-banner_check() {
-  if [[ -f /etc/issue.net ]] && grep -q "AUTHORIZED" /etc/issue.net; then
-    record "PASS" "banner: /etc/issue.net present"
-  else
-    record "FAIL" "banner: /etc/issue.net" "missing or no AUTHORIZED text"
-  fi
-}
 
 # ── Admin sudo access ──
 
-admin_sudo_check() {
-  # Skip if no admin user configured
-  if [[ -z "${ADMIN_USER}" ]]; then
-    record "INFO" "admin: sudo" "no admin user in state file"
-    return 0
-  fi
-
-  # Check if admin user exists
-  if ! id "${ADMIN_USER}" >/dev/null 2>&1; then
-    record "FAIL" "admin: user" "${ADMIN_USER} does not exist"
-    return 0
-  fi
-
-  # Check if admin user is in sudo group
-  if id -nG "${ADMIN_USER}" | tr ' ' '\n' | grep -qx "sudo"; then
-    record "PASS" "admin: in sudo group"
-  else
-    record "FAIL" "admin: sudo group" "${ADMIN_USER} not in sudo group"
-    return 0
-  fi
-
-  # Check if passwordless sudo is configured.
-  # Passwordless sudo is required: ssh_admin_sudo in the orchestrator runs non-interactively
-  # and will hang waiting for a password prompt if NOPASSWD is absent.
-  local sudoers_file="/etc/sudoers.d/${ADMIN_USER}"
-  if [[ -f "${sudoers_file}" ]]; then
-    if grep -q "NOPASSWD" "${sudoers_file}" 2>/dev/null; then
-      record "PASS" "admin: passwordless sudo"
-    else
-      record "FAIL" "admin: sudo" "sudoers file exists but NOPASSWD not set — ssh_admin_sudo will hang"
-    fi
-  else
-    # Check if sudo -l shows NOPASSWD for this user
-    if sudo -l -U "${ADMIN_USER}" 2>/dev/null | grep -q "NOPASSWD"; then
-      record "PASS" "admin: passwordless sudo (via other config)"
-    else
-      record "FAIL" "admin: sudo" "NOPASSWD not configured — ssh_admin_sudo will hang"
-    fi
-  fi
-
-  # Check admin authorized_keys: file must exist, be non-empty, and each key must be
-  # on its own line. The concatenation bug (missing trailing newline on a prior key)
-  # would still allow sudo to work while silently breaking SSH login.
-  local home_dir auth_file
-  home_dir="$(getent passwd "${ADMIN_USER}" | cut -d: -f6 2>/dev/null)" || true
-  auth_file="${home_dir}/.ssh/authorized_keys"
-  if [[ ! -f "${auth_file}" ]]; then
-    record "FAIL" "admin: authorized_keys exists" "${auth_file} not found"
-  elif [[ ! -s "${auth_file}" ]]; then
-    record "FAIL" "admin: authorized_keys non-empty" "${auth_file} is empty"
-  else
-    # Allow valid key lines with optional OpenSSH options prefix:
-    # from="...",command="...",no-agent-forwarding,... ssh-ed25519 AAAA...
-    # Flag only lines that do not contain a recognized key type token.
-    local bad_lines
-    bad_lines="$(
-      awk '
-        /^[[:space:]]*($|#)/ { next }
-        /(^|[[:space:]])(ssh-[^[:space:]]+|ecdsa-sha2-[^[:space:]]+|sk-[^[:space:]]+)[[:space:]]+/ { next }
-        { bad++ }
-        END { print bad + 0 }
-      ' "${auth_file}" 2>/dev/null
-    )" || bad_lines="0"
-    if [[ "${bad_lines}" -eq 0 ]]; then
-      record "PASS" "admin: authorized_keys format"
-    else
-      record "FAIL" "admin: authorized_keys format" \
-        "${bad_lines} line(s) do not start with a valid key type (possible concatenation bug)"
-    fi
-  fi
-}
 
 # ── Docker daemon.json ──
 # Hardening owns: log-driver, log-opts, live-restore, default-ipc-mode,
@@ -1285,245 +215,15 @@ admin_sudo_check() {
 
 # ── AppArmor ──
 
-apparmor_check() {
-  if command -v aa-status >/dev/null 2>&1; then
-    if aa-status --enabled 2>/dev/null; then
-      record "PASS" "apparmor: enabled"
-    elif [[ "${IS_CONTAINER}" == "true" ]]; then
-      record "INFO" "apparmor: status" "cannot verify in container"
-    else
-      record "FAIL" "apparmor: enabled" "AppArmor not enabled"
-    fi
-  elif [[ "${IS_CONTAINER}" == "true" ]]; then
-    record "INFO" "apparmor: status" "cannot check in container"
-  else
-    record "FAIL" "apparmor: aa-status" "command not found"
-  fi
-}
 
 # ── Disabled services ──
 
-disabled_services_check() {
-  local svc
-  for svc in rpcbind avahi-daemon cups ModemManager udisks2 fwupd upower; do
-    local state="not-found"
-    state="$(systemctl is-enabled "${svc}.service" 2>/dev/null || true)"
-    state="${state%%$'\n'*}"
-    [[ -n "${state}" ]] || state="not-found"
 
-    if [[ "${state}" == masked* || "${state}" == "not-found" ]]; then
-      record "PASS" "disabled: ${svc} (${state})"
-    else
-      record "FAIL" "disabled: ${svc}" "state is ${state}, expected masked"
-    fi
-  done
-}
 
-apport_check() {
-  if [[ -f "${APPORT_DEFAULT_FILE}" ]]; then
-    local apport_enabled
-    apport_enabled="$(awk -F= '/^[[:space:]]*enabled[[:space:]]*=/{gsub(/[[:space:]]/, "", $2); print $2; exit}' "${APPORT_DEFAULT_FILE}" || true)"
-    if [[ "${apport_enabled}" == "0" ]]; then
-      record "PASS" "apport: enabled=0"
-    else
-      record "FAIL" "apport: enabled" "expected 0, got ${apport_enabled:-<unset>}"
-    fi
-  else
-    record "INFO" "apport: defaults file" "${APPORT_DEFAULT_FILE} missing"
-  fi
 
-  if systemctl list-unit-files --no-legend apport.service 2>/dev/null | grep -q "^apport\\.service"; then
-    if systemctl is-active --quiet apport.service 2>/dev/null; then
-      record "FAIL" "apport: service active" "apport.service is running"
-    else
-      record "PASS" "apport: service inactive"
-    fi
-
-    local state
-    state="$(systemctl is-enabled apport.service 2>/dev/null || true)"
-    if [[ "${state}" == "masked" || "${state}" == "disabled" ]]; then
-      record "PASS" "apport: service disabled/masked (${state})"
-    else
-      record "FAIL" "apport: service enabled state" "expected masked/disabled, got ${state:-unknown}"
-    fi
-  else
-    record "INFO" "apport: service" "not installed"
-  fi
-}
-
-cron_check() {
-  if ! unit_available "cron.service"; then
-    record "INFO" "cron: service" "not installed"
-    return 0
-  fi
-
-  local cron_env
-  cron_env="$(systemctl show cron.service -p Environment --value 2>/dev/null || true)"
-  if [[ "${cron_env}" =~ (^|[[:space:]])EXTRA_OPTS= ]]; then
-    record "PASS" "cron: EXTRA_OPTS environment set"
-  else
-    record "FAIL" "cron: EXTRA_OPTS environment set" "missing Environment override (expected ${CRON_EXTRA_OPTS_DROPIN})"
-  fi
-
-  if command -v journalctl >/dev/null 2>&1; then
-    local active_since unset_count
-    active_since="$(systemctl show cron.service -p ActiveEnterTimestamp --value 2>/dev/null || true)"
-    unset_count="$(journalctl -u cron --since "${active_since:-now}" --no-pager 2>/dev/null \
-      | grep -c 'Referenced but unset environment variable evaluates to an empty string: EXTRA_OPTS' || true)"
-    if [[ "${unset_count}" =~ ^[0-9]+$ && "${unset_count}" -eq 0 ]]; then
-      record "PASS" "cron: no EXTRA_OPTS unset warnings after last start"
-    else
-      record "FAIL" "cron: no EXTRA_OPTS unset warnings after last start" "found ${unset_count:-unknown} warning(s)"
-    fi
-  else
-    record "INFO" "cron: warning scan" "journalctl not available"
-  fi
-}
-
-networkd_wait_online_check() {
-  local ifupdown_authoritative="false"
-  if ifupdown_is_authoritative; then
-    ifupdown_authoritative="true"
-    record "PASS" "networkd-wait-online: ifupdown authoritative"
-  fi
-
-  if [[ "${ifupdown_authoritative}" == "true" ]]; then
-    local -a stray_units=()
-    unit_available "systemd-networkd.socket" && stray_units+=("systemd-networkd.socket")
-    unit_available "systemd-networkd.service" && stray_units+=("systemd-networkd.service")
-    unit_available "networkd-dispatcher.service" && stray_units+=("networkd-dispatcher.service")
-
-    local unit active_state enabled_state
-    local -a offenders=()
-    for unit in "${stray_units[@]}"; do
-      active_state="$(systemctl is-active "${unit}" 2>/dev/null || true)"
-      enabled_state="$(systemctl is-enabled "${unit}" 2>/dev/null || true)"
-      if [[ "${active_state}" != "inactive" || ( "${enabled_state}" != "disabled" && "${enabled_state}" != "masked" ) ]]; then
-        offenders+=("${unit}(active=${active_state:-unknown},enabled=${enabled_state:-unknown})")
-      fi
-    done
-
-    if (( ${#offenders[@]} == 0 )); then
-      record "PASS" "networkd-wait-online: stray systemd-networkd stack disabled"
-    else
-      record "FAIL" "networkd-wait-online: stray systemd-networkd stack disabled" "${offenders[*]}"
-    fi
-  else
-    if ! unit_available "systemd-networkd-wait-online.service"; then
-      record "INFO" "networkd-wait-online: service" "not installed"
-    else
-      if [[ -f "${NETWORKD_WAIT_ONLINE_DROPIN}" ]] \
-        && grep -Eq '^[[:space:]]*ExecStart=/lib/systemd/systemd-networkd-wait-online --any --timeout=15[[:space:]]*$' "${NETWORKD_WAIT_ONLINE_DROPIN}"; then
-        record "PASS" "networkd-wait-online: drop-in present (--any --timeout=15)"
-      else
-        record "FAIL" "networkd-wait-online: drop-in present" "missing/invalid ${NETWORKD_WAIT_ONLINE_DROPIN}"
-      fi
-
-      local exec_start
-      exec_start="$(systemctl show systemd-networkd-wait-online.service -p ExecStart --value 2>/dev/null || true)"
-      if [[ "${exec_start}" == *"--any"* && "${exec_start}" == *"--timeout=15"* ]]; then
-        record "PASS" "networkd-wait-online: effective ExecStart tuned"
-      else
-        record "FAIL" "networkd-wait-online: effective ExecStart tuned" "expected --any --timeout=15, got ${exec_start:-unknown}"
-      fi
-    fi
-  fi
-
-  if [[ -x "${APT_HELPER_BIN}" ]] && command -v timeout >/dev/null 2>&1; then
-    if timeout 20 "${APT_HELPER_BIN}" wait-online >/dev/null 2>&1; then
-      record "PASS" "networkd-wait-online: apt-helper wait-online succeeds"
-    else
-      record "FAIL" "networkd-wait-online: apt-helper wait-online succeeds" "current provider timed out or failed"
-    fi
-  else
-    record "INFO" "networkd-wait-online: apt-helper runtime check" "timeout or ${APT_HELPER_BIN} unavailable"
-  fi
-}
 
 # ── Tailscale interface ──
 
-tailscale_check() {
-  if ip link show "${TAILSCALE_IFACE}" >/dev/null 2>&1; then
-    record "PASS" "tailscale: ${TAILSCALE_IFACE} present"
-  else
-    record "FAIL" "tailscale: ${TAILSCALE_IFACE}" "interface not found"
-    return
-  fi
-
-  if unit_available "tailscaled.service"; then
-    local notify_access
-    notify_access="$(systemctl show tailscaled.service -p NotifyAccess --value 2>/dev/null || true)"
-    if [[ "${notify_access}" == "all" ]]; then
-      record "PASS" "tailscale: tailscaled NotifyAccess=all"
-    else
-      record "FAIL" "tailscale: tailscaled NotifyAccess" "expected all, got ${notify_access:-unknown}"
-    fi
-
-    if [[ -f "${TAILSCALED_NOTIFY_DROPIN}" ]] && grep -Eq '^[[:space:]]*NotifyAccess[[:space:]]*=[[:space:]]*all[[:space:]]*$' "${TAILSCALED_NOTIFY_DROPIN}"; then
-      record "PASS" "tailscale: NotifyAccess drop-in present"
-    else
-      record "FAIL" "tailscale: NotifyAccess drop-in" "missing/invalid ${TAILSCALED_NOTIFY_DROPIN}"
-    fi
-  else
-    record "INFO" "tailscale: tailscaled service" "unit not installed"
-  fi
-
-  # Check actual connection state via tailscale CLI (not just interface presence).
-  # Interface can exist while the daemon is in a broken/logged-out state.
-  if command -v tailscale >/dev/null 2>&1; then
-    local ts_state
-    ts_state="$(tailscale status --json 2>/dev/null \
-      | jq -r '.BackendState // "unknown"' \
-      2>/dev/null || echo "unknown")"
-    if [[ "${ts_state}" == "Running" ]]; then
-      record "PASS" "tailscale: BackendState=Running"
-    else
-      record "FAIL" "tailscale: BackendState" "expected Running, got ${ts_state}"
-    fi
-
-    # Check that a Tailscale IPv4 (100.x) has actually been assigned
-    local ts_ip
-    ts_ip="$(tailscale ip -4 2>/dev/null || true)"
-    if [[ -n "${ts_ip}" ]]; then
-      record "PASS" "tailscale: IPv4 assigned (${ts_ip})"
-    else
-      record "FAIL" "tailscale: IPv4 address" "no Tailscale IPv4 — check auth key and login state"
-    fi
-
-    local run_ssh_pref
-    run_ssh_pref="$(tailscale_runssh_pref_value 5 1)"
-    if [[ "${run_ssh_pref}" == "false" ]]; then
-      record "PASS" "tailscale: RunSSH=false"
-    elif [[ "${run_ssh_pref}" == "unknown" ]]; then
-      record "FAIL" "tailscale: RunSSH" "expected false, got unknown after retries"
-    else
-      record "FAIL" "tailscale: RunSSH" "expected false, got ${run_ssh_pref}"
-    fi
-
-    local direct_count relay_count
-    direct_count="$(tailscale status --json 2>/dev/null | jq -r '[.Peer[]? | select((.CurAddr // "") != "" and ((.Relay // "") == ""))] | length' 2>/dev/null || echo "")"
-    relay_count="$(tailscale status --json 2>/dev/null | jq -r '[.Peer[]? | select((.Relay // "") != "")] | length' 2>/dev/null || echo "")"
-    if [[ "${direct_count}" =~ ^[0-9]+$ && "${relay_count}" =~ ^[0-9]+$ ]]; then
-      record "INFO" "tailscale: peer path summary" "direct=${direct_count}, relay=${relay_count}"
-    else
-      record "INFO" "tailscale: peer path summary" "unable to parse direct/relay counts"
-    fi
-
-    if command -v journalctl >/dev/null 2>&1 && unit_available "tailscaled.service"; then
-      local ts_active_since ts_notify_warn_count
-      ts_active_since="$(systemctl show tailscaled.service -p ActiveEnterTimestamp --value 2>/dev/null || true)"
-      ts_notify_warn_count="$(journalctl -u tailscaled --since "${ts_active_since:-now}" --no-pager 2>/dev/null \
-        | grep -Ec 'Got notification message from PID .*reception only permitted for main PID|Cannot find unit for notify message of PID .*, ignoring\.' || true)"
-      if [[ "${ts_notify_warn_count}" =~ ^[0-9]+$ && "${ts_notify_warn_count}" -eq 0 ]]; then
-        record "PASS" "tailscale: no systemd notify warnings after last start"
-      else
-        record "FAIL" "tailscale: no systemd notify warnings after last start" "found ${ts_notify_warn_count:-unknown} warning(s)"
-      fi
-    fi
-  else
-    record "INFO" "tailscale: CLI" "tailscale binary not found; skipping state/IP checks"
-  fi
-}
 
 # ── Coolify split-horizon binding ──
 
@@ -1682,13 +382,6 @@ unattended_upgrades_check() {
 
 # ── Listening ports (informational) ──
 
-listening_ports_info() {
-  local ports
-  ports="$(ss -tlnp 2>/dev/null | tail -n +2 | awk '{print $4}' | sort -u)" || true
-  if [[ -n "${ports}" ]]; then
-    record "INFO" "listening: TCP ports" "$(echo "${ports}" | tr '\n' ' ')"
-  fi
-}
 
 # ── Coolify SSH access to localhost ──
 # Gate-C safe: all checks are skipped if Coolify is not yet installed.
