@@ -652,7 +652,7 @@ setup() {
     TS_IP="100.64.0.10"
     ADMIN_USER="alice"
     DEPLOY_MODE="tunnel"
-    DOMAIN="vps.megastyleapartments-super-long-environment-name.example.com.au"
+    DOMAIN="vps.this-is-a-very-long-subdomain-name-for-wrapping-tests.example.com.au"
     CF_ZONE_NAME="example.com.au"
     APP_DOMAIN="example.com.au"
     TUNNEL_ID="tunnel-1234"

@@ -10,6 +10,7 @@ logs/
 # Local agent/tool scratch output
 workspace/
 .code-state/
+.tmp_secrets/
 
 # OS/editor junk
 .DS_Store

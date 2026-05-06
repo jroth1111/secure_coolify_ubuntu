@@ -4,7 +4,7 @@
 
 For this deployment model, the practical free-provider choice set is much narrower than it first appears.
 
-The goal is not merely to obtain a certificate. The goal is to obtain a browser-trusted certificate for direct HTTPS and WSS access to custom domains such as `vps.megastyleapartments.com.au` and `ws.vps.megastyleapartments.com.au`, where the browser reaches the VPS over Tailscale and Traefik terminates TLS locally.
+The goal is not merely to obtain a certificate. The goal is to obtain a browser-trusted certificate for direct HTTPS and WSS access to custom domains such as `vps.example.com` and `ws.vps.example.com`, where the browser reaches the VPS over Tailscale and Traefik terminates TLS locally.
 
 Under that model:
 
@@ -22,8 +22,8 @@ The key conclusion is narrower than it first appears: if you need recovery befor
 This research is anchored to the live deployment state in this repository:
 
 - direct browser targets:
-  - `vps.megastyleapartments.com.au`
-  - `ws.vps.megastyleapartments.com.au`
+  - `vps.example.com`
+  - `ws.vps.example.com`
 - TLS terminator:
   - Traefik
 - validation mechanism:
@@ -33,8 +33,8 @@ This research is anchored to the live deployment state in this repository:
 
 Relevant local evidence:
 
-- [recovery_20260307_122130_private_tls_reconcile.log](/Users/gwizz/CascadeProjects/secure_coolify_ubuntu/logs/deploy_runs/recovery_20260307_122130_private_tls_reconcile.log)
-- [deploy_20260307_121600_resume_after_tls_fix.log](/Users/gwizz/CascadeProjects/secure_coolify_ubuntu/logs/deploy_runs/deploy_20260307_121600_resume_after_tls_fix.log)
+- `logs/deploy_runs/recovery_20260307_122130_private_tls_reconcile.log`
+- `logs/deploy_runs/deploy_20260307_121600_resume_after_tls_fix.log`
 
 ## Evaluation Criteria
 
@@ -166,7 +166,7 @@ That means Origin CA is useful only if the architecture changes so that browsers
 
 **Verdict:** not a substitute for custom-domain TLS in this architecture.
 
-Tailscale HTTPS is useful for `*.ts.net` names it controls. It does not solve public browser trust for arbitrary custom domains such as `vps.megastyleapartments.com.au`.
+Tailscale HTTPS is useful for `*.ts.net` names it controls. It does not solve public browser trust for arbitrary custom domains such as `vps.example.com`.
 
 #### Sources
 
