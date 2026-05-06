@@ -1,6 +1,6 @@
 version: 2
 entries:
-- id: LS-BOOT-001
+- id: LS-DOCKER-001
   script_path: overlays/docker-host/modules/cidrs.sh
   function: add_docker_ssh_cidr
   criticality: utility
@@ -8,7 +8,7 @@ entries:
     octet 172.256.0.0/16'
   checks:
   - 'tests/base/unit/test_functions.bats::add_docker_ssh_cidr: rejects invalid octet 172.256.0.0/16'
-- id: LS-BOOT-002
+- id: LS-BASE-001
   script_path: base/modules/ssh.sh
   function: assert_sshd_effective
   criticality: security
@@ -18,7 +18,7 @@ entries:
   - 'tests/base/unit/test_functions.bats::assert_sshd_effective: wrong permitrootlogin
     fails'
   - 'tests/base/unit/test_functions.bats::assert_sshd_effective: correct config passes'
-- id: LS-BOOT-003
+- id: LS-BASE-002
   script_path: base/modules/ssh.sh
   function: assert_sshd_match_localhost
   criticality: security
@@ -29,7 +29,7 @@ entries:
     no fails'
   - 'tests/base/unit/test_functions.bats::assert_sshd_match_localhost: correct Match config
     passes (prohibit-password)'
-- id: LS-BOOT-004
+- id: LS-BASE-003
   script_path: base/modules/post_checks.sh
   function: bool_cmd
   criticality: utility
@@ -37,7 +37,7 @@ entries:
     command'
   checks:
   - 'tests/base/unit/test_functions.bats::bool_cmd: returns true for successful command'
-- id: LS-BOOT-005
+- id: LS-BASE-004
   script_path: base/modules/auditd.sh
   function: build_audit_rules
   criticality: utility
@@ -45,7 +45,7 @@ entries:
     watch (syscall-form)'
   checks:
   - 'tests/base/unit/test_functions.bats::build_audit_rules: includes identity watch (syscall-form)'
-- id: LS-BOOT-006
+- id: LS-BASE-005
   script_path: base/modules/os_detect.sh
   function: check_disk_space
   criticality: utility
@@ -54,7 +54,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::check_disk_space: fails when disk space insufficient'
   - 'tests/base/unit/test_functions.bats::check_disk_space: passes when ample space available'
-- id: LS-BOOT-007
+- id: LS-BASE-006
   script_path: base/modules/auditd.sh
   function: configure_auditd
   criticality: security
@@ -63,7 +63,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_auditd: dry-run
     renders rules and logs planned actions'
-- id: LS-BOOT-008
+- id: LS-BASE-007
   script_path: base/modules/auditd.sh
   function: configure_auditd_policy
   criticality: security
@@ -72,7 +72,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_auditd_policy:
     updates auditd.conf keys'
-- id: LS-BOOT-009
+- id: LS-BASE-008
   script_path: base/modules/ssh.sh
   function: configure_banner
   criticality: security
@@ -81,7 +81,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_banner: dry-run
     logs banner file write'
-- id: LS-BOOT-010
+- id: LS-COOLIFY-001
   script_path: overlays/coolify/modules/binding.sh
   function: configure_coolify_binding
   criticality: security
@@ -92,7 +92,7 @@ entries:
     Tailscale IP not detected'
   - 'tests/overlays/coolify/unit/test_dashboard_binding.bats::configure_coolify_binding: dry-run shows
     planned changes'
-- id: LS-BOOT-011
+- id: LS-COOLIFY-002
   script_path: overlays/coolify/modules/binding_watchdog.sh
   function: configure_coolify_binding_watchdog
   criticality: security
@@ -101,7 +101,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_coolify_binding_watchdog:
     dry-run emits planned timer install'
-- id: LS-BOOT-012
+- id: LS-DOCKER-002
   script_path: overlays/docker-host/modules/daemon.sh
   function: configure_docker_daemon
   criticality: security
@@ -110,7 +110,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_docker_daemon:
     skips when Docker absent'
-- id: LS-BOOT-013
+- id: LS-DOCKER-003
   script_path: overlays/docker-host/modules/cidr_sync_timer.sh
   function: configure_docker_ssh_cidr_sync_timer
   criticality: security
@@ -119,7 +119,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_cidr_sync_timer:
     dry-run reports timer install'
-- id: LS-BOOT-014
+- id: LS-DOCKER-004
   script_path: overlays/docker-host/modules/user_rules.sh
   function: configure_docker_user
   criticality: security
@@ -128,7 +128,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_docker_user: dry-run
     installs/enables service without failure'
-- id: LS-BOOT-015
+- id: LS-BASE-009
   script_path: base/modules/fail2ban.sh
   function: configure_fail2ban
   criticality: security
@@ -137,7 +137,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_fail2ban: dry-run
     logs jail configuration and service action'
-- id: LS-BOOT-016
+- id: LS-BASE-010
   script_path: base/modules/validation_timer.sh
   function: configure_hardening_validation_timer
   criticality: security
@@ -146,7 +146,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::configure_hardening_validation_timer: dry-run
     skips install'
-- id: LS-BOOT-017
+- id: LS-BASE-011
   script_path: base/modules/journald.sh
   function: configure_journald
   criticality: security
@@ -155,7 +155,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_journald: dry-run
     logs journald configuration changes'
-- id: LS-BOOT-018
+- id: LS-BASE-012
   script_path: base/modules/ssh.sh
   function: configure_ssh
   criticality: security
@@ -164,7 +164,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_ssh: dry-run builds
     hardened config with docker CIDR match'
-- id: LS-BOOT-019
+- id: LS-BASE-013
   script_path: base/modules/system.sh
   function: configure_swap
   criticality: security
@@ -173,7 +173,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_swap: dry-run logs
     swap provisioning actions'
-- id: LS-BOOT-020
+- id: LS-BASE-014
   script_path: base/modules/kernel_sysctl.sh
   function: configure_sysctl
   criticality: security
@@ -182,7 +182,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_sysctl: dry-run
     logs sysctl drop-in write'
-- id: LS-BOOT-021
+- id: LS-BASE-015
   script_path: base/modules/ufw.sh
   function: configure_ufw
   criticality: security
@@ -191,7 +191,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_ufw: dry-run logs
     firewall rule reconciliation'
-- id: LS-BOOT-022
+- id: LS-BASE-016
   script_path: base/modules/unattended.sh
   function: configure_unattended_upgrades
   criticality: security
@@ -200,7 +200,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::configure_unattended_upgrades: writes disabled
     reboot policy when requested'
-- id: LS-BOOT-023
+- id: LS-DOCKER-005
   script_path: overlays/docker-host/modules/detect.sh
   function: detect_docker
   criticality: utility
@@ -209,7 +209,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::detect_docker: marks Docker
     present when docker command exists with iptables backend'
-- id: LS-BOOT-024
+- id: LS-BASE-017
   script_path: base/modules/os_detect.sh
   function: detect_os
   criticality: utility
@@ -220,7 +220,7 @@ entries:
     reports non-ubuntu distro'
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::detect_os: passes when source
     reports ubuntu and FORCE bypasses version check'
-- id: LS-BOOT-025
+- id: LS-BASE-018
   script_path: base/modules/os_detect.sh
   function: detect_wan_iface
   criticality: utility
@@ -230,7 +230,7 @@ entries:
   - 'tests/base/unit/test_functions.bats::detect_wan_iface: fails when auto-detect returns
     no interface'
   - 'tests/base/unit/test_functions.bats::detect_wan_iface: keeps explicitly provided WAN_IFACE'
-- id: LS-BOOT-026
+- id: LS-BASE-019
   script_path: base/bootstrap.sh
   function: die
   criticality: utility
@@ -238,7 +238,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::die: exits 1 with ERROR message'
   - 'tests/base/unit/test_functions.bats::die: exits 1 with ERROR message'
-- id: LS-BOOT-027
+- id: LS-BASE-020
   script_path: base/modules/services.sh
   function: disable_unused_services
   criticality: utility
@@ -247,7 +247,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::disable_unused_services:
     dry-run logs service disable actions'
-- id: LS-BOOT-028
+- id: LS-DOCKER-006
   script_path: overlays/docker-host/modules/cidrs.sh
   function: discover_docker_ssh_cidrs
   criticality: utility
@@ -256,7 +256,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::discover_docker_ssh_cidrs:
     collects CIDRs from docker/ip providers'
-- id: LS-BOOT-029
+- id: LS-BASE-021
   script_path: base/modules/ssh.sh
   function: ensure_admin_access
   criticality: utility
@@ -265,7 +265,7 @@ entries:
   checks:
   - 'tests/base/unit/test_admin.bats::ensure_admin_access: creates user with sudo group
     when user doesn''t exist'
-- id: LS-BOOT-030
+- id: LS-BASE-022
   script_path: base/modules/system.sh
   function: ensure_packages
   criticality: utility
@@ -274,7 +274,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::ensure_packages: installs only missing packages
     via apt-get'
-- id: LS-BOOT-031
+- id: LS-BASE-023
   script_path: base/modules/system.sh
   function: ensure_timesync
   criticality: utility
@@ -283,7 +283,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_timesync: dry-run
     executes without host mutation'
-- id: LS-BOOT-032
+- id: LS-LIB-001
   script_path: base/modules/state.sh
   function: generate_report
   criticality: utility
@@ -292,7 +292,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::generate_report: dry-run
     exits cleanly without writing report file'
-- id: LS-BOOT-033
+- id: LS-LIB-TS-001
   script_path: lib/tailscale.sh
   function: get_tailscale_ip
   criticality: utility
@@ -302,7 +302,7 @@ entries:
   - 'tests/base/unit/test_tailscale.bats::get_tailscale_ip: fails when tailscale command
     not available'
   - 'tests/base/unit/test_tailscale.bats::get_tailscale_ip: returns cached value if set'
-- id: LS-BOOT-034
+- id: LS-DOCKER-007
   script_path: overlays/docker-host/modules/user_rules.sh
   function: install_docker_user_assets
   criticality: utility
@@ -311,7 +311,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::install_docker_user_assets:
     dry-run logs docker-user asset writes'
-- id: LS-BOOT-035
+- id: LS-LIB-TS-002
   script_path: lib/tailscale.sh
   function: install_tailscale
   criticality: utility
@@ -320,7 +320,7 @@ entries:
   checks:
   - 'tests/base/unit/test_tailscale.bats::install_tailscale: dry-run logs installation
     plan'
-- id: LS-BOOT-036
+- id: LS-BASE-024
   script_path: base/modules/post_checks.sh
   function: is_container_runtime
   criticality: utility
@@ -329,7 +329,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::is_container_runtime: returns
     success when container env is docker'
-- id: LS-BOOT-037
+- id: LS-BASE-025
   script_path: base/bootstrap.sh
   function: is_true
   criticality: utility
@@ -337,14 +337,14 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::is_true: ''false'' returns 1'
   - 'tests/base/unit/test_functions.bats::is_true: ''1'' returns 0'
-- id: LS-BOOT-038
+- id: LS-BASE-026
   script_path: base/bootstrap.sh
   function: log
   criticality: utility
   behavior_test: 'tests/base/unit/test_functions.bats::log: outputs timestamped message'
   checks:
   - 'tests/base/unit/test_functions.bats::log: outputs timestamped message'
-- id: LS-BOOT-039
+- id: LS-BASE-027
   script_path: base/bootstrap.sh
   function: main
   criticality: utility
@@ -353,7 +353,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::main: executes orchestration
     with stubbed phase functions'
-- id: LS-BOOT-042
+- id: LS-BASE-028
   script_path: base/modules/ssh.sh
   function: reload_ssh_service
   criticality: utility
@@ -362,7 +362,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::reload_ssh_service: returns failure when systemctl
     unavailable'
-- id: LS-BOOT-043
+- id: LS-BASE-029
   script_path: base/modules/system.sh
   function: require_commands
   criticality: utility
@@ -373,7 +373,7 @@ entries:
     is missing'
   - 'tests/base/unit/test_functions.bats::require_commands: dry-run only requires base
     command set'
-- id: LS-BOOT-046
+- id: LS-BASE-030
   script_path: base/modules/ssh.sh
   function: restore_ssh_dropin
   criticality: utility
@@ -381,7 +381,7 @@ entries:
     backup'
   checks:
   - 'tests/base/unit/test_functions.bats::restore_ssh_dropin: restores from backup'
-- id: LS-BOOT-047
+- id: LS-BASE-031
   script_path: base/modules/system.sh
   function: retry_apt_update
   criticality: utility
@@ -389,7 +389,7 @@ entries:
     retries'
   checks:
   - 'tests/base/unit/test_functions.bats::retry_apt_update: dies after exhausted retries'
-- id: LS-BOOT-049
+- id: LS-BASE-032
   script_path: base/modules/post_checks.sh
   function: run_post_checks
   criticality: security
@@ -398,7 +398,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::run_post_checks: dry-run
     bypasses live host assertions'
-- id: LS-BOOT-050
+- id: LS-BASE-033
   script_path: base/modules/auditd.sh
   function: set_auditd_conf_kv
   criticality: utility
@@ -407,7 +407,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::set_auditd_conf_kv: returns 0 immediately when
     conf file does not exist'
-- id: LS-BOOT-052
+- id: LS-BASE-034
   script_path: base/modules/os_detect.sh
   function: ssh_session_safety_gate
   criticality: security
@@ -416,7 +416,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::ssh_session_safety_gate: non-Tailscale IP blocked'
   - 'tests/base/unit/test_functions.bats::ssh_session_safety_gate: no SSH_CONNECTION passes'
-- id: LS-BOOT-056
+- id: LS-LIB-TS-003
   script_path: lib/tailscale.sh
   function: verify_tailscale_iface
   criticality: security
@@ -425,14 +425,14 @@ entries:
   checks:
   - 'tests/base/unit/test_tailscale.bats::verify_tailscale_iface: fails when interface
     not present'
-- id: LS-BOOT-057
+- id: LS-BASE-035
   script_path: base/bootstrap.sh
   function: warn
   criticality: utility
   behavior_test: 'tests/base/unit/test_functions.bats::warn: outputs WARN-prefixed message'
   checks:
   - 'tests/base/unit/test_functions.bats::warn: outputs WARN-prefixed message'
-- id: LS-BOOT-058
+- id: LS-LIB-002
   script_path: base/modules/state.sh
   function: warn_on_state_version_mismatch
   criticality: utility
@@ -441,7 +441,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::warn_on_state_version_mismatch:
     warns when state version differs'
-- id: LS-BOOT-060
+- id: LS-LIB-003
   script_path: base/modules/state.sh
   function: write_state
   criticality: utility
@@ -450,7 +450,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_dashboard_binding.bats::write_state: includes tailscale_ip when
     binding configured'
-- id: LS-VAL-001
+- id: LS-BASE-VAL-001
   script_path: base/checks/admin_sudo_check.sh
   function: admin_sudo_check
   criticality: security
@@ -461,7 +461,7 @@ entries:
     info when admin user is not configured'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::admin_sudo_check: fails
     when configured admin user does not exist'
-- id: LS-VAL-002
+- id: LS-BASE-VAL-002
   script_path: base/checks/apparmor_check.sh
   function: apparmor_check
   criticality: security
@@ -472,7 +472,7 @@ entries:
     aa-status reports enabled'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::apparmor_check: fails when
     aa-status is unavailable outside container'
-- id: LS-VAL-003
+- id: LS-BASE-VAL-003
   script_path: base/checks/auditd_check.sh
   function: auditd_check
   criticality: security
@@ -485,7 +485,7 @@ entries:
     max_log_file_action is not keep_logs'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::auditd_check: fails when
     queue loss exceeds threshold'
-- id: LS-VAL-004
+- id: LS-BASE-VAL-004
   script_path: base/checks/banner_check.sh
   function: banner_check
   criticality: security
@@ -496,7 +496,7 @@ entries:
     verification result'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::banner_check: fails when
     AUTHORIZED marker is missing'
-- id: LS-VAL-005
+- id: LS-BASE-VAL-005
   script_path: base/checks/_runtime.sh
   function: check
   criticality: utility
@@ -505,7 +505,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::check (runtime): records FAIL
     when command exits non-zero'
-- id: LS-VAL-006
+- id: LS-COOLIFY-VAL-001
   script_path: overlays/coolify/checks/cloudflared_check.sh
   function: cloudflared_check
   criticality: security
@@ -516,7 +516,7 @@ entries:
     info when cloudflared is not installed'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::cloudflared_check: fails
     when service is installed but inactive'
-- id: LS-VAL-007
+- id: LS-COOLIFY-VAL-002
   script_path: overlays/coolify/checks/coolify_binding_check.sh
   function: coolify_binding_check
   criticality: security
@@ -527,7 +527,7 @@ entries:
     binding guard posture'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::coolify_binding_check: fails
     when dashboard binding is enabled but ufw is missing'
-- id: LS-VAL-008
+- id: LS-COOLIFY-VAL-003
   script_path: overlays/coolify/checks/coolify_container_check.sh
   function: coolify_container_check
   criticality: security
@@ -536,7 +536,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::coolify_container_check: reports
     info when Docker is missing'
-- id: LS-VAL-008A
+- id: LS-COOLIFY-VAL-003A
   script_path: overlays/coolify/checks/coolify_instance_settings_check.sh
   function: coolify_instance_settings_check
   criticality: security
@@ -545,7 +545,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::coolify_instance_settings_check:
     fails when registration is enabled and fqdn is empty'
-- id: LS-VAL-009
+- id: LS-COOLIFY-VAL-005
   script_path: overlays/coolify/checks/coolify_ssh_check.sh
   function: coolify_ssh_check
   criticality: security
@@ -554,7 +554,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::coolify_ssh_check: records
     FAIL when key directory exists without ssh_key entries'
-- id: LS-VAL-010
+- id: LS-BASE-VAL-006
   script_path: base/checks/_runtime.sh
   function: detect_container_runtime
   criticality: utility
@@ -563,7 +563,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::detect_container_runtime:
     flags containerized runtime'
-- id: LS-VAL-011
+- id: LS-BASE-VAL-007
   script_path: base/checks/disabled_services_check.sh
   function: disabled_services_check
   criticality: security
@@ -574,7 +574,7 @@ entries:
     when services are masked'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::disabled_services_check:
     fails when rpcbind service is enabled'
-- id: LS-VAL-012
+- id: LS-DOCKER-VAL-001
   script_path: overlays/docker-host/checks/docker_daemon_check.sh
   function: docker_daemon_check
   criticality: security
@@ -585,7 +585,7 @@ entries:
     daemon config status'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::docker_daemon_check: fails
     when Docker is installed but daemon.json is missing'
-- id: LS-VAL-013
+- id: LS-DOCKER-VAL-002
   script_path: overlays/docker-host/checks/docker_trust_boundary_check.sh
   function: docker_trust_boundary_check
   criticality: security
@@ -596,7 +596,7 @@ entries:
     records info when Docker is unavailable'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::docker_trust_boundary_check:
     records INFO when docker socket is absent'
-- id: LS-VAL-014
+- id: LS-DOCKER-VAL-003
   script_path: overlays/docker-host/checks/docker_user_check.sh
   function: docker_user_check
   criticality: security
@@ -611,7 +611,7 @@ entries:
     when wan-drop rule is missing'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::docker_user_check: fails
     in tunnel mode when wan-web rule exists'
-- id: LS-VAL-015
+- id: LS-DOCKER-VAL-004
   script_path: overlays/docker-host/checks/docker_user_lifecycle_check.sh
   function: docker_user_lifecycle_check
   criticality: security
@@ -622,7 +622,7 @@ entries:
     records info when Docker is not installed'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::docker_user_lifecycle_check:
     fails when docker-user-hardening unit is missing'
-- id: LS-VAL-015A
+- id: LS-DOCKER-VAL-004A
   script_path: overlays/docker-host/checks/_helpers.sh
   function: docker_hardening_expected
   criticality: utility
@@ -631,7 +631,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::docker_hardening_expected:
     gate-c requires state-based Docker hardening signal'
-- id: LS-VAL-016
+- id: LS-BASE-VAL-008
   script_path: base/checks/fail2ban_check.sh
   function: fail2ban_check
   criticality: security
@@ -642,7 +642,7 @@ entries:
     when fail2ban is absent'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::fail2ban_check: fails when
     fail2ban service is inactive'
-- id: LS-VAL-017
+- id: LS-BASE-VAL-009
   script_path: base/checks/_runtime.sh
   function: infer_update_profile
   criticality: utility
@@ -651,7 +651,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::infer_update_profile: detects
     balanced profile when updates origin present'
-- id: LS-VAL-018
+- id: LS-BASE-VAL-010
   script_path: base/checks/_runtime.sh
   function: is_true
   criticality: utility
@@ -662,7 +662,7 @@ entries:
     false returns failure'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::validate runtime is_true:
     true returns success'
-- id: LS-VAL-019
+- id: LS-BASE-VAL-011
   script_path: base/checks/journald_check.sh
   function: journald_check
   criticality: security
@@ -673,7 +673,7 @@ entries:
     persistence posture'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::journald_check: fails when
     persistent drop-in is missing'
-- id: LS-VAL-020
+- id: LS-BASE-VAL-012
   script_path: base/checks/_runtime.sh
   function: listening_ports_info
   criticality: utility
@@ -682,7 +682,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::listening_ports_info: records
     discovered listening ports'
-- id: LS-VAL-021
+- id: LS-DOCKER-VAL-006
   script_path: overlays/docker-host/checks/_helpers.sh
   function: load_docker_ssh_cidrs
   criticality: utility
@@ -691,7 +691,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::load_docker_ssh_cidrs: returns
     de-duplicated configured CIDRs'
-- id: LS-VAL-022
+- id: LS-BASE-VAL-013
   script_path: base/checks/_runtime.sh
   function: load_state_context
   criticality: utility
@@ -700,7 +700,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::load_state_context: imports
     state values into runtime vars'
-- id: LS-VAL-023
+- id: LS-BASE-VAL-014
   script_path: base/validate.sh
   function: main
   criticality: utility
@@ -709,7 +709,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::main: runs check pipeline
     and emits JSON summary'
-- id: LS-VAL-024
+- id: LS-BASE-VAL-015
   script_path: base/checks/_runtime.sh
   function: parse_cli_args
   criticality: utility
@@ -718,7 +718,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::parse_cli_args: sets json
     mode and state file path'
-- id: LS-VAL-025
+- id: LS-BASE-VAL-016
   script_path: base/checks/_runtime.sh
   function: record
   criticality: utility
@@ -727,7 +727,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::record (runtime): increments
     PASS count for PASS status'
-- id: LS-VAL-026
+- id: LS-BASE-VAL-017
   script_path: base/checks/_runtime.sh
   function: regex_escape
   criticality: utility
@@ -736,7 +736,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::regex_escape: escapes regex
     metacharacters'
-- id: LS-VAL-027
+- id: LS-BASE-VAL-018
   script_path: base/checks/ssh_check.sh
   function: ssh_check
   criticality: security
@@ -747,7 +747,7 @@ entries:
     expected hardened sshd output'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::ssh_check: fails when external
     root login is allowed'
-- id: LS-VAL-028
+- id: LS-BASE-VAL-019
   script_path: base/checks/swap_check.sh
   function: swap_check
   criticality: security
@@ -758,7 +758,7 @@ entries:
     swap when swap_size is 0'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::swap_check: fails when swap
     is expected but inactive'
-- id: LS-VAL-029
+- id: LS-BASE-VAL-020
   script_path: base/checks/sysctl_check.sh
   function: sysctl_check
   criticality: security
@@ -769,7 +769,7 @@ entries:
     when expected values are present'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::sysctl_check: fails when
     hardened value deviates from expected'
-- id: LS-VAL-030
+- id: LS-BASE-VAL-021
   script_path: base/checks/tailscale_check.sh
   function: tailscale_check
   criticality: security
@@ -780,7 +780,7 @@ entries:
     tailscale interface is missing'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::tailscale_check: fails when
     BackendState is not Running'
-- id: LS-VAL-031
+- id: LS-BASE-VAL-022
   script_path: base/checks/timesync_check.sh
   function: timesync_check
   criticality: security
@@ -791,7 +791,7 @@ entries:
     timedatectl reports synchronized NTP'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::timesync_check: fails when
     NTP is inactive outside container'
-- id: LS-VAL-032
+- id: LS-BASE-VAL-023
   script_path: base/checks/ufw_check.sh
   function: ufw_check
   criticality: security
@@ -802,7 +802,7 @@ entries:
     firewall and tailscale-scoped rules'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::ufw_check: fails when dashboard
     is exposed on WAN interface'
-- id: LS-VAL-033
+- id: LS-COOLIFY-VAL-006
   script_path: overlays/coolify/checks/unattended_upgrades_check.sh
   function: unattended_upgrades_check
   criticality: security
@@ -813,7 +813,7 @@ entries:
     fails when local policy file is missing'
   - 'tests/base/unit/test_validate_check_outcomes_robust.bats::unattended_upgrades_check:
     records a fail outcome when validation preconditions are not met'
-- id: LS-VAL-034
+- id: LS-COOLIFY-VAL-007
   script_path: overlays/coolify/checks/validate_timer_check.sh
   function: validate_timer_check
   criticality: security
@@ -1155,7 +1155,7 @@ entries:
   checks:
   - 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: gate D validates service
     active and managed rules'
-- id: LS-COM-001
+- id: LS-COOLIFY-LIB-001
   script_path: overlays/coolify/coolify-common.sh
   function: cf_api
   criticality: orchestration
@@ -1163,7 +1163,7 @@ entries:
     URL'
   checks:
   - 'tests/base/integration/test_deploy.bats::deploy: cf_api constructs correct URL'
-- id: LS-COM-002
+- id: LS-COOLIFY-LIB-002
   script_path: overlays/coolify/coolify-common.sh
   function: cf_create_tunnel
   criticality: orchestration
@@ -1172,7 +1172,7 @@ entries:
   checks:
   - 'tests/base/integration/test_deploy.bats::deploy: cf_create_tunnel extracts tunnel
     ID from response'
-- id: LS-COM-003
+- id: LS-COOLIFY-LIB-003
   script_path: overlays/coolify/coolify-common.sh
   function: cf_expect_success
   criticality: orchestration
@@ -1181,7 +1181,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_expect_success: passes for
     success=true and fails for success=false'
-- id: LS-COM-004
+- id: LS-COOLIFY-LIB-004
   script_path: overlays/coolify/coolify-common.sh
   function: cf_get_account_id
   criticality: orchestration
@@ -1190,7 +1190,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_get_account_id: stores account
     id from Cloudflare API response'
-- id: LS-COM-005
+- id: LS-COOLIFY-LIB-005
   script_path: overlays/coolify/coolify-common.sh
   function: cf_get_zone_id
   criticality: orchestration
@@ -1199,7 +1199,7 @@ entries:
   checks:
   - 'tests/base/integration/test_deploy.bats::deploy: cf_get_zone_id extracts zone ID from
     response'
-- id: LS-COM-006
+- id: LS-COOLIFY-LIB-006
   script_path: overlays/coolify/coolify-common.sh
   function: cf_upsert_a_record
   criticality: orchestration
@@ -1208,7 +1208,7 @@ entries:
   checks:
   - 'tests/base/integration/test_deploy.bats::deploy: cf_upsert_a_record updates existing
     record'
-- id: LS-COM-007
+- id: LS-COOLIFY-LIB-007
   script_path: overlays/coolify/coolify-common.sh
   function: cf_upsert_cname
   criticality: orchestration
@@ -1217,7 +1217,7 @@ entries:
   checks:
   - 'tests/base/integration/test_deploy.bats::deploy: cf_upsert_cname updates existing
     CNAME'
-- id: LS-COM-008
+- id: LS-COOLIFY-LIB-008
   script_path: overlays/coolify/coolify-common.sh
   function: cf_verify_token
   criticality: orchestration
@@ -1225,7 +1225,7 @@ entries:
     success response'
   checks:
   - 'tests/base/integration/test_deploy.bats::deploy: cf_verify_token parses success response'
-- id: LS-COM-009
+- id: LS-COOLIFY-LIB-009
   script_path: overlays/coolify/coolify-common.sh
   function: collect_common_inputs
   criticality: utility
@@ -1234,7 +1234,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::collect_common_inputs: preserves
     pre-populated values without prompting'
-- id: LS-COM-010
+- id: LS-LIB-004
   script_path: lib/common.sh
   function: confirm
   criticality: utility
@@ -1243,7 +1243,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::confirm: AUTO_YES=true skips
     prompt and returns success'
-- id: LS-COM-011
+- id: LS-COOLIFY-LIB-010
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_add_coolify_root_key_script
   criticality: utility
@@ -1252,7 +1252,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_add_coolify_root_key_script:
     emits idempotent authorized_keys reconciliation'
-- id: LS-COM-012
+- id: LS-COOLIFY-LIB-011
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_configure_cloudflared_script
   criticality: utility
@@ -1261,7 +1261,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_configure_cloudflared_script:
     emits private-only dashboard/ws deny rules and service enable'
-- id: LS-COM-013
+- id: LS-COOLIFY-LIB-012
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_fix_host_docker_internal_script
   criticality: utility
@@ -1270,7 +1270,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_fix_host_docker_internal_script:
     emits gateway patch and compose recreate'
-- id: LS-COM-014
+- id: LS-COOLIFY-LIB-013
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_install_cloudflared_script
   criticality: utility
@@ -1279,7 +1279,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_install_cloudflared_script:
     emits apt-first then repository fallback'
-- id: LS-COM-015
+- id: LS-COOLIFY-LIB-014
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_install_coolify_script
   criticality: utility
@@ -1288,7 +1288,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_install_coolify_script:
     emits downloaded-installer execution flow'
-- id: LS-COM-016
+- id: LS-COOLIFY-LIB-015
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_install_docker_engine_script
   criticality: utility
@@ -1297,7 +1297,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_install_docker_engine_script:
     emits apt-repo based install script'
-- id: LS-COM-017
+- id: LS-COOLIFY-LIB-016
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase3_docker_coolify_shared
   criticality: orchestration
@@ -1306,7 +1306,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase3_docker_coolify_shared:
     runs gate/reconcile flow and skips installs when already present'
-- id: LS-COM-018
+- id: LS-COOLIFY-LIB-017
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase4_binding_dns_shared
   criticality: orchestration
@@ -1315,7 +1315,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase4_binding_dns_shared:
     standard mode applies wildcard A-records without tunnel path'
-- id: LS-COM-019
+- id: LS-COOLIFY-LIB-018
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_reconcile_docker_daemon_script
   criticality: utility
@@ -1324,7 +1324,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_reconcile_docker_daemon_script:
     emits daemon hardening merge logic'
-- id: LS-COM-020
+- id: LS-COOLIFY-LIB-019
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_reconcile_pusher_env_script
   criticality: utility
@@ -1333,7 +1333,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_reconcile_pusher_env_script:
     emits PUSHER mode reconciliation script'
-- id: LS-COM-021
+- id: LS-COOLIFY-LIB-020
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_set_wildcard_domain_script
   criticality: utility
@@ -1342,7 +1342,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_set_wildcard_domain_script:
     emits DB update with ON_ERROR_STOP'
-- id: LS-COM-023
+- id: LS-LIB-005
   script_path: lib/common.sh
   function: fail
   criticality: utility
@@ -1351,7 +1351,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::step/pass/fail helpers: print
     formatted status output'
-- id: LS-COM-027
+- id: LS-COOLIFY-LIB-021
   script_path: overlays/coolify/coolify-common.sh
   function: summary_box_print_prefixed_text
   criticality: utility
@@ -1360,7 +1360,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::summary_box_print_prefixed_text:
     formats text with label and indent'
-- id: LS-COM-028
+- id: LS-COOLIFY-LIB-022
   script_path: overlays/coolify/coolify-common.sh
   function: summary_box_print_field
   criticality: utility
@@ -1369,7 +1369,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::summary_box_print_field: formats
     field with label prefix'
-- id: LS-COM-029
+- id: LS-COOLIFY-LIB-023
   script_path: overlays/coolify/coolify-common.sh
   function: summary_box_print_continuation
   criticality: utility
@@ -1378,7 +1378,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::summary_box_print_continuation:
     formats continuation line with indent'
-- id: LS-COM-026
+- id: LS-LIB-006
   script_path: lib/common.sh
   function: pass
   criticality: utility
@@ -1387,7 +1387,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::step/pass/fail helpers: print
     formatted status output'
-- id: LS-COM-030
+- id: LS-COOLIFY-LIB-024
   script_path: overlays/coolify/coolify-common.sh
   function: print_deployment_summary
   criticality: utility
@@ -1396,7 +1396,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::print_deployment_summary: prints
     completion banner and key endpoints'
-- id: LS-COM-031
+- id: LS-LIB-007
   script_path: lib/common.sh
   function: prompt_choice
   criticality: utility
@@ -1405,7 +1405,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::prompt_choice: invalid value
     fails validation'
-- id: LS-COM-032
+- id: LS-LIB-008
   script_path: lib/common.sh
   function: prompt_secret
   criticality: utility
@@ -1414,7 +1414,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::prompt_secret: reads secret
     from stdin and sets variable'
-- id: LS-COM-033
+- id: LS-LIB-009
   script_path: lib/common.sh
   function: prompt_value
   criticality: utility
@@ -1423,7 +1423,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::prompt_value: AUTO_YES accepts
     default and assigns variable'
-- id: LS-COM-034
+- id: LS-COOLIFY-LIB-025
   script_path: overlays/coolify/coolify-common.sh
   function: report_validation_result
   criticality: utility
@@ -1432,7 +1432,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::report_validation_result: passes
     when fail count is zero and fails otherwise'
-- id: LS-COM-035
+- id: LS-COOLIFY-LIB-026
   script_path: overlays/coolify/coolify-common.sh
   function: resolve_app_domain
   criticality: utility
@@ -1441,7 +1441,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::resolve_app_domain: derives
     app domain by selected mode'
-- id: LS-COM-036
+- id: LS-LIB-010
   script_path: lib/common.sh
   function: step
   criticality: utility
@@ -1450,7 +1450,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::step/pass/fail helpers: print
     formatted status output'
-- id: LS-BOOT-061
+- id: LS-BASE-036
   script_path: base/modules/post_checks.sh
   function: assert_rsyslog_posture
   criticality: security
@@ -1459,7 +1459,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::rsyslog post-check helpers: callable under stubbed
     runtime'
-- id: LS-BOOT-062
+- id: LS-BASE-037
   script_path: base/modules/rsyslog.sh
   function: configure_rsyslog_targets
   criticality: security
@@ -1468,7 +1468,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_rsyslog_targets:
     dry-run reports planned remediation and skips systemctl execution'
-- id: LS-BOOT-063
+- id: LS-BASE-038
   script_path: base/modules/system.sh
   function: configure_timezone
   criticality: utility
@@ -1477,7 +1477,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_timezone: dry-run
     executes without timedatectl mutation'
-- id: LS-BOOT-065
+- id: LS-BASE-039
   script_path: base/modules/rsyslog.sh
   function: ensure_logrotate_create_directive
   criticality: utility
@@ -1486,7 +1486,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_logrotate_create_directive:
     inserts create line once and remains idempotent'
-- id: LS-BOOT-068
+- id: LS-BASE-040
   script_path: base/modules/rsyslog.sh
   function: rsyslog_collect_log_targets
   criticality: utility
@@ -1495,7 +1495,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::rsyslog post-check helpers: callable under stubbed
     runtime'
-- id: LS-VAL-035
+- id: LS-DOCKER-VAL-007
   script_path: overlays/docker-host/checks/docker_ssh_cidr_sync_check.sh
   function: docker_ssh_cidr_sync_check
   criticality: security
@@ -1506,7 +1506,7 @@ entries:
     records PASS when strict mode timer/service are healthy'
   - 'tests/base/unit/test_validate_additional_behavior.bats::docker_ssh_cidr_sync_check:
     fails when normalization is missing and service is failing'
-- id: LS-VAL-036
+- id: LS-BASE-VAL-024
   script_path: base/checks/_runtime.sh
   function: is_tailscale_ipv4
   criticality: utility
@@ -1515,7 +1515,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_functions.bats::is_tailscale_ipv4: accepts 100.64.0.0/10
     space and rejects others'
-- id: LS-VAL-037
+- id: LS-BASE-VAL-025
   script_path: base/checks/rsyslog_check.sh
   function: rsyslog_check
   criticality: security
@@ -1526,7 +1526,7 @@ entries:
     when log targets are writable and runtime is healthy'
   - 'tests/base/unit/test_validate_additional_behavior.bats::rsyslog_check: records FAIL
     when /var/log is not group-writable and targets are missing'
-- id: LS-VAL-038
+- id: LS-BASE-VAL-026
   script_path: base/checks/rsyslog_check.sh
   function: rsyslog_collect_log_targets
   criticality: utility
@@ -1535,7 +1535,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_functions.bats::rsyslog_collect_log_targets: function
     is callable'
-- id: LS-VAL-039
+- id: LS-BASE-VAL-027
   script_path: base/checks/timezone_check.sh
   function: timezone_check
   criticality: utility
@@ -1611,7 +1611,7 @@ entries:
   checks:
   - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::setup_exit_trap: removes
     pending deploy env file'
-- id: LS-COM-038
+- id: LS-COOLIFY-LIB-027
   script_path: overlays/coolify/coolify-common.sh
   function: cf_api_with_token
   criticality: utility
@@ -1620,7 +1620,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
     API wrapper and auth/validation checks'
-- id: LS-COM-039
+- id: LS-COOLIFY-LIB-028
   script_path: overlays/coolify/coolify-common.sh
   function: cf_assert_private_tailscale_a_record
   criticality: orchestration
@@ -1629,7 +1629,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::DNS record helpers: delete conflicting
     host records and validate private A records'
-- id: LS-COM-040
+- id: LS-COOLIFY-LIB-029
   script_path: overlays/coolify/coolify-common.sh
   function: cf_delete_conflicting_host_records
   criticality: orchestration
@@ -1638,7 +1638,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::DNS record helpers: delete conflicting
     host records and validate private A records'
-- id: LS-COM-041
+- id: LS-COOLIFY-LIB-030
   script_path: overlays/coolify/coolify-common.sh
   function: cf_expect_probe_authorized_or_validation_error
   criticality: utility
@@ -1647,7 +1647,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
     API wrapper and auth/validation checks'
-- id: LS-COM-042
+- id: LS-COOLIFY-LIB-031
   script_path: overlays/coolify/coolify-common.sh
   function: cf_tunnel_api
   criticality: orchestration
@@ -1656,7 +1656,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_tunnel_api: prefers dedicated
     tunnel token over DNS token'
-- id: LS-COM-043
+- id: LS-COOLIFY-LIB-032
   script_path: overlays/coolify/coolify-common.sh
   function: cf_verify_dns_write_token
   criticality: orchestration
@@ -1665,7 +1665,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
     API wrapper and auth/validation checks'
-- id: LS-COM-044
+- id: LS-COOLIFY-LIB-033
   script_path: overlays/coolify/coolify-common.sh
   function: cf_verify_tunnel_token
   criticality: orchestration
@@ -1676,7 +1676,7 @@ entries:
     fast on auth error code 10000'
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_verify_tunnel_token: skips
     tunnel permission checks in standard mode'
-- id: LS-COM-045
+- id: LS-COOLIFY-LIB-034
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_configure_private_dashboard_routes_script
   criticality: utility
@@ -1685,7 +1685,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_configure_private_dashboard_routes_script:
     emits managed Traefik routes for dashboard and ws hosts'
-- id: LS-COM-042A
+- id: LS-COOLIFY-LIB-031A
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_reconcile_instance_settings_script
   criticality: utility
@@ -1694,7 +1694,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_reconcile_instance_settings_script:
     emits fqdn and registration reconciliation'
-- id: LS-COM-046
+- id: LS-COOLIFY-LIB-036
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_verify_shared
   criticality: orchestration
@@ -1703,7 +1703,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_verify_shared:
     runs standard verification flow with callback fetcher'
-- id: LS-COM-047
+- id: LS-COOLIFY-LIB-037
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_remove_private_dashboard_routes_script
   criticality: utility
@@ -1712,7 +1712,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_remove_private_dashboard_routes_script:
     emits managed route cleanup logic'
-- id: LS-COM-048
+- id: LS-COOLIFY-LIB-038
   script_path: overlays/coolify/coolify-common.sh
   function: finalize_cloudflare_tokens
   criticality: utility
@@ -1723,7 +1723,7 @@ entries:
     reuses DNS token when tunnel token is omitted'
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::finalize_cloudflare_tokens:
     keeps explicit split tunnel token'
-- id: LS-COM-049
+- id: LS-COOLIFY-LIB-039
   script_path: overlays/coolify/coolify-common.sh
   function: load_cloudflare_tokens_from_files
   criticality: utility
@@ -1732,7 +1732,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::read_secret_file and load_cloudflare_tokens_from_files:
     read secure token files'
-- id: LS-COM-050
+- id: LS-LIB-011
   script_path: lib/common.sh
   function: local_tz_offset
   criticality: utility
@@ -1741,7 +1741,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
-- id: LS-COM-051
+- id: LS-LIB-012
   script_path: lib/common.sh
   function: read_secret_file
   criticality: utility
@@ -1750,7 +1750,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::read_secret_file and load_cloudflare_tokens_from_files:
     read secure token files'
-- id: LS-COM-052
+- id: LS-LIB-013
   script_path: lib/common.sh
   function: run_report_close_current_step
   criticality: utility
@@ -1759,7 +1759,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
-- id: LS-COM-053
+- id: LS-LIB-014
   script_path: lib/common.sh
   function: run_report_finalize
   criticality: utility
@@ -1768,7 +1768,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run_report lifecycle: emits
     structured JSON with steps and gates'
-- id: LS-COM-054
+- id: LS-LIB-015
   script_path: lib/common.sh
   function: run_report_init
   criticality: utility
@@ -1777,7 +1777,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run_report lifecycle: emits
     structured JSON with steps and gates'
-- id: LS-COM-055
+- id: LS-LIB-016
   script_path: lib/common.sh
   function: run_report_record_gate
   criticality: utility
@@ -1786,7 +1786,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
-- id: LS-COM-056
+- id: LS-LIB-017
   script_path: lib/common.sh
   function: run_report_step_start
   criticality: utility
@@ -1795,7 +1795,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
-- id: LS-COM-057
+- id: LS-LIB-018
   script_path: lib/common.sh
   function: utc_now
   criticality: utility
@@ -1804,7 +1804,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
-- id: LS-BOOT-072
+- id: LS-BASE-041
   script_path: base/modules/ssh.sh
   function: unit_available
   criticality: utility
@@ -1815,7 +1815,7 @@ entries:
     reports loaded unit'
   - 'tests/base/unit/test_functions.bats::unit_available: returns failure when systemctl
     reports not-found'
-- id: LS-VAL-040
+- id: LS-BASE-VAL-028
   script_path: base/checks/_runtime.sh
   function: unit_available
   criticality: utility
@@ -1826,7 +1826,7 @@ entries:
     for loaded unit'
   - 'tests/base/unit/test_validate_functions.bats::unit_available (validate): returns failure
     for missing unit'
-- id: LS-COM-058
+- id: LS-LIB-019
   script_path: lib/common.sh
   function: run_with_heartbeat
   criticality: utility
@@ -1837,7 +1837,7 @@ entries:
     markers and preserves command output'
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run_with_heartbeat: propagates
     command failure with failed marker'
-- id: LS-COM-059
+- id: LS-LIB-020
   script_path: lib/common.sh
   function: stream_command_output
   criticality: utility
@@ -1846,7 +1846,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::stream_command_output: writes
     capture file and streams output'
-- id: LS-BOOT-073
+- id: LS-BASE-042
   script_path: base/modules/system.sh
   function: apply_system_package_updates
   criticality: security
@@ -1855,7 +1855,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::apply_system_package_updates:
     dry-run reports full-upgrade plan'
-- id: LS-BOOT-074
+- id: LS-BASE-043
   script_path: base/modules/services.sh
   function: configure_apport
   criticality: security
@@ -1864,7 +1864,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_apport: dry-run
     updates apport defaults and service state'
-- id: LS-BOOT-075
+- id: LS-BASE-044
   script_path: base/modules/services.sh
   function: configure_cron_extra_opts
   criticality: utility
@@ -1873,7 +1873,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_cron_extra_opts:
     dry-run normalizes cron environment'
-- id: LS-BOOT-076
+- id: LS-BASE-045
   script_path: base/modules/services.sh
   function: configure_networkd_wait_online
   criticality: utility
@@ -1882,7 +1882,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_networkd_wait_online:
     dry-run disables stray networkd units when ifupdown is authoritative'
-- id: LS-BOOT-077
+- id: LS-BASE-046
   script_path: base/modules/system.sh
   function: emit_filtered_package_output
   criticality: utility
@@ -1891,7 +1891,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::emit_filtered_package_output:
     strips noisy package-manager warnings'
-- id: LS-BOOT-078
+- id: LS-BASE-047
   script_path: base/modules/bootloader.sh
   function: ensure_bootloader_embed_safety
   criticality: security
@@ -1900,7 +1900,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_bootloader_embed_safety:
     callable under non-gpt layouts'
-- id: LS-BOOT-079
+- id: LS-BASE-048
   script_path: base/modules/system.sh
   function: ensure_power_group
   criticality: utility
@@ -1909,7 +1909,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_power_group: delegates
     to power system group'
-- id: LS-BOOT-080
+- id: LS-BASE-049
   script_path: base/modules/system.sh
   function: ensure_system_group
   criticality: utility
@@ -1918,7 +1918,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_system_group: dry-run
     logs missing system group creation'
-- id: LS-BOOT-081
+- id: LS-LIB-TS-004
   script_path: lib/tailscale.sh
   function: ensure_tailscale_ssh_disabled
   criticality: security
@@ -1927,7 +1927,7 @@ entries:
   checks:
   - 'tests/base/unit/test_tailscale.bats::ensure_tailscale_ssh_disabled: retries transient
     unknown RunSSH reads before accepting false'
-- id: LS-BOOT-082
+- id: LS-LIB-TS-005
   script_path: lib/tailscale.sh
   function: ensure_tailscaled_notify_access
   criticality: security
@@ -1936,7 +1936,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_tailscaled_notify_access:
     dry-run prepares NotifyAccess restart'
-- id: LS-BOOT-083
+- id: LS-BASE-050
   script_path: base/modules/ssh.sh
   function: ifupdown_is_authoritative
   criticality: utility
@@ -1945,7 +1945,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ifupdown_is_authoritative:
     callable when networking.service is present'
-- id: LS-BOOT-084
+- id: LS-BASE-051
   script_path: base/modules/system.sh
   function: retry_apt_noninteractive
   criticality: utility
@@ -1954,7 +1954,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::retry_apt_noninteractive:
     retries until apt command succeeds'
-- id: LS-BOOT-085
+- id: LS-BASE-052
   script_path: base/modules/system.sh
   function: run_apt_command
   criticality: utility
@@ -1963,7 +1963,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::run_apt_command: streams
     filtered output and preserves exit status'
-- id: LS-BOOT-086
+- id: LS-LIB-TS-006
   script_path: lib/tailscale.sh
   function: tailscale_runssh_pref_value
   criticality: utility
@@ -1972,7 +1972,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::tailscale_runssh_pref_value:
     returns parsed RunSSH preference'
-- id: LS-BOOT-087
+- id: LS-BASE-053
   script_path: base/modules/system.sh
   function: normalize_private_hosts_file
   criticality: security
@@ -1981,7 +1981,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::normalize_private_hosts_file:
     removes private dashboard loopback overrides and keeps short hostname alias'
-- id: LS-VAL-041
+- id: LS-BASE-VAL-029
   script_path: base/checks/apport_check.sh
   function: apport_check
   criticality: security
@@ -1990,7 +1990,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::apport_check: records disabled
     apport posture'
-- id: LS-VAL-042
+- id: LS-BASE-VAL-030
   script_path: base/checks/bootloader_check.sh
   function: bootloader_check
   criticality: security
@@ -1999,7 +1999,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::bootloader_check: records
     info in container mode'
-- id: LS-VAL-043
+- id: LS-BASE-VAL-031
   script_path: base/checks/cron_check.sh
   function: cron_check
   criticality: utility
@@ -2008,7 +2008,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::cron_check: records normalized
     EXTRA_OPTS and clean journal'
-- id: LS-VAL-044
+- id: LS-BASE-VAL-032
   script_path: base/checks/_runtime.sh
   function: ifupdown_is_authoritative
   criticality: utility
@@ -2017,7 +2017,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::ifupdown_is_authoritative:
     callable when networking.service is present'
-- id: LS-VAL-045
+- id: LS-BASE-VAL-033
   script_path: base/checks/networkd_wait_online_check.sh
   function: networkd_wait_online_check
   criticality: utility
@@ -2026,7 +2026,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::networkd_wait_online_check:
     passes when ifupdown is authoritative and apt-helper wait-online succeeds'
-- id: LS-VAL-046
+- id: LS-BASE-VAL-034
   script_path: base/checks/reboot_required_check.sh
   function: reboot_required_check
   criticality: utility
@@ -2035,7 +2035,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::reboot_required_check: records
     pass when reboot is not required'
-- id: LS-VAL-047
+- id: LS-BASE-VAL-035
   script_path: base/checks/swap_check.sh
   function: resolve_root_disk
   criticality: utility
@@ -2044,7 +2044,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::resolve_root_disk: returns
     parent disk for root source'
-- id: LS-VAL-048
+- id: LS-BASE-VAL-036
   script_path: base/checks/_runtime.sh
   function: tailscale_runssh_pref_value
   criticality: utility
@@ -2053,7 +2053,7 @@ entries:
   checks:
   - 'tests/base/unit/test_validate_additional_behavior.bats::tailscale_runssh_pref_value:
     returns parsed RunSSH preference'
-- id: LS-VAL-049
+- id: LS-BASE-VAL-037
   script_path: base/checks/_runtime.sh
   function: private_domain_hosts_check
   criticality: security
@@ -2109,7 +2109,7 @@ entries:
   checks:
   - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::sync_operator_known_host_entries:
     replaces stale operator known_hosts entries with verified session keys'
-- id: LS-COM-060
+- id: LS-COOLIFY-LIB-040
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_configure_private_tls_dns_script
   criticality: security
@@ -2118,7 +2118,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_configure_private_tls_dns_script:
     emits private TLS DNS-01 reconciliation'
-- id: LS-COM-061
+- id: LS-COOLIFY-LIB-041
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_install_binding_guard_script
   criticality: security
@@ -2127,7 +2127,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_install_binding_guard_script:
     emits guard timer install and enable flow'
-- id: LS-COM-062
+- id: LS-COOLIFY-LIB-042
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_mark_bind_dashboard_state_script
   criticality: orchestration
@@ -2136,7 +2136,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_mark_bind_dashboard_state_script:
     emits state reconciliation for bind flag'
-- id: LS-COM-063
+- id: LS-COOLIFY-LIB-043
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_fetch_pusher_app_key
   criticality: utility
@@ -2145,7 +2145,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_fetch_pusher_app_key:
     returns the last non-empty PUSHER_APP_KEY'
-- id: LS-COM-064
+- id: LS-COOLIFY-LIB-044
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_probe_websocket_code
   criticality: utility
@@ -2154,7 +2154,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_probe_websocket_code:
     returns 000 for invalid websocket schemes'
-- id: LS-COM-065
+- id: LS-COOLIFY-LIB-045
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_websocket_url
   criticality: utility
@@ -2163,7 +2163,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_websocket_url:
     builds the expected websocket endpoint'
-- id: LS-COM-066
+- id: LS-COOLIFY-LIB-046
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_tunnel_name
   criticality: orchestration
@@ -2172,7 +2172,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_tunnel_name: incorporates
     full domain and deterministic hash'
-- id: LS-COM-067
+- id: LS-COOLIFY-LIB-047
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_http_code_is_success_or_redirect
   criticality: utility
@@ -2181,7 +2181,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_http_code_is_success_or_redirect:
     accepts success and redirect codes only'
-- id: LS-COM-068
+- id: LS-COOLIFY-LIB-048
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_dashboard_http_code_is_healthy
   criticality: security
@@ -2190,7 +2190,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_dashboard_http_code_is_healthy:
     rejects auth-only and missing-route responses'
-- id: LS-BOOT-088
+- id: LS-BASE-054
   script_path: base/modules/system.sh
   function: install_fail2ban_without_autostart
   criticality: security
@@ -2199,7 +2199,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::install_fail2ban_without_autostart:
     dry-run installs package without enabling service'
-- id: LS-BOOT-089
+- id: LS-LIB-TS-007
   script_path: lib/tailscale.sh
   function: emit_tailscale_result_sentinel
   criticality: orchestration
@@ -2208,7 +2208,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::emit_tailscale_result_sentinel:
     prints machine-readable sentinel when IPv4 exists'
-- id: LS-BOOT-090
+- id: LS-DOCKER-008
   script_path: overlays/docker-host/modules/readiness.sh
   function: docker_daemon_ready
   criticality: utility
@@ -2217,7 +2217,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
     converge when Docker and managed rules become ready'
-- id: LS-BOOT-091
+- id: LS-DOCKER-009
   script_path: overlays/docker-host/modules/readiness.sh
   function: wait_for_systemd_unit_success
   criticality: utility
@@ -2226,7 +2226,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
     converge when Docker and managed rules become ready'
-- id: LS-BOOT-092
+- id: LS-DOCKER-010
   script_path: overlays/docker-host/modules/readiness.sh
   function: wait_for_docker_daemon_ready
   criticality: utility
@@ -2235,7 +2235,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
     converge when Docker and managed rules become ready'
-- id: LS-BOOT-093
+- id: LS-DOCKER-011
   script_path: overlays/docker-host/modules/readiness.sh
   function: docker_user_rules_present
   criticality: security
@@ -2244,7 +2244,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
     converge when Docker and managed rules become ready'
-- id: LS-BOOT-094
+- id: LS-DOCKER-012
   script_path: overlays/docker-host/modules/readiness.sh
   function: ensure_docker_user_service_applied
   criticality: security
@@ -2253,7 +2253,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
     converge when Docker and managed rules become ready'
-- id: LS-BOOT-095
+- id: LS-DOCKER-013
   script_path: overlays/docker-host/modules/readiness.sh
   function: wait_for_fail2ban_sshd_jail
   criticality: security
@@ -2262,7 +2262,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::wait_for_fail2ban_sshd_jail:
     returns success after jail becomes queryable'
-- id: LS-BOOT-096
+- id: LS-BASE-055
   script_path: base/modules/ssh_socket.sh
   function: configure_ssh_socket
   criticality: security
@@ -2271,7 +2271,7 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_ssh_socket: skips
     gracefully when Tailscale IP unavailable'
-- id: LS-BOOT-097
+- id: LS-BASE-056
   script_path: base/modules/password_policy.sh
   function: configure_password_policy
   criticality: security
@@ -2325,7 +2325,7 @@ entries:
   checks:
   - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::setup reboot marker helpers:
     return overridable file paths'
-- id: LS-COM-069
+- id: LS-COOLIFY-LIB-049
   script_path: overlays/coolify/coolify-common.sh
   function: load_private_tls_ca_secrets_from_files
   criticality: utility
@@ -2334,7 +2334,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
     secrets, normalize CA inputs, and resolve issuer metadata'
-- id: LS-COM-070
+- id: LS-COOLIFY-LIB-050
   script_path: overlays/coolify/coolify-common.sh
   function: finalize_private_tls_ca_inputs
   criticality: utility
@@ -2343,7 +2343,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
     secrets, normalize CA inputs, and resolve issuer metadata'
-- id: LS-COM-071
+- id: LS-COOLIFY-LIB-051
   script_path: overlays/coolify/coolify-common.sh
   function: private_tls_resolver_name
   criticality: utility
@@ -2352,7 +2352,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
     secrets, normalize CA inputs, and resolve issuer metadata'
-- id: LS-COM-072
+- id: LS-COOLIFY-LIB-052
   script_path: overlays/coolify/coolify-common.sh
   function: private_tls_ca_expected_caa_issuer
   criticality: utility
@@ -2361,7 +2361,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
     secrets, normalize CA inputs, and resolve issuer metadata'
-- id: LS-COM-073
+- id: LS-COOLIFY-LIB-053
   script_path: overlays/coolify/coolify-common.sh
   function: cf_verify_private_tls_ca_caa
   criticality: security
@@ -2370,7 +2370,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_verify_private_tls_ca_caa:
     accepts authorized issuer in tunnel mode'
-- id: LS-COM-074
+- id: LS-COOLIFY-LIB-054
   script_path: overlays/coolify/coolify-common.sh
   function: cf_delete_dns_records_by_type
   criticality: orchestration
@@ -2379,7 +2379,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_delete_dns_records_by_type:
     deletes every conflicting record for requested types'
-- id: LS-COM-075
+- id: LS-COOLIFY-LIB-055
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_private_tls_diagnostic
   criticality: security
@@ -2388,7 +2388,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_private_tls_diagnostic:
     identifies routes hidden behind default cert'
-- id: LS-COM-076
+- id: LS-COOLIFY-LIB-056
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_restore_public_dashboard_tls_script
   criticality: security
@@ -2397,7 +2397,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_restore_public_dashboard_tls_script:
     emits public TLS restoration script'
-- id: LS-COM-077
+- id: LS-COOLIFY-LIB-057
   script_path: overlays/coolify/coolify-common.sh
   function: print_private_tls_ca_notice
   criticality: utility
@@ -2406,7 +2406,7 @@ entries:
   checks:
   - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::print_private_tls_ca_notice:
     warns clearly when ZeroSSL fallback is selected'
-- id: LS-BOOT-098
+- id: LS-DOCKER-014
   script_path: overlays/docker-host/modules/ssh_match_dropin.sh
   function: configure_docker_ssh_match_dropin
   criticality: security
@@ -2417,7 +2417,7 @@ entries:
     dry-run logs planned write'
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_match_dropin:
     skips when no CIDRs discovered'
-- id: LS-BOOT-099
+- id: LS-BASE-057
   script_path: base/bootstrap.sh
   function: decode_env_file_value
   criticality: utility
@@ -2426,7 +2426,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::env-file helper functions: parse and assign safe
     values'
-- id: LS-BOOT-100
+- id: LS-BASE-058
   script_path: base/bootstrap.sh
   function: env_file_key_supported
   criticality: utility
@@ -2435,7 +2435,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::env-file helper functions: parse and assign safe
     values'
-- id: LS-BOOT-101
+- id: LS-BASE-059
   script_path: base/bootstrap.sh
   function: load_env_file_safely
   criticality: utility
@@ -2444,14 +2444,14 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::env-file helper functions: parse and assign safe
     values'
-- id: LS-BOOT-103
+- id: LS-BASE-060
   script_path: base/bootstrap.sh
   function: parse_args
   criticality: utility
   behavior_test: 'tests/base/unit/test_functions.bats::parse_args: --admin-user sets ADMIN_USER'
   checks:
   - 'tests/base/unit/test_functions.bats::parse_args: --admin-user sets ADMIN_USER'
-- id: LS-BOOT-104
+- id: LS-BASE-061
   script_path: base/bootstrap.sh
   function: require_root
   criticality: utility
@@ -2460,14 +2460,14 @@ entries:
   checks:
   - 'tests/base/unit/test_bootstrap_additional_behavior.bats::require_root: fails when
     uid is not root'
-- id: LS-BOOT-105
+- id: LS-BASE-062
   script_path: base/bootstrap.sh
   function: require_value
   criticality: utility
   behavior_test: 'tests/base/unit/test_functions.bats::require_value: non-empty value passes'
   checks:
   - 'tests/base/unit/test_functions.bats::require_value: non-empty value passes'
-- id: LS-BOOT-106
+- id: LS-BASE-063
   script_path: base/bootstrap.sh
   function: run
   criticality: utility
@@ -2475,7 +2475,7 @@ entries:
     and skips execution'
   checks:
   - 'tests/base/unit/test_functions.bats::script_run: dry-run logs command and skips execution'
-- id: LS-BOOT-107
+- id: LS-BASE-064
   script_path: base/bootstrap.sh
   function: set_env_file_value
   criticality: utility
@@ -2484,7 +2484,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::env-file helper functions: parse and assign safe
     values'
-- id: LS-BOOT-108
+- id: LS-BASE-065
   script_path: base/bootstrap.sh
   function: setup_logging
   criticality: utility
@@ -2492,7 +2492,7 @@ entries:
     touch log file'
   checks:
   - 'tests/base/unit/test_functions.bats::setup_logging: dry-run does not touch log file'
-- id: LS-BOOT-109
+- id: LS-BASE-066
   script_path: base/bootstrap.sh
   function: trim_whitespace
   criticality: utility
@@ -2501,7 +2501,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::env-file helper functions: parse and assign safe
     values'
-- id: LS-BOOT-110
+- id: LS-BASE-067
   script_path: base/bootstrap.sh
   function: unescape_backslash_sequences
   criticality: utility
@@ -2510,7 +2510,7 @@ entries:
   checks:
   - 'tests/base/unit/test_functions.bats::env-file helper functions: parse and assign safe
     values'
-- id: LS-BOOT-111
+- id: LS-BASE-068
   script_path: base/bootstrap.sh
   function: usage
   criticality: utility
@@ -2518,14 +2518,14 @@ entries:
     flag sections'
   checks:
   - 'tests/base/unit/test_functions.bats::usage: prints required and optional flag sections'
-- id: LS-BOOT-112
+- id: LS-BASE-069
   script_path: base/bootstrap.sh
   function: validate_inputs
   criticality: utility
   behavior_test: 'tests/base/unit/test_functions.bats::validate_inputs: valid inputs pass'
   checks:
   - 'tests/base/unit/test_functions.bats::validate_inputs: valid inputs pass'
-- id: LS-BOOT-113
+- id: LS-BASE-070
   script_path: base/bootstrap.sh
   function: validate_pubkey
   criticality: utility
@@ -2533,7 +2533,7 @@ entries:
     key'
   checks:
   - 'tests/base/unit/test_functions.bats::validate_pubkey: accepts ed25519 key'
-- id: LS-BOOT-114
+- id: LS-BASE-071
   script_path: base/bootstrap.sh
   function: write_file
   criticality: utility
@@ -2541,35 +2541,35 @@ entries:
     permissions'
   checks:
   - 'tests/base/unit/test_functions.bats::write_file: creates file with correct permissions'
-- id: LS-COM-115
+- id: LS-LIB-021
   script_path: lib/common.sh
   function: die
   criticality: utility
   behavior_test: 'tests/base/unit/test_functions.bats::die: exits 1 with ERROR message'
   checks:
   - 'tests/base/unit/test_functions.bats::die: exits 1 with ERROR message'
-- id: LS-COM-116
+- id: LS-LIB-022
   script_path: lib/common.sh
   function: is_true
   criticality: utility
   behavior_test: 'tests/base/unit/test_functions.bats::is_true: ''1'' returns 0'
   checks:
   - 'tests/base/unit/test_functions.bats::is_true: ''1'' returns 0'
-- id: LS-COM-117
+- id: LS-LIB-023
   script_path: lib/common.sh
   function: log
   criticality: utility
   behavior_test: 'tests/base/unit/test_functions.bats::log: outputs timestamped message'
   checks:
   - 'tests/base/unit/test_functions.bats::log: outputs timestamped message'
-- id: LS-COM-118
+- id: LS-LIB-024
   script_path: lib/common.sh
   function: warn
   criticality: utility
   behavior_test: 'tests/base/unit/test_functions.bats::warn: outputs WARN-prefixed message'
   checks:
   - 'tests/base/unit/test_functions.bats::warn: outputs WARN-prefixed message'
-- id: LS-BOOT-119
+- id: LS-BASE-072
   script_path: base/bootstrap.sh
   function: on_err
   criticality: utility
