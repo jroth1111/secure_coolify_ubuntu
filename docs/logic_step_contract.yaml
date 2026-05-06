@@ -2582,3 +2582,14 @@ entries:
   checks:
   - 'tests/unit/test_common_additional_behavior.bats::print_private_tls_ca_notice:
     warns clearly when ZeroSSL fallback is selected'
+- id: LS-BOOT-098
+  script_path: overlays/docker-host/modules/ssh_match_dropin.sh
+  function: configure_docker_ssh_match_dropin
+  criticality: security
+  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_match_dropin:
+    dry-run logs planned write'
+  checks:
+  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_match_dropin:
+    dry-run logs planned write'
+  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_match_dropin:
+    skips when no CIDRs discovered'

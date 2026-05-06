@@ -36,6 +36,9 @@ source "${SCRIPT_DIR}/../overlays/docker-host/modules/daemon.sh"
 # shellcheck source=../overlays/docker-host/modules/cidr_sync_timer.sh
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/../overlays/docker-host/modules/cidr_sync_timer.sh"
+# shellcheck source=../overlays/docker-host/modules/ssh_match_dropin.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../overlays/docker-host/modules/ssh_match_dropin.sh"
 
 # shellcheck source=./modules/os_detect.sh
 # shellcheck disable=SC1091
@@ -96,7 +99,8 @@ STATE_FILE="${STATE_DIR}/state"
 STATE_LOCK_FILE="${STATE_FILE}.lock"
 HOSTS_FILE="${HOSTS_FILE:-/etc/hosts}"
 
-SSH_DROPIN_FILE="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
+SSH_DROPIN_FILE="/etc/ssh/sshd_config.d/00-base-hardening.conf"
+DOCKER_SSH_MATCH_DROPIN="/etc/ssh/sshd_config.d/15-docker-ssh-match.conf"
 JOURNALD_DROPIN_FILE="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
 AUDIT_RULES_FILE="/etc/audit/rules.d/60-coolify-baseline.rules"
 AUDITD_CONF_FILE="/etc/audit/auditd.conf"
@@ -940,6 +944,7 @@ main() {
   log "Applying account and SSH hardening."
   ensure_admin_access
   configure_ssh
+  configure_docker_ssh_match_dropin
   configure_ssh_socket
   configure_password_policy
 

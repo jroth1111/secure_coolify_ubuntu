@@ -392,6 +392,32 @@ EOF
   rm -rf "${tmpdir}"
 }
 
+@test "configure_docker_ssh_match_dropin: dry-run logs planned write" {
+  DRY_RUN="true"
+  ADMIN_USER="coolifyadmin"
+  DOCKER_SSH_CIDRS=("172.18.0.0/16" "172.19.0.0/16")
+  DOCKER_SSH_MATCH_DROPIN="$(mktemp)"
+  rm -f "${DOCKER_SSH_MATCH_DROPIN}"
+
+  run configure_docker_ssh_match_dropin
+  assert_success
+  assert_output --partial "DRY-RUN"
+  [ ! -f "${DOCKER_SSH_MATCH_DROPIN}" ]
+}
+
+@test "configure_docker_ssh_match_dropin: skips when no CIDRs discovered" {
+  DRY_RUN="false"
+  ADMIN_USER="coolifyadmin"
+  DOCKER_SSH_CIDRS=()
+  DOCKER_SSH_MATCH_DROPIN="$(mktemp)"
+  rm -f "${DOCKER_SSH_MATCH_DROPIN}"
+
+  run configure_docker_ssh_match_dropin
+  assert_success
+  assert_output --partial "No Docker bridge CIDRs"
+  [ ! -f "${DOCKER_SSH_MATCH_DROPIN}" ]
+}
+
 @test "configure_auditd_policy: updates auditd.conf keys" {
   local conf
   conf="$(mktemp)"

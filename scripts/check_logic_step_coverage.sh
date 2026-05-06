@@ -40,6 +40,7 @@ SCRIPT_TARGETS = (
     "overlays/docker-host/modules/user_rules.sh",
     "overlays/docker-host/modules/daemon.sh",
     "overlays/docker-host/modules/cidr_sync_timer.sh",
+    "overlays/docker-host/modules/ssh_match_dropin.sh",
     "overlays/docker-host/checks/_helpers.sh",
     "overlays/docker-host/checks/docker_user_check.sh",
     "overlays/docker-host/checks/docker_user_lifecycle_check.sh",
@@ -178,6 +179,10 @@ SOURCE_PATTERNS = {
         r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh)",
     ],
     "overlays/docker-host/modules/cidr_sync_timer.sh": [
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh)",
+    ],
+    "overlays/docker-host/modules/ssh_match_dropin.sh": [
         r"\bsource_script\b",
         r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh)",
     ],

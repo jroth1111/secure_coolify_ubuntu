@@ -86,22 +86,29 @@ ssh_check() {
     fi
   fi
 
-  local ssh_dropin match_line cidr
-  ssh_dropin="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
-  if [[ -f "${ssh_dropin}" ]]; then
-    match_line="$(grep -m1 '^Match Address ' "${ssh_dropin}" || true)"
+  local ssh_dropin docker_match_dropin match_line cidr
+  ssh_dropin="/etc/ssh/sshd_config.d/00-base-hardening.conf"
+  docker_match_dropin="/etc/ssh/sshd_config.d/15-docker-ssh-match.conf"
+
+  # Check Docker bridge CIDRs are in the docker-specific match dropin
+  if [[ -f "${docker_match_dropin}" ]]; then
+    match_line="$(grep -m1 '^Match Address ' "${docker_match_dropin}" || true)"
     if [[ -n "${match_line}" ]]; then
       while IFS= read -r cidr; do
         if grep -qE "(^|,|[[:space:]])$(regex_escape "${cidr}")($|,|[[:space:]])" <<< "${match_line}"; then
           record "PASS" "ssh: Match includes Docker CIDR ${cidr}"
         else
-          record "FAIL" "ssh: Match Docker CIDR ${cidr}" "missing from sshd Match Address block"
+          record "FAIL" "ssh: Match Docker CIDR ${cidr}" "missing from ${docker_match_dropin}"
         fi
       done < <(load_docker_ssh_cidrs)
     else
-      record "FAIL" "ssh: Match Address block" "missing in ${ssh_dropin}"
+      record "FAIL" "ssh: Docker match dropin" "Match Address block missing in ${docker_match_dropin}"
     fi
+  else
+    record "FAIL" "ssh: Docker match dropin" "${docker_match_dropin} not found"
+  fi
 
+  if [[ -f "${ssh_dropin}" ]]; then
     if grep -q '^Ciphers \^' "${ssh_dropin}"; then
       record "PASS" "ssh: Ciphers policy uses operator mode"
     else
@@ -126,7 +133,7 @@ ssh_check() {
       record "FAIL" "ssh: HostKeyAlgorithms policy mode" "expected '^' operator to preserve OpenSSH defaults"
     fi
   else
-    record "FAIL" "ssh: Match Address block" "${ssh_dropin} not found"
+    record "FAIL" "ssh: base hardening dropin" "${ssh_dropin} not found"
   fi
 
   # Verify external addresses still deny root

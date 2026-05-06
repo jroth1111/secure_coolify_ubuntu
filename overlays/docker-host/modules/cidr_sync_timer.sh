@@ -21,7 +21,7 @@ set -Eeuo pipefail
 
 STATE_FILE="/var/lib/bootstrap-hardening/state"
 STATE_LOCK_FILE="${STATE_FILE}.lock"
-SSH_DROPIN_FILE="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
+DOCKER_SSH_MATCH_DROPIN="/etc/ssh/sshd_config.d/15-docker-ssh-match.conf"
 RULE_COMMENT="coolify-hardening-ssh-docker-bridge"
 
 [[ -f "${STATE_FILE}" ]] || exit 0
@@ -153,33 +153,40 @@ fi
 
 [[ ${#cidrs[@]} -gt 0 ]] || exit 0
 
-match_addresses="127.0.0.1,::1"
-for cidr in "${cidrs[@]}"; do
-  match_addresses+=",${cidr}"
-done
+match_addresses="$(IFS=,; echo "${cidrs[*]}")"
 
-if [[ -f "${SSH_DROPIN_FILE}" ]] && grep -q '^Match Address ' "${SSH_DROPIN_FILE}"; then
-  desired_line="Match Address ${match_addresses}"
-  current_line="$(grep -m1 '^Match Address ' "${SSH_DROPIN_FILE}" || true)"
-  if [[ "${current_line}" != "${desired_line}" ]]; then
-    tmp_dropin="$(mktemp)"
-    backup_dropin="${SSH_DROPIN_FILE}.bak.$(date +%s)"
-    cp -a "${SSH_DROPIN_FILE}" "${backup_dropin}"
-    sed "0,/^Match Address /s|^Match Address .*|${desired_line}|" "${SSH_DROPIN_FILE}" > "${tmp_dropin}"
-    install -m 0644 "${tmp_dropin}" "${SSH_DROPIN_FILE}"
-    rm -f "${tmp_dropin}"
-    if ! sshd -t; then
-      cp -a "${backup_dropin}" "${SSH_DROPIN_FILE}"
-      exit 1
-    fi
-    if systemctl is-active --quiet ssh 2>/dev/null; then
-      systemctl reload ssh || systemctl restart ssh
-    elif systemctl is-active --quiet sshd 2>/dev/null; then
-      systemctl reload sshd || systemctl restart sshd
-    fi
-    rm -f "${SSH_DROPIN_FILE}".bak.*
+# Write the Docker-bridge SSH match dropin (15-docker-ssh-match.conf).
+# This file is separate from the base hardening dropin (00-base-hardening.conf)
+# which handles the localhost-only Match block.
+tmp_dropin="$(mktemp)"
+cat > "${tmp_dropin}" <<DROPIN
+# Managed by docker-ssh-cidr-sync — do not edit manually.
+# Coolify connects to its own host as root via Docker bridge networks.
+Match Address ${match_addresses}
+    PermitRootLogin prohibit-password
+    AllowUsers ${admin_user} root
+DROPIN
+
+desired="$(cat "${tmp_dropin}")"
+current="$(cat "${DOCKER_SSH_MATCH_DROPIN}" 2>/dev/null || true)"
+
+if [[ "${current}" != "${desired}" ]]; then
+  backup_dropin="${DOCKER_SSH_MATCH_DROPIN}.bak.$(date +%s)"
+  [[ -f "${DOCKER_SSH_MATCH_DROPIN}" ]] && cp -a "${DOCKER_SSH_MATCH_DROPIN}" "${backup_dropin}" || true
+  install -m 0644 "${tmp_dropin}" "${DOCKER_SSH_MATCH_DROPIN}"
+  if ! sshd -t; then
+    [[ -f "${backup_dropin}" ]] && cp -a "${backup_dropin}" "${DOCKER_SSH_MATCH_DROPIN}" || rm -f "${DOCKER_SSH_MATCH_DROPIN}"
+    rm -f "${tmp_dropin}" "${backup_dropin}"
+    exit 1
   fi
+  if systemctl is-active --quiet ssh 2>/dev/null; then
+    systemctl reload ssh || systemctl restart ssh
+  elif systemctl is-active --quiet sshd 2>/dev/null; then
+    systemctl reload sshd || systemctl restart sshd
+  fi
+  rm -f "${DOCKER_SSH_MATCH_DROPIN}".bak.*
 fi
+rm -f "${tmp_dropin}"
 
 # Reconcile UFW Docker bridge SSH rules to current CIDRs.
 if command -v ufw >/dev/null 2>&1; then

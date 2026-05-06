@@ -205,11 +205,6 @@ configure_ssh() {
   local backup=""
   local effective=""
   local match_addresses="127.0.0.1,::1"
-  local cidr
-
-  for cidr in "${DOCKER_SSH_CIDRS[@]}"; do
-    match_addresses+=",${cidr}"
-  done
 
   if ! is_true "${DRY_RUN}" && [[ ! -d /run/sshd ]]; then
     install -d -m 0755 /run/sshd
@@ -309,6 +304,13 @@ EOF
   fi
 
   rm -f "${SSH_DROPIN_FILE}".bak.*
+
+  # Migration: remove old combined dropin if present (pre-C3 layout)
+  local old_dropin="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
+  if [[ -f "${old_dropin}" && "${old_dropin}" != "${SSH_DROPIN_FILE}" ]]; then
+    rm -f "${old_dropin}"
+    log "Removed legacy SSH dropin ${old_dropin} (replaced by ${SSH_DROPIN_FILE})."
+  fi
 
   # Remove weak DSA host key — deprecated in OpenSSH 7.0+, not negotiated
   # by our HostKeyAlgorithms list, but the key file should not exist.
