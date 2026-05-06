@@ -148,7 +148,7 @@ brew install hudochenkov/sshpass/sshpass
 From your laptop — everything automated:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/secure_coolify_ubuntu/main/deploy.sh | bash -s -- \
+curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/secure-ubuntu-paas/main/deploy.sh | bash -s -- \
   --server-ip <vps-ip> \
   --root-pass-file /secure/path/root.pass \
   --tailscale-auth-key tskey-auth-... \
@@ -161,8 +161,8 @@ curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/secure_coolify_ubuntu
 ### Interactive Deploy
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/secure_coolify_ubuntu.git
-cd secure_coolify_ubuntu
+git clone https://github.com/YOUR_USERNAME/secure-ubuntu-paas.git
+cd secure-ubuntu-paas
 /opt/homebrew/bin/bash deploy.sh   # macOS
 # or: ./deploy.sh (if your PATH resolves `bash` to version 4+)
 ```
@@ -457,7 +457,7 @@ All flags have corresponding environment variables (e.g., `ADMIN_USER`, `TUNNEL_
 ## Project Structure
 
 ```
-secure_coolify_ubuntu/
+secure-ubuntu-paas/
 ├── deploy.sh                    # Laptop-side deployment orchestrator
 ├── setup.sh                     # Server-side deployment orchestrator
 ├── base/
@@ -555,8 +555,8 @@ Contributions are welcome! Please read the following before submitting:
 ### Development Setup
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/secure_coolify_ubuntu.git
-cd secure_coolify_ubuntu
+git clone https://github.com/YOUR_USERNAME/secure-ubuntu-paas.git
+cd secure-ubuntu-paas
 make setup-bats
 make test-unit-local
 ```
@@ -569,7 +569,7 @@ make test-unit-local
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-Instead, please use [GitHub Security Advisories](https://github.com/YOUR_USERNAME/secure_coolify_ubuntu/security/advisories/new).
+Instead, please use [GitHub Security Advisories](https://github.com/YOUR_USERNAME/secure-ubuntu-paas/security/advisories/new).
 
 You should receive a response within 48 hours. If the vulnerability is confirmed:
 - We'll work on a fix and coordinate disclosure with you
