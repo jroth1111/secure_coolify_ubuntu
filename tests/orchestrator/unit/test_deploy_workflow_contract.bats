@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Tier 0: Behavior contract tests for deploy.sh workflow logic
 
-load '../helpers'
+load '../../helpers/helpers'
 
 @test "deploy: preflight phase marker exists" {
   run bash -c '

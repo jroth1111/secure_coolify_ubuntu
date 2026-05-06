@@ -82,76 +82,76 @@ SCRIPT_TARGETS = (
 
 ALLOWED_TEST_FILES = {
     "base/bootstrap.sh": {
-        "tests/unit/test_bootstrap_additional_behavior.bats",
-        "tests/unit/test_functions.bats",
-        "tests/unit/test_admin.bats",
-        "tests/unit/test_tailscale.bats",
-        "tests/unit/test_dashboard_binding.bats",
-        "tests/integration/test_full_run.bats",
-        "tests/integration/test_full_tunnel.bats",
-        "tests/integration/test_dry_run.bats",
-        "tests/integration/test_validate_script.bats",
-        "tests/integration/test_bootstrap_matrix.bats",
+        "tests/base/unit/test_bootstrap_additional_behavior.bats",
+        "tests/base/unit/test_functions.bats",
+        "tests/base/unit/test_admin.bats",
+        "tests/base/unit/test_tailscale.bats",
+        "tests/overlays/coolify/unit/test_dashboard_binding.bats",
+        "tests/base/integration/test_full_run.bats",
+        "tests/base/integration/test_full_tunnel.bats",
+        "tests/base/integration/test_dry_run.bats",
+        "tests/base/integration/test_validate_script.bats",
+        "tests/base/integration/test_bootstrap_matrix.bats",
     },
     "base/validate.sh": {
-        "tests/unit/test_validate_additional_behavior.bats",
-        "tests/unit/test_validate_check_outcomes_robust.bats",
-        "tests/unit/test_validate_functions.bats",
-        "tests/integration/test_validate_script.bats",
-        "tests/integration/test_validate_negative_matrix.bats",
-        "tests/integration/test_full_run.bats",
+        "tests/base/unit/test_validate_additional_behavior.bats",
+        "tests/base/unit/test_validate_check_outcomes_robust.bats",
+        "tests/base/unit/test_validate_functions.bats",
+        "tests/base/integration/test_validate_script.bats",
+        "tests/base/integration/test_validate_negative_matrix.bats",
+        "tests/base/integration/test_full_run.bats",
     },
     "deploy.sh": {
-        "tests/unit/test_deploy_setup_additional_behavior.bats",
-        "tests/unit/test_deploy_workflow_contract.bats",
-        "tests/integration/test_deploy.bats",
+        "tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats",
+        "tests/orchestrator/unit/test_deploy_workflow_contract.bats",
+        "tests/base/integration/test_deploy.bats",
     },
     "setup.sh": {
-        "tests/unit/test_setup_workflow_contract.bats",
-        "tests/unit/test_deploy_setup_additional_behavior.bats",
+        "tests/orchestrator/unit/test_setup_workflow_contract.bats",
+        "tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats",
     },
     "lib/common.sh": {
-        "tests/unit/test_common_additional_behavior.bats",
-        "tests/integration/test_deploy.bats",
-        "tests/unit/test_deploy_setup_additional_behavior.bats",
-        "tests/unit/test_deploy_workflow_contract.bats",
-        "tests/unit/test_setup_workflow_contract.bats",
+        "tests/overlays/coolify/unit/test_common_additional_behavior.bats",
+        "tests/base/integration/test_deploy.bats",
+        "tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats",
+        "tests/orchestrator/unit/test_deploy_workflow_contract.bats",
+        "tests/orchestrator/unit/test_setup_workflow_contract.bats",
     },
     "lib/tailscale.sh": {
-        "tests/unit/test_tailscale.bats",
-        "tests/unit/test_bootstrap_additional_behavior.bats",
+        "tests/base/unit/test_tailscale.bats",
+        "tests/base/unit/test_bootstrap_additional_behavior.bats",
     },
     "lib/overlay-loader.sh": {
-        "tests/unit/test_deploy_setup_additional_behavior.bats",
+        "tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats",
     },
     "overlays/coolify/coolify-common.sh": {
-        "tests/unit/test_common_additional_behavior.bats",
-        "tests/integration/test_deploy.bats",
-        "tests/unit/test_deploy_setup_additional_behavior.bats",
-        "tests/unit/test_deploy_workflow_contract.bats",
-        "tests/unit/test_setup_workflow_contract.bats",
+        "tests/overlays/coolify/unit/test_common_additional_behavior.bats",
+        "tests/base/integration/test_deploy.bats",
+        "tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats",
+        "tests/orchestrator/unit/test_deploy_workflow_contract.bats",
+        "tests/orchestrator/unit/test_setup_workflow_contract.bats",
     },
     # coolify overlay modules: covered through bootstrap.sh sources
     **{p: {
-        "tests/unit/test_bootstrap_additional_behavior.bats",
-        "tests/unit/test_common_additional_behavior.bats",
-        "tests/unit/test_dashboard_binding.bats",
-        "tests/integration/test_full_run.bats",
-        "tests/integration/test_full_tunnel.bats",
-        "tests/integration/test_dry_run.bats",
-        "tests/integration/test_bootstrap_matrix.bats",
+        "tests/base/unit/test_bootstrap_additional_behavior.bats",
+        "tests/overlays/coolify/unit/test_common_additional_behavior.bats",
+        "tests/overlays/coolify/unit/test_dashboard_binding.bats",
+        "tests/base/integration/test_full_run.bats",
+        "tests/base/integration/test_full_tunnel.bats",
+        "tests/base/integration/test_dry_run.bats",
+        "tests/base/integration/test_bootstrap_matrix.bats",
     } for p in [
         "overlays/coolify/modules/binding.sh",
         "overlays/coolify/modules/binding_watchdog.sh",
     ]},
     # coolify overlay checks: covered through validate.sh sources
     **{p: {
-        "tests/unit/test_validate_additional_behavior.bats",
-        "tests/unit/test_validate_check_outcomes_robust.bats",
-        "tests/unit/test_validate_functions.bats",
-        "tests/integration/test_validate_script.bats",
-        "tests/integration/test_validate_negative_matrix.bats",
-        "tests/integration/test_full_run.bats",
+        "tests/base/unit/test_validate_additional_behavior.bats",
+        "tests/base/unit/test_validate_check_outcomes_robust.bats",
+        "tests/base/unit/test_validate_functions.bats",
+        "tests/base/integration/test_validate_script.bats",
+        "tests/base/integration/test_validate_negative_matrix.bats",
+        "tests/base/integration/test_full_run.bats",
     } for p in [
         "overlays/coolify/checks/coolify_binding_check.sh",
         "overlays/coolify/checks/unattended_upgrades_check.sh",
@@ -162,121 +162,121 @@ ALLOWED_TEST_FILES = {
         "overlays/coolify/checks/validate_timer_check.sh",
     ]},
     "overlays/docker-host/modules/cidrs.sh": {
-        "tests/unit/test_bootstrap_additional_behavior.bats",
-        "tests/unit/test_functions.bats",
-        "tests/integration/test_full_run.bats",
-        "tests/integration/test_full_tunnel.bats",
-        "tests/integration/test_dry_run.bats",
-        "tests/integration/test_bootstrap_matrix.bats",
+        "tests/base/unit/test_bootstrap_additional_behavior.bats",
+        "tests/base/unit/test_functions.bats",
+        "tests/base/integration/test_full_run.bats",
+        "tests/base/integration/test_full_tunnel.bats",
+        "tests/base/integration/test_dry_run.bats",
+        "tests/base/integration/test_bootstrap_matrix.bats",
     },
     "overlays/docker-host/modules/detect.sh": {
-        "tests/unit/test_bootstrap_additional_behavior.bats",
-        "tests/unit/test_functions.bats",
-        "tests/integration/test_full_run.bats",
-        "tests/integration/test_full_tunnel.bats",
-        "tests/integration/test_dry_run.bats",
-        "tests/integration/test_bootstrap_matrix.bats",
+        "tests/base/unit/test_bootstrap_additional_behavior.bats",
+        "tests/base/unit/test_functions.bats",
+        "tests/base/integration/test_full_run.bats",
+        "tests/base/integration/test_full_tunnel.bats",
+        "tests/base/integration/test_dry_run.bats",
+        "tests/base/integration/test_bootstrap_matrix.bats",
     },
     "overlays/docker-host/modules/readiness.sh": {
-        "tests/unit/test_bootstrap_additional_behavior.bats",
-        "tests/unit/test_functions.bats",
-        "tests/integration/test_full_run.bats",
-        "tests/integration/test_full_tunnel.bats",
-        "tests/integration/test_dry_run.bats",
-        "tests/integration/test_bootstrap_matrix.bats",
+        "tests/base/unit/test_bootstrap_additional_behavior.bats",
+        "tests/base/unit/test_functions.bats",
+        "tests/base/integration/test_full_run.bats",
+        "tests/base/integration/test_full_tunnel.bats",
+        "tests/base/integration/test_dry_run.bats",
+        "tests/base/integration/test_bootstrap_matrix.bats",
     },
     "overlays/docker-host/modules/user_rules.sh": {
-        "tests/unit/test_bootstrap_additional_behavior.bats",
-        "tests/unit/test_functions.bats",
-        "tests/integration/test_full_run.bats",
-        "tests/integration/test_full_tunnel.bats",
-        "tests/integration/test_dry_run.bats",
-        "tests/integration/test_bootstrap_matrix.bats",
+        "tests/base/unit/test_bootstrap_additional_behavior.bats",
+        "tests/base/unit/test_functions.bats",
+        "tests/base/integration/test_full_run.bats",
+        "tests/base/integration/test_full_tunnel.bats",
+        "tests/base/integration/test_dry_run.bats",
+        "tests/base/integration/test_bootstrap_matrix.bats",
     },
     "overlays/docker-host/modules/daemon.sh": {
-        "tests/unit/test_bootstrap_additional_behavior.bats",
-        "tests/unit/test_functions.bats",
-        "tests/integration/test_full_run.bats",
-        "tests/integration/test_full_tunnel.bats",
-        "tests/integration/test_dry_run.bats",
-        "tests/integration/test_bootstrap_matrix.bats",
+        "tests/base/unit/test_bootstrap_additional_behavior.bats",
+        "tests/base/unit/test_functions.bats",
+        "tests/base/integration/test_full_run.bats",
+        "tests/base/integration/test_full_tunnel.bats",
+        "tests/base/integration/test_dry_run.bats",
+        "tests/base/integration/test_bootstrap_matrix.bats",
     },
     "overlays/docker-host/modules/cidr_sync_timer.sh": {
-        "tests/unit/test_bootstrap_additional_behavior.bats",
-        "tests/unit/test_functions.bats",
-        "tests/integration/test_full_run.bats",
-        "tests/integration/test_full_tunnel.bats",
-        "tests/integration/test_dry_run.bats",
-        "tests/integration/test_bootstrap_matrix.bats",
+        "tests/base/unit/test_bootstrap_additional_behavior.bats",
+        "tests/base/unit/test_functions.bats",
+        "tests/base/integration/test_full_run.bats",
+        "tests/base/integration/test_full_tunnel.bats",
+        "tests/base/integration/test_dry_run.bats",
+        "tests/base/integration/test_bootstrap_matrix.bats",
     },
     "overlays/docker-host/modules/ssh_match_dropin.sh": {
-        "tests/unit/test_bootstrap_additional_behavior.bats",
-        "tests/unit/test_functions.bats",
-        "tests/integration/test_full_run.bats",
-        "tests/integration/test_full_tunnel.bats",
-        "tests/integration/test_dry_run.bats",
-        "tests/integration/test_bootstrap_matrix.bats",
+        "tests/base/unit/test_bootstrap_additional_behavior.bats",
+        "tests/base/unit/test_functions.bats",
+        "tests/base/integration/test_full_run.bats",
+        "tests/base/integration/test_full_tunnel.bats",
+        "tests/base/integration/test_dry_run.bats",
+        "tests/base/integration/test_bootstrap_matrix.bats",
     },
     "overlays/docker-host/checks/_helpers.sh": {
-        "tests/unit/test_validate_additional_behavior.bats",
-        "tests/unit/test_validate_check_outcomes_robust.bats",
-        "tests/unit/test_validate_functions.bats",
-        "tests/integration/test_validate_script.bats",
-        "tests/integration/test_validate_negative_matrix.bats",
-        "tests/integration/test_full_run.bats",
+        "tests/base/unit/test_validate_additional_behavior.bats",
+        "tests/base/unit/test_validate_check_outcomes_robust.bats",
+        "tests/base/unit/test_validate_functions.bats",
+        "tests/base/integration/test_validate_script.bats",
+        "tests/base/integration/test_validate_negative_matrix.bats",
+        "tests/base/integration/test_full_run.bats",
     },
     "overlays/docker-host/checks/docker_user_check.sh": {
-        "tests/unit/test_validate_additional_behavior.bats",
-        "tests/unit/test_validate_check_outcomes_robust.bats",
-        "tests/unit/test_validate_functions.bats",
-        "tests/integration/test_validate_script.bats",
-        "tests/integration/test_validate_negative_matrix.bats",
-        "tests/integration/test_full_run.bats",
+        "tests/base/unit/test_validate_additional_behavior.bats",
+        "tests/base/unit/test_validate_check_outcomes_robust.bats",
+        "tests/base/unit/test_validate_functions.bats",
+        "tests/base/integration/test_validate_script.bats",
+        "tests/base/integration/test_validate_negative_matrix.bats",
+        "tests/base/integration/test_full_run.bats",
     },
     "overlays/docker-host/checks/docker_user_lifecycle_check.sh": {
-        "tests/unit/test_validate_additional_behavior.bats",
-        "tests/unit/test_validate_check_outcomes_robust.bats",
-        "tests/unit/test_validate_functions.bats",
-        "tests/integration/test_validate_script.bats",
-        "tests/integration/test_validate_negative_matrix.bats",
-        "tests/integration/test_full_run.bats",
+        "tests/base/unit/test_validate_additional_behavior.bats",
+        "tests/base/unit/test_validate_check_outcomes_robust.bats",
+        "tests/base/unit/test_validate_functions.bats",
+        "tests/base/integration/test_validate_script.bats",
+        "tests/base/integration/test_validate_negative_matrix.bats",
+        "tests/base/integration/test_full_run.bats",
     },
     "overlays/docker-host/checks/docker_ssh_cidr_sync_check.sh": {
-        "tests/unit/test_validate_additional_behavior.bats",
-        "tests/unit/test_validate_check_outcomes_robust.bats",
-        "tests/unit/test_validate_functions.bats",
-        "tests/integration/test_validate_script.bats",
-        "tests/integration/test_validate_negative_matrix.bats",
-        "tests/integration/test_full_run.bats",
+        "tests/base/unit/test_validate_additional_behavior.bats",
+        "tests/base/unit/test_validate_check_outcomes_robust.bats",
+        "tests/base/unit/test_validate_functions.bats",
+        "tests/base/integration/test_validate_script.bats",
+        "tests/base/integration/test_validate_negative_matrix.bats",
+        "tests/base/integration/test_full_run.bats",
     },
     "overlays/docker-host/checks/docker_daemon_check.sh": {
-        "tests/unit/test_validate_additional_behavior.bats",
-        "tests/unit/test_validate_check_outcomes_robust.bats",
-        "tests/unit/test_validate_functions.bats",
-        "tests/integration/test_validate_script.bats",
-        "tests/integration/test_validate_negative_matrix.bats",
-        "tests/integration/test_full_run.bats",
+        "tests/base/unit/test_validate_additional_behavior.bats",
+        "tests/base/unit/test_validate_check_outcomes_robust.bats",
+        "tests/base/unit/test_validate_functions.bats",
+        "tests/base/integration/test_validate_script.bats",
+        "tests/base/integration/test_validate_negative_matrix.bats",
+        "tests/base/integration/test_full_run.bats",
     },
     "overlays/docker-host/checks/docker_trust_boundary_check.sh": {
-        "tests/unit/test_validate_additional_behavior.bats",
-        "tests/unit/test_validate_check_outcomes_robust.bats",
-        "tests/unit/test_validate_functions.bats",
-        "tests/integration/test_validate_script.bats",
-        "tests/integration/test_validate_negative_matrix.bats",
-        "tests/integration/test_full_run.bats",
+        "tests/base/unit/test_validate_additional_behavior.bats",
+        "tests/base/unit/test_validate_check_outcomes_robust.bats",
+        "tests/base/unit/test_validate_functions.bats",
+        "tests/base/integration/test_validate_script.bats",
+        "tests/base/integration/test_validate_negative_matrix.bats",
+        "tests/base/integration/test_full_run.bats",
     },
     # base modules: transitively covered through bootstrap.sh sources
     **{p: {
-        "tests/unit/test_bootstrap_additional_behavior.bats",
-        "tests/unit/test_functions.bats",
-        "tests/unit/test_admin.bats",
-        "tests/unit/test_tailscale.bats",
-        "tests/unit/test_dashboard_binding.bats",
-        "tests/integration/test_full_run.bats",
-        "tests/integration/test_full_tunnel.bats",
-        "tests/integration/test_dry_run.bats",
-        "tests/integration/test_validate_script.bats",
-        "tests/integration/test_bootstrap_matrix.bats",
+        "tests/base/unit/test_bootstrap_additional_behavior.bats",
+        "tests/base/unit/test_functions.bats",
+        "tests/base/unit/test_admin.bats",
+        "tests/base/unit/test_tailscale.bats",
+        "tests/overlays/coolify/unit/test_dashboard_binding.bats",
+        "tests/base/integration/test_full_run.bats",
+        "tests/base/integration/test_full_tunnel.bats",
+        "tests/base/integration/test_dry_run.bats",
+        "tests/base/integration/test_validate_script.bats",
+        "tests/base/integration/test_bootstrap_matrix.bats",
     } for p in [
         "base/modules/os_detect.sh", "base/modules/system.sh",
         "base/modules/bootloader.sh", "base/modules/services.sh",
@@ -290,12 +290,12 @@ ALLOWED_TEST_FILES = {
     ]},
     # base checks: transitively covered through validate.sh sources
     **{p: {
-        "tests/unit/test_validate_additional_behavior.bats",
-        "tests/unit/test_validate_check_outcomes_robust.bats",
-        "tests/unit/test_validate_functions.bats",
-        "tests/integration/test_validate_script.bats",
-        "tests/integration/test_validate_negative_matrix.bats",
-        "tests/integration/test_full_run.bats",
+        "tests/base/unit/test_validate_additional_behavior.bats",
+        "tests/base/unit/test_validate_check_outcomes_robust.bats",
+        "tests/base/unit/test_validate_functions.bats",
+        "tests/base/integration/test_validate_script.bats",
+        "tests/base/integration/test_validate_negative_matrix.bats",
+        "tests/base/integration/test_full_run.bats",
     } for p in [
         "base/checks/_runtime.sh", "base/checks/ssh_check.sh",
         "base/checks/ufw_check.sh", "base/checks/sysctl_check.sh",
@@ -505,25 +505,24 @@ class TestBlock:
 def parse_bats_tests() -> tuple[list[TestBlock], dict[str, str]]:
     blocks: list[TestBlock] = []
     file_texts: dict[str, str] = {}
-    for suite in (Path("tests/unit"), Path("tests/integration")):
-        for path in sorted(suite.glob("*.bats")):
-            txt = path.read_text(encoding="utf-8")
-            rel = path.as_posix()
-            file_texts[rel] = txt
+    for path in sorted(Path("tests").rglob("*.bats")):
+        txt = path.read_text(encoding="utf-8")
+        rel = path.as_posix()
+        file_texts[rel] = txt
 
-            for m in re.finditer(r'@test\s+"([^\"]+)"\s*\{', txt):
-                title = m.group(1)
-                start = m.end()
-                depth = 1
-                i = start
-                while i < len(txt) and depth > 0:
-                    if txt[i] == "{":
-                        depth += 1
-                    elif txt[i] == "}":
-                        depth -= 1
-                    i += 1
-                body = txt[start : i - 1]
-                blocks.append(TestBlock(rel, title, body))
+        for m in re.finditer(r'@test\s+"([^\"]+)"\s*\{', txt):
+            title = m.group(1)
+            start = m.end()
+            depth = 1
+            i = start
+            while i < len(txt) and depth > 0:
+                if txt[i] == "{":
+                    depth += 1
+                elif txt[i] == "}":
+                    depth -= 1
+                i += 1
+            body = txt[start : i - 1]
+            blocks.append(TestBlock(rel, title, body))
     return blocks, file_texts
 
 

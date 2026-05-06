@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Additional behavior tests for uncovered overlays/coolify/coolify-common.sh functions.
 
-load '../helpers'
+load '../../../helpers/helpers'
 
 setup() {
   source_common_lib

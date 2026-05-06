@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Additional behavior tests for uncovered deploy/setup functions.
 
-load '../helpers'
+load '../../helpers/helpers'
 
 @test "cleanup_temp_files: removes known-host and runtime secret temp files" {
   run bash -c '

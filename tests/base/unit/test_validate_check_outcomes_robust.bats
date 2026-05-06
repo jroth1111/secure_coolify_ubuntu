@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Robust outcome checks for critical validate_hardening.sh security checks.
 
-load '../helpers'
+load '../../helpers/helpers'
 
 setup() {
   source_validate_script

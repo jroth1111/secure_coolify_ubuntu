@@ -2,7 +2,7 @@
 # Unit tests for Coolify split-horizon dashboard binding functionality
 # Tests --bind-dashboard-to-tailscale feature
 
-load '../helpers'
+load '../../../helpers/helpers'
 
 setup() {
   source_script

@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Tier 0: Behavior contract tests for setup.sh workflow logic
 
-load '../helpers'
+load '../../helpers/helpers'
 
 @test "setup: parse_args extracts --server-ip" {
   run bash -c '

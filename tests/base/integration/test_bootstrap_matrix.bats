@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Tier 2 scenario matrix tests for bootstrap_hardening.sh (Docker-feasible variants).
 
-load '../helpers'
+load '../../helpers/helpers'
 
 TEST_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDataForBootstrapMatrix test@bats"
 TEST_WAN="eth0"

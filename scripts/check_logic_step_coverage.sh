@@ -326,26 +326,25 @@ def extract_functions(script_rel: str) -> list[str]:
 def parse_bats_tests() -> tuple[dict[str, dict[str, str]], dict[str, str]]:
     tests: dict[str, dict[str, str]] = {}
     file_texts: dict[str, str] = {}
-    for suite in (repo / "tests" / "unit", repo / "tests" / "integration"):
-        for path in sorted(suite.glob("*.bats")):
-            txt = path.read_text(encoding="utf-8")
-            rel = path.relative_to(repo).as_posix()
-            tests[rel] = {}
-            file_texts[rel] = txt
+    for path in sorted((repo / "tests").rglob("*.bats")):
+        txt = path.read_text(encoding="utf-8")
+        rel = path.relative_to(repo).as_posix()
+        tests[rel] = {}
+        file_texts[rel] = txt
 
-            for m in re.finditer(r'@test\s+"([^\"]+)"\s*\{', txt):
-                title = m.group(1)
-                start = m.end()
-                depth = 1
-                i = start
-                while i < len(txt) and depth > 0:
-                    if txt[i] == "{":
-                        depth += 1
-                    elif txt[i] == "}":
-                        depth -= 1
-                    i += 1
-                body = txt[start : i - 1]
-                tests[rel][title] = body
+        for m in re.finditer(r'@test\s+"([^\"]+)"\s*\{', txt):
+            title = m.group(1)
+            start = m.end()
+            depth = 1
+            i = start
+            while i < len(txt) and depth > 0:
+                if txt[i] == "{":
+                    depth += 1
+                elif txt[i] == "}":
+                    depth -= 1
+                i += 1
+            body = txt[start : i - 1]
+            tests[rel][title] = body
     return tests, file_texts
 
 

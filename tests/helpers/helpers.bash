@@ -1,7 +1,7 @@
 # Common BATS helpers — loaded by all test files
 
-# Derive PROJECT_ROOT from this helpers file's own location (tests/helpers.bash → project root)
-PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# Derive PROJECT_ROOT from this helpers file's own location (tests/helpers/helpers.bash → project root)
+PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 SCRIPT="${PROJECT_ROOT}/base/bootstrap.sh"
 VALIDATE_SCRIPT="${PROJECT_ROOT}/base/validate.sh"
 DEPLOY_SCRIPT="${PROJECT_ROOT}/deploy.sh"

@@ -3,7 +3,7 @@
 # Runs in a plain Docker container (no systemd required).
 # Tests the --dry-run pipeline to verify no system changes are made.
 
-load '../helpers'
+load '../../helpers/helpers'
 
 TEST_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDataForDryRunTests test@bats"
 SSH_DROPIN="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"

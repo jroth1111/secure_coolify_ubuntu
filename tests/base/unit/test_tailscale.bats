@@ -2,7 +2,7 @@
 # Unit tests for Tailscale installation and configuration functionality
 # Tests --install-tailscale and --tailscale-auth-key options
 
-load '../helpers'
+load '../../helpers/helpers'
 
 setup() {
   source_script

@@ -2,7 +2,7 @@
 # Unit tests for admin user and sudo access functionality
 # Tests ensure_admin_access() and passwordless sudo configuration
 
-load '../helpers'
+load '../../helpers/helpers'
 
 setup() {
   source_script

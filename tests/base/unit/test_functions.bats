@@ -2,7 +2,7 @@
 # Tier 0: Unit tests for pure functions in bootstrap_hardening.sh
 # No Docker, no root, no system access required.
 
-load '../helpers'
+load '../../helpers/helpers'
 
 setup() {
   source_script

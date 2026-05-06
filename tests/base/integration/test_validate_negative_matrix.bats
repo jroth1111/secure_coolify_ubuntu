@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Tier 2 negative matrix for validate_hardening.sh.
 
-load '../helpers'
+load '../../helpers/helpers'
 
 TEST_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDataForValidateNegative test@bats"
 TEST_USER="validatenegative"

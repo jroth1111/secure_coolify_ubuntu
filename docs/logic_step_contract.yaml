@@ -4,2652 +4,2652 @@ entries:
   script_path: overlays/docker-host/modules/cidrs.sh
   function: add_docker_ssh_cidr
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::add_docker_ssh_cidr: rejects invalid
+  behavior_test: 'tests/base/unit/test_functions.bats::add_docker_ssh_cidr: rejects invalid
     octet 172.256.0.0/16'
   checks:
-  - 'tests/unit/test_functions.bats::add_docker_ssh_cidr: rejects invalid octet 172.256.0.0/16'
+  - 'tests/base/unit/test_functions.bats::add_docker_ssh_cidr: rejects invalid octet 172.256.0.0/16'
 - id: LS-BOOT-002
   script_path: base/modules/ssh.sh
   function: assert_sshd_effective
   criticality: security
-  behavior_test: 'tests/unit/test_functions.bats::assert_sshd_effective: wrong permitrootlogin
+  behavior_test: 'tests/base/unit/test_functions.bats::assert_sshd_effective: wrong permitrootlogin
     fails'
   checks:
-  - 'tests/unit/test_functions.bats::assert_sshd_effective: wrong permitrootlogin
+  - 'tests/base/unit/test_functions.bats::assert_sshd_effective: wrong permitrootlogin
     fails'
-  - 'tests/unit/test_functions.bats::assert_sshd_effective: correct config passes'
+  - 'tests/base/unit/test_functions.bats::assert_sshd_effective: correct config passes'
 - id: LS-BOOT-003
   script_path: base/modules/ssh.sh
   function: assert_sshd_match_localhost
   criticality: security
-  behavior_test: 'tests/unit/test_functions.bats::assert_sshd_match_localhost: permitrootlogin
+  behavior_test: 'tests/base/unit/test_functions.bats::assert_sshd_match_localhost: permitrootlogin
     no fails'
   checks:
-  - 'tests/unit/test_functions.bats::assert_sshd_match_localhost: permitrootlogin
+  - 'tests/base/unit/test_functions.bats::assert_sshd_match_localhost: permitrootlogin
     no fails'
-  - 'tests/unit/test_functions.bats::assert_sshd_match_localhost: correct Match config
+  - 'tests/base/unit/test_functions.bats::assert_sshd_match_localhost: correct Match config
     passes (prohibit-password)'
 - id: LS-BOOT-004
   script_path: base/modules/post_checks.sh
   function: bool_cmd
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::bool_cmd: returns true for successful
+  behavior_test: 'tests/base/unit/test_functions.bats::bool_cmd: returns true for successful
     command'
   checks:
-  - 'tests/unit/test_functions.bats::bool_cmd: returns true for successful command'
+  - 'tests/base/unit/test_functions.bats::bool_cmd: returns true for successful command'
 - id: LS-BOOT-005
   script_path: base/modules/auditd.sh
   function: build_audit_rules
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::build_audit_rules: includes identity
+  behavior_test: 'tests/base/unit/test_functions.bats::build_audit_rules: includes identity
     watch (syscall-form)'
   checks:
-  - 'tests/unit/test_functions.bats::build_audit_rules: includes identity watch (syscall-form)'
+  - 'tests/base/unit/test_functions.bats::build_audit_rules: includes identity watch (syscall-form)'
 - id: LS-BOOT-006
   script_path: base/modules/os_detect.sh
   function: check_disk_space
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::check_disk_space: fails when disk
+  behavior_test: 'tests/base/unit/test_functions.bats::check_disk_space: fails when disk
     space insufficient'
   checks:
-  - 'tests/unit/test_functions.bats::check_disk_space: fails when disk space insufficient'
-  - 'tests/unit/test_functions.bats::check_disk_space: passes when ample space available'
+  - 'tests/base/unit/test_functions.bats::check_disk_space: fails when disk space insufficient'
+  - 'tests/base/unit/test_functions.bats::check_disk_space: passes when ample space available'
 - id: LS-BOOT-007
   script_path: base/modules/auditd.sh
   function: configure_auditd
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_auditd:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_auditd:
     dry-run renders rules and logs planned actions'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_auditd: dry-run
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_auditd: dry-run
     renders rules and logs planned actions'
 - id: LS-BOOT-008
   script_path: base/modules/auditd.sh
   function: configure_auditd_policy
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_auditd_policy:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_auditd_policy:
     updates auditd.conf keys'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_auditd_policy:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_auditd_policy:
     updates auditd.conf keys'
 - id: LS-BOOT-009
   script_path: base/modules/ssh.sh
   function: configure_banner
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_banner:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_banner:
     dry-run logs banner file write'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_banner: dry-run
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_banner: dry-run
     logs banner file write'
 - id: LS-BOOT-010
   script_path: overlays/coolify/modules/binding.sh
   function: configure_coolify_binding
   criticality: security
-  behavior_test: 'tests/unit/test_dashboard_binding.bats::configure_coolify_binding:
+  behavior_test: 'tests/overlays/coolify/unit/test_dashboard_binding.bats::configure_coolify_binding:
     fails when Tailscale IP not detected'
   checks:
-  - 'tests/unit/test_dashboard_binding.bats::configure_coolify_binding: fails when
+  - 'tests/overlays/coolify/unit/test_dashboard_binding.bats::configure_coolify_binding: fails when
     Tailscale IP not detected'
-  - 'tests/unit/test_dashboard_binding.bats::configure_coolify_binding: dry-run shows
+  - 'tests/overlays/coolify/unit/test_dashboard_binding.bats::configure_coolify_binding: dry-run shows
     planned changes'
 - id: LS-BOOT-011
   script_path: overlays/coolify/modules/binding_watchdog.sh
   function: configure_coolify_binding_watchdog
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_coolify_binding_watchdog:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_coolify_binding_watchdog:
     dry-run emits planned timer install'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_coolify_binding_watchdog:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_coolify_binding_watchdog:
     dry-run emits planned timer install'
 - id: LS-BOOT-012
   script_path: overlays/docker-host/modules/daemon.sh
   function: configure_docker_daemon
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_daemon:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_docker_daemon:
     skips when Docker absent'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_daemon:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_docker_daemon:
     skips when Docker absent'
 - id: LS-BOOT-013
   script_path: overlays/docker-host/modules/cidr_sync_timer.sh
   function: configure_docker_ssh_cidr_sync_timer
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_cidr_sync_timer:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_cidr_sync_timer:
     dry-run reports timer install'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_cidr_sync_timer:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_cidr_sync_timer:
     dry-run reports timer install'
 - id: LS-BOOT-014
   script_path: overlays/docker-host/modules/user_rules.sh
   function: configure_docker_user
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_user:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_docker_user:
     dry-run installs/enables service without failure'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_user: dry-run
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_docker_user: dry-run
     installs/enables service without failure'
 - id: LS-BOOT-015
   script_path: base/modules/fail2ban.sh
   function: configure_fail2ban
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_fail2ban:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_fail2ban:
     dry-run logs jail configuration and service action'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_fail2ban: dry-run
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_fail2ban: dry-run
     logs jail configuration and service action'
 - id: LS-BOOT-016
   script_path: base/modules/validation_timer.sh
   function: configure_hardening_validation_timer
   criticality: security
-  behavior_test: 'tests/unit/test_functions.bats::configure_hardening_validation_timer:
+  behavior_test: 'tests/base/unit/test_functions.bats::configure_hardening_validation_timer:
     dry-run skips install'
   checks:
-  - 'tests/unit/test_functions.bats::configure_hardening_validation_timer: dry-run
+  - 'tests/base/unit/test_functions.bats::configure_hardening_validation_timer: dry-run
     skips install'
 - id: LS-BOOT-017
   script_path: base/modules/journald.sh
   function: configure_journald
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_journald:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_journald:
     dry-run logs journald configuration changes'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_journald: dry-run
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_journald: dry-run
     logs journald configuration changes'
 - id: LS-BOOT-018
   script_path: base/modules/ssh.sh
   function: configure_ssh
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_ssh:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_ssh:
     dry-run builds hardened config with docker CIDR match'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_ssh: dry-run builds
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_ssh: dry-run builds
     hardened config with docker CIDR match'
 - id: LS-BOOT-019
   script_path: base/modules/system.sh
   function: configure_swap
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_swap:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_swap:
     dry-run logs swap provisioning actions'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_swap: dry-run logs
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_swap: dry-run logs
     swap provisioning actions'
 - id: LS-BOOT-020
   script_path: base/modules/kernel_sysctl.sh
   function: configure_sysctl
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_sysctl:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_sysctl:
     dry-run logs sysctl drop-in write'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_sysctl: dry-run
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_sysctl: dry-run
     logs sysctl drop-in write'
 - id: LS-BOOT-021
   script_path: base/modules/ufw.sh
   function: configure_ufw
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_ufw:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_ufw:
     dry-run logs firewall rule reconciliation'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_ufw: dry-run logs
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_ufw: dry-run logs
     firewall rule reconciliation'
 - id: LS-BOOT-022
   script_path: base/modules/unattended.sh
   function: configure_unattended_upgrades
   criticality: security
-  behavior_test: 'tests/unit/test_functions.bats::configure_unattended_upgrades: writes
+  behavior_test: 'tests/base/unit/test_functions.bats::configure_unattended_upgrades: writes
     disabled reboot policy when requested'
   checks:
-  - 'tests/unit/test_functions.bats::configure_unattended_upgrades: writes disabled
+  - 'tests/base/unit/test_functions.bats::configure_unattended_upgrades: writes disabled
     reboot policy when requested'
 - id: LS-BOOT-023
   script_path: overlays/docker-host/modules/detect.sh
   function: detect_docker
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::detect_docker:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::detect_docker:
     marks Docker present when docker command exists with iptables backend'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::detect_docker: marks Docker
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::detect_docker: marks Docker
     present when docker command exists with iptables backend'
 - id: LS-BOOT-024
   script_path: base/modules/os_detect.sh
   function: detect_os
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::detect_os: fails
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::detect_os: fails
     when source reports non-ubuntu distro'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::detect_os: fails when source
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::detect_os: fails when source
     reports non-ubuntu distro'
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::detect_os: passes when source
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::detect_os: passes when source
     reports ubuntu and FORCE bypasses version check'
 - id: LS-BOOT-025
   script_path: base/modules/os_detect.sh
   function: detect_wan_iface
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::detect_wan_iface: keeps explicitly
+  behavior_test: 'tests/base/unit/test_functions.bats::detect_wan_iface: keeps explicitly
     provided WAN_IFACE'
   checks:
-  - 'tests/unit/test_functions.bats::detect_wan_iface: fails when auto-detect returns
+  - 'tests/base/unit/test_functions.bats::detect_wan_iface: fails when auto-detect returns
     no interface'
-  - 'tests/unit/test_functions.bats::detect_wan_iface: keeps explicitly provided WAN_IFACE'
+  - 'tests/base/unit/test_functions.bats::detect_wan_iface: keeps explicitly provided WAN_IFACE'
 - id: LS-BOOT-026
   script_path: base/bootstrap.sh
   function: die
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::die: exits 1 with ERROR message'
+  behavior_test: 'tests/base/unit/test_functions.bats::die: exits 1 with ERROR message'
   checks:
-  - 'tests/unit/test_functions.bats::die: exits 1 with ERROR message'
-  - 'tests/unit/test_functions.bats::die: exits 1 with ERROR message'
+  - 'tests/base/unit/test_functions.bats::die: exits 1 with ERROR message'
+  - 'tests/base/unit/test_functions.bats::die: exits 1 with ERROR message'
 - id: LS-BOOT-027
   script_path: base/modules/services.sh
   function: disable_unused_services
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::disable_unused_services:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::disable_unused_services:
     dry-run logs service disable actions'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::disable_unused_services:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::disable_unused_services:
     dry-run logs service disable actions'
 - id: LS-BOOT-028
   script_path: overlays/docker-host/modules/cidrs.sh
   function: discover_docker_ssh_cidrs
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::discover_docker_ssh_cidrs:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::discover_docker_ssh_cidrs:
     collects CIDRs from docker/ip providers'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::discover_docker_ssh_cidrs:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::discover_docker_ssh_cidrs:
     collects CIDRs from docker/ip providers'
 - id: LS-BOOT-029
   script_path: base/modules/ssh.sh
   function: ensure_admin_access
   criticality: utility
-  behavior_test: 'tests/unit/test_admin.bats::ensure_admin_access: creates user with
+  behavior_test: 'tests/base/unit/test_admin.bats::ensure_admin_access: creates user with
     sudo group when user doesn''t exist'
   checks:
-  - 'tests/unit/test_admin.bats::ensure_admin_access: creates user with sudo group
+  - 'tests/base/unit/test_admin.bats::ensure_admin_access: creates user with sudo group
     when user doesn''t exist'
 - id: LS-BOOT-030
   script_path: base/modules/system.sh
   function: ensure_packages
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::ensure_packages: installs only missing
+  behavior_test: 'tests/base/unit/test_functions.bats::ensure_packages: installs only missing
     packages via apt-get'
   checks:
-  - 'tests/unit/test_functions.bats::ensure_packages: installs only missing packages
+  - 'tests/base/unit/test_functions.bats::ensure_packages: installs only missing packages
     via apt-get'
 - id: LS-BOOT-031
   script_path: base/modules/system.sh
   function: ensure_timesync
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_timesync:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_timesync:
     dry-run executes without host mutation'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_timesync: dry-run
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_timesync: dry-run
     executes without host mutation'
 - id: LS-BOOT-032
   script_path: base/modules/state.sh
   function: generate_report
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::generate_report:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::generate_report:
     dry-run exits cleanly without writing report file'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::generate_report: dry-run
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::generate_report: dry-run
     exits cleanly without writing report file'
 - id: LS-BOOT-033
   script_path: lib/tailscale.sh
   function: get_tailscale_ip
   criticality: utility
-  behavior_test: 'tests/unit/test_tailscale.bats::get_tailscale_ip: returns cached
+  behavior_test: 'tests/base/unit/test_tailscale.bats::get_tailscale_ip: returns cached
     value if set'
   checks:
-  - 'tests/unit/test_tailscale.bats::get_tailscale_ip: fails when tailscale command
+  - 'tests/base/unit/test_tailscale.bats::get_tailscale_ip: fails when tailscale command
     not available'
-  - 'tests/unit/test_tailscale.bats::get_tailscale_ip: returns cached value if set'
+  - 'tests/base/unit/test_tailscale.bats::get_tailscale_ip: returns cached value if set'
 - id: LS-BOOT-034
   script_path: overlays/docker-host/modules/user_rules.sh
   function: install_docker_user_assets
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::install_docker_user_assets:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::install_docker_user_assets:
     dry-run logs docker-user asset writes'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::install_docker_user_assets:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::install_docker_user_assets:
     dry-run logs docker-user asset writes'
 - id: LS-BOOT-035
   script_path: lib/tailscale.sh
   function: install_tailscale
   criticality: utility
-  behavior_test: 'tests/unit/test_tailscale.bats::install_tailscale: dry-run logs
+  behavior_test: 'tests/base/unit/test_tailscale.bats::install_tailscale: dry-run logs
     installation plan'
   checks:
-  - 'tests/unit/test_tailscale.bats::install_tailscale: dry-run logs installation
+  - 'tests/base/unit/test_tailscale.bats::install_tailscale: dry-run logs installation
     plan'
 - id: LS-BOOT-036
   script_path: base/modules/post_checks.sh
   function: is_container_runtime
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::is_container_runtime:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::is_container_runtime:
     returns success when container env is docker'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::is_container_runtime: returns
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::is_container_runtime: returns
     success when container env is docker'
 - id: LS-BOOT-037
   script_path: base/bootstrap.sh
   function: is_true
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::is_true: ''false'' returns 1'
+  behavior_test: 'tests/base/unit/test_functions.bats::is_true: ''false'' returns 1'
   checks:
-  - 'tests/unit/test_functions.bats::is_true: ''false'' returns 1'
-  - 'tests/unit/test_functions.bats::is_true: ''1'' returns 0'
+  - 'tests/base/unit/test_functions.bats::is_true: ''false'' returns 1'
+  - 'tests/base/unit/test_functions.bats::is_true: ''1'' returns 0'
 - id: LS-BOOT-038
   script_path: base/bootstrap.sh
   function: log
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::log: outputs timestamped message'
+  behavior_test: 'tests/base/unit/test_functions.bats::log: outputs timestamped message'
   checks:
-  - 'tests/unit/test_functions.bats::log: outputs timestamped message'
+  - 'tests/base/unit/test_functions.bats::log: outputs timestamped message'
 - id: LS-BOOT-039
   script_path: base/bootstrap.sh
   function: main
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::main: executes
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::main: executes
     orchestration with stubbed phase functions'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::main: executes orchestration
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::main: executes orchestration
     with stubbed phase functions'
 - id: LS-BOOT-042
   script_path: base/modules/ssh.sh
   function: reload_ssh_service
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::reload_ssh_service: returns failure
+  behavior_test: 'tests/base/unit/test_functions.bats::reload_ssh_service: returns failure
     when systemctl unavailable'
   checks:
-  - 'tests/unit/test_functions.bats::reload_ssh_service: returns failure when systemctl
+  - 'tests/base/unit/test_functions.bats::reload_ssh_service: returns failure when systemctl
     unavailable'
 - id: LS-BOOT-043
   script_path: base/modules/system.sh
   function: require_commands
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::require_commands: fails when a required
+  behavior_test: 'tests/base/unit/test_functions.bats::require_commands: fails when a required
     command is missing'
   checks:
-  - 'tests/unit/test_functions.bats::require_commands: fails when a required command
+  - 'tests/base/unit/test_functions.bats::require_commands: fails when a required command
     is missing'
-  - 'tests/unit/test_functions.bats::require_commands: dry-run only requires base
+  - 'tests/base/unit/test_functions.bats::require_commands: dry-run only requires base
     command set'
 - id: LS-BOOT-046
   script_path: base/modules/ssh.sh
   function: restore_ssh_dropin
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::restore_ssh_dropin: restores from
+  behavior_test: 'tests/base/unit/test_functions.bats::restore_ssh_dropin: restores from
     backup'
   checks:
-  - 'tests/unit/test_functions.bats::restore_ssh_dropin: restores from backup'
+  - 'tests/base/unit/test_functions.bats::restore_ssh_dropin: restores from backup'
 - id: LS-BOOT-047
   script_path: base/modules/system.sh
   function: retry_apt_update
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::retry_apt_update: dies after exhausted
+  behavior_test: 'tests/base/unit/test_functions.bats::retry_apt_update: dies after exhausted
     retries'
   checks:
-  - 'tests/unit/test_functions.bats::retry_apt_update: dies after exhausted retries'
+  - 'tests/base/unit/test_functions.bats::retry_apt_update: dies after exhausted retries'
 - id: LS-BOOT-049
   script_path: base/modules/post_checks.sh
   function: run_post_checks
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::run_post_checks:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::run_post_checks:
     dry-run bypasses live host assertions'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::run_post_checks: dry-run
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::run_post_checks: dry-run
     bypasses live host assertions'
 - id: LS-BOOT-050
   script_path: base/modules/auditd.sh
   function: set_auditd_conf_kv
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::set_auditd_conf_kv: returns 0 immediately
+  behavior_test: 'tests/base/unit/test_functions.bats::set_auditd_conf_kv: returns 0 immediately
     when conf file does not exist'
   checks:
-  - 'tests/unit/test_functions.bats::set_auditd_conf_kv: returns 0 immediately when
+  - 'tests/base/unit/test_functions.bats::set_auditd_conf_kv: returns 0 immediately when
     conf file does not exist'
 - id: LS-BOOT-052
   script_path: base/modules/os_detect.sh
   function: ssh_session_safety_gate
   criticality: security
-  behavior_test: 'tests/unit/test_functions.bats::ssh_session_safety_gate: non-Tailscale
+  behavior_test: 'tests/base/unit/test_functions.bats::ssh_session_safety_gate: non-Tailscale
     IP blocked'
   checks:
-  - 'tests/unit/test_functions.bats::ssh_session_safety_gate: non-Tailscale IP blocked'
-  - 'tests/unit/test_functions.bats::ssh_session_safety_gate: no SSH_CONNECTION passes'
+  - 'tests/base/unit/test_functions.bats::ssh_session_safety_gate: non-Tailscale IP blocked'
+  - 'tests/base/unit/test_functions.bats::ssh_session_safety_gate: no SSH_CONNECTION passes'
 - id: LS-BOOT-056
   script_path: lib/tailscale.sh
   function: verify_tailscale_iface
   criticality: security
-  behavior_test: 'tests/unit/test_tailscale.bats::verify_tailscale_iface: fails when
+  behavior_test: 'tests/base/unit/test_tailscale.bats::verify_tailscale_iface: fails when
     interface not present'
   checks:
-  - 'tests/unit/test_tailscale.bats::verify_tailscale_iface: fails when interface
+  - 'tests/base/unit/test_tailscale.bats::verify_tailscale_iface: fails when interface
     not present'
 - id: LS-BOOT-057
   script_path: base/bootstrap.sh
   function: warn
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::warn: outputs WARN-prefixed message'
+  behavior_test: 'tests/base/unit/test_functions.bats::warn: outputs WARN-prefixed message'
   checks:
-  - 'tests/unit/test_functions.bats::warn: outputs WARN-prefixed message'
+  - 'tests/base/unit/test_functions.bats::warn: outputs WARN-prefixed message'
 - id: LS-BOOT-058
   script_path: base/modules/state.sh
   function: warn_on_state_version_mismatch
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::warn_on_state_version_mismatch:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::warn_on_state_version_mismatch:
     warns when state version differs'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::warn_on_state_version_mismatch:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::warn_on_state_version_mismatch:
     warns when state version differs'
 - id: LS-BOOT-060
   script_path: base/modules/state.sh
   function: write_state
   criticality: utility
-  behavior_test: 'tests/unit/test_dashboard_binding.bats::write_state: includes tailscale_ip
+  behavior_test: 'tests/overlays/coolify/unit/test_dashboard_binding.bats::write_state: includes tailscale_ip
     when binding configured'
   checks:
-  - 'tests/unit/test_dashboard_binding.bats::write_state: includes tailscale_ip when
+  - 'tests/overlays/coolify/unit/test_dashboard_binding.bats::write_state: includes tailscale_ip when
     binding configured'
 - id: LS-VAL-001
   script_path: base/checks/admin_sudo_check.sh
   function: admin_sudo_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::admin_sudo_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::admin_sudo_check:
     passes when configured admin has sudo and valid authorized_keys'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::admin_sudo_check: reports
+  - 'tests/base/unit/test_validate_additional_behavior.bats::admin_sudo_check: reports
     info when admin user is not configured'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::admin_sudo_check: fails
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::admin_sudo_check: fails
     when configured admin user does not exist'
 - id: LS-VAL-002
   script_path: base/checks/apparmor_check.sh
   function: apparmor_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::apparmor_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::apparmor_check:
     passes when aa-status reports enabled'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::apparmor_check: passes when
+  - 'tests/base/unit/test_validate_additional_behavior.bats::apparmor_check: passes when
     aa-status reports enabled'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::apparmor_check: fails when
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::apparmor_check: fails when
     aa-status is unavailable outside container'
 - id: LS-VAL-003
   script_path: base/checks/auditd_check.sh
   function: auditd_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::auditd_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::auditd_check:
     records PASS when auditd service, rules, and policy are compliant'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::auditd_check: executes and
+  - 'tests/base/unit/test_validate_additional_behavior.bats::auditd_check: executes and
     records audit status outcomes'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::auditd_check: fails when
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::auditd_check: fails when
     max_log_file_action is not keep_logs'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::auditd_check: fails when
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::auditd_check: fails when
     queue loss exceeds threshold'
 - id: LS-VAL-004
   script_path: base/checks/banner_check.sh
   function: banner_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::banner_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::banner_check:
     records PASS when AUTHORIZED marker check succeeds'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::banner_check: records banner
+  - 'tests/base/unit/test_validate_additional_behavior.bats::banner_check: records banner
     verification result'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::banner_check: fails when
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::banner_check: fails when
     AUTHORIZED marker is missing'
 - id: LS-VAL-005
   script_path: base/checks/_runtime.sh
   function: check
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::check (runtime):
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::check (runtime):
     records FAIL when command exits non-zero'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::check (runtime): records FAIL
+  - 'tests/base/unit/test_validate_additional_behavior.bats::check (runtime): records FAIL
     when command exits non-zero'
 - id: LS-VAL-006
   script_path: overlays/coolify/checks/cloudflared_check.sh
   function: cloudflared_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::cloudflared_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::cloudflared_check:
     records PASS when service is active'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::cloudflared_check: reports
+  - 'tests/base/unit/test_validate_additional_behavior.bats::cloudflared_check: reports
     info when cloudflared is not installed'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::cloudflared_check: fails
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::cloudflared_check: fails
     when service is installed but inactive'
 - id: LS-VAL-007
   script_path: overlays/coolify/checks/coolify_binding_check.sh
   function: coolify_binding_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::coolify_binding_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::coolify_binding_check:
     records PASS when tailscale-scoped UFW rules and guard timer are active'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::coolify_binding_check: records
+  - 'tests/base/unit/test_validate_additional_behavior.bats::coolify_binding_check: records
     binding guard posture'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::coolify_binding_check: fails
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::coolify_binding_check: fails
     when dashboard binding is enabled but ufw is missing'
 - id: LS-VAL-008
   script_path: overlays/coolify/checks/coolify_container_check.sh
   function: coolify_container_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::coolify_container_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::coolify_container_check:
     records PASS when required containers are healthy'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::coolify_container_check: reports
+  - 'tests/base/unit/test_validate_additional_behavior.bats::coolify_container_check: reports
     info when Docker is missing'
 - id: LS-VAL-008A
   script_path: overlays/coolify/checks/coolify_instance_settings_check.sh
   function: coolify_instance_settings_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::coolify_instance_settings_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::coolify_instance_settings_check:
     passes when tunnel mode keeps fqdn empty and registration is disabled'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::coolify_instance_settings_check:
+  - 'tests/base/unit/test_validate_additional_behavior.bats::coolify_instance_settings_check:
     fails when registration is enabled and fqdn is empty'
 - id: LS-VAL-009
   script_path: overlays/coolify/checks/coolify_ssh_check.sh
   function: coolify_ssh_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::coolify_ssh_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::coolify_ssh_check:
     records PASS when host key path is usable'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::coolify_ssh_check: records
+  - 'tests/base/unit/test_validate_additional_behavior.bats::coolify_ssh_check: records
     FAIL when key directory exists without ssh_key entries'
 - id: LS-VAL-010
   script_path: base/checks/_runtime.sh
   function: detect_container_runtime
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::detect_container_runtime:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::detect_container_runtime:
     flags containerized runtime'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::detect_container_runtime:
+  - 'tests/base/unit/test_validate_additional_behavior.bats::detect_container_runtime:
     flags containerized runtime'
 - id: LS-VAL-011
   script_path: base/checks/disabled_services_check.sh
   function: disabled_services_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::disabled_services_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::disabled_services_check:
     passes when services are masked'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::disabled_services_check: passes
+  - 'tests/base/unit/test_validate_additional_behavior.bats::disabled_services_check: passes
     when services are masked'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::disabled_services_check:
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::disabled_services_check:
     fails when rpcbind service is enabled'
 - id: LS-VAL-012
   script_path: overlays/docker-host/checks/docker_daemon_check.sh
   function: docker_daemon_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_daemon_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::docker_daemon_check:
     records PASS when managed daemon settings are present'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::docker_daemon_check: records
+  - 'tests/base/unit/test_validate_additional_behavior.bats::docker_daemon_check: records
     daemon config status'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_daemon_check: fails
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::docker_daemon_check: fails
     when Docker is installed but daemon.json is missing'
 - id: LS-VAL-013
   script_path: overlays/docker-host/checks/docker_trust_boundary_check.sh
   function: docker_trust_boundary_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_trust_boundary_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::docker_trust_boundary_check:
     records PASS when socket ownership and boundaries are sane'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::docker_trust_boundary_check:
+  - 'tests/base/unit/test_validate_additional_behavior.bats::docker_trust_boundary_check:
     records info when Docker is unavailable'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_trust_boundary_check:
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::docker_trust_boundary_check:
     records INFO when docker socket is absent'
 - id: LS-VAL-014
   script_path: overlays/docker-host/checks/docker_user_check.sh
   function: docker_user_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_user_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::docker_user_check:
     records PASS when managed rules are present and tunnel mode has no wan-web bypass'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::docker_user_check: fails fast
+  - 'tests/base/unit/test_validate_additional_behavior.bats::docker_user_check: fails fast
     when iptables is unavailable'
-  - 'tests/unit/test_validate_additional_behavior.bats::docker_user_check: records
+  - 'tests/base/unit/test_validate_additional_behavior.bats::docker_user_check: records
     info when docker service is unavailable and apply was deferred'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_user_check: fails
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::docker_user_check: fails
     when wan-drop rule is missing'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_user_check: fails
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::docker_user_check: fails
     in tunnel mode when wan-web rule exists'
 - id: LS-VAL-015
   script_path: overlays/docker-host/checks/docker_user_lifecycle_check.sh
   function: docker_user_lifecycle_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_user_lifecycle_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::docker_user_lifecycle_check:
     records PASS when unit wiring and lifecycle are valid'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::docker_user_lifecycle_check:
+  - 'tests/base/unit/test_validate_additional_behavior.bats::docker_user_lifecycle_check:
     records info when Docker is not installed'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::docker_user_lifecycle_check:
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::docker_user_lifecycle_check:
     fails when docker-user-hardening unit is missing'
 - id: LS-VAL-015A
   script_path: overlays/docker-host/checks/_helpers.sh
   function: docker_hardening_expected
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_hardening_expected:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::docker_hardening_expected:
     gate-c requires state-based Docker hardening signal'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::docker_hardening_expected:
+  - 'tests/base/unit/test_validate_additional_behavior.bats::docker_hardening_expected:
     gate-c requires state-based Docker hardening signal'
 - id: LS-VAL-016
   script_path: base/checks/fail2ban_check.sh
   function: fail2ban_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::fail2ban_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::fail2ban_check:
     records PASS when service, jail, ignoreip, and backend are healthy'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::fail2ban_check: records fail/info
+  - 'tests/base/unit/test_validate_additional_behavior.bats::fail2ban_check: records fail/info
     when fail2ban is absent'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::fail2ban_check: fails when
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::fail2ban_check: fails when
     fail2ban service is inactive'
 - id: LS-VAL-017
   script_path: base/checks/_runtime.sh
   function: infer_update_profile
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::infer_update_profile:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::infer_update_profile:
     detects balanced profile when updates origin present'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::infer_update_profile: detects
+  - 'tests/base/unit/test_validate_additional_behavior.bats::infer_update_profile: detects
     balanced profile when updates origin present'
 - id: LS-VAL-018
   script_path: base/checks/_runtime.sh
   function: is_true
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_check_outcomes_robust.bats::validate runtime
+  behavior_test: 'tests/base/unit/test_validate_check_outcomes_robust.bats::validate runtime
     is_true: false returns failure'
   checks:
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::validate runtime is_true:
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::validate runtime is_true:
     false returns failure'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::validate runtime is_true:
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::validate runtime is_true:
     true returns success'
 - id: LS-VAL-019
   script_path: base/checks/journald_check.sh
   function: journald_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::journald_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::journald_check:
     records journald persistence posture'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::journald_check: records journald
+  - 'tests/base/unit/test_validate_additional_behavior.bats::journald_check: records journald
     persistence posture'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::journald_check: fails when
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::journald_check: fails when
     persistent drop-in is missing'
 - id: LS-VAL-020
   script_path: base/checks/_runtime.sh
   function: listening_ports_info
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::listening_ports_info:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::listening_ports_info:
     records discovered listening ports'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::listening_ports_info: records
+  - 'tests/base/unit/test_validate_additional_behavior.bats::listening_ports_info: records
     discovered listening ports'
 - id: LS-VAL-021
   script_path: overlays/docker-host/checks/_helpers.sh
   function: load_docker_ssh_cidrs
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::load_docker_ssh_cidrs:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::load_docker_ssh_cidrs:
     returns de-duplicated configured CIDRs'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::load_docker_ssh_cidrs: returns
+  - 'tests/base/unit/test_validate_additional_behavior.bats::load_docker_ssh_cidrs: returns
     de-duplicated configured CIDRs'
 - id: LS-VAL-022
   script_path: base/checks/_runtime.sh
   function: load_state_context
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::load_state_context:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::load_state_context:
     imports state values into runtime vars'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::load_state_context: imports
+  - 'tests/base/unit/test_validate_additional_behavior.bats::load_state_context: imports
     state values into runtime vars'
 - id: LS-VAL-023
   script_path: base/validate.sh
   function: main
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::main: runs check
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::main: runs check
     pipeline and emits JSON summary'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::main: runs check pipeline
+  - 'tests/base/unit/test_validate_additional_behavior.bats::main: runs check pipeline
     and emits JSON summary'
 - id: LS-VAL-024
   script_path: base/checks/_runtime.sh
   function: parse_cli_args
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::parse_cli_args:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::parse_cli_args:
     sets json mode and state file path'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::parse_cli_args: sets json
+  - 'tests/base/unit/test_validate_additional_behavior.bats::parse_cli_args: sets json
     mode and state file path'
 - id: LS-VAL-025
   script_path: base/checks/_runtime.sh
   function: record
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::record (runtime):
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::record (runtime):
     increments PASS count for PASS status'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::record (runtime): increments
+  - 'tests/base/unit/test_validate_additional_behavior.bats::record (runtime): increments
     PASS count for PASS status'
 - id: LS-VAL-026
   script_path: base/checks/_runtime.sh
   function: regex_escape
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::regex_escape:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::regex_escape:
     escapes regex metacharacters'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::regex_escape: escapes regex
+  - 'tests/base/unit/test_validate_additional_behavior.bats::regex_escape: escapes regex
     metacharacters'
 - id: LS-VAL-027
   script_path: base/checks/ssh_check.sh
   function: ssh_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::ssh_check: records
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::ssh_check: records
     PASS for expected hardened sshd output'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::ssh_check: records PASS for
+  - 'tests/base/unit/test_validate_additional_behavior.bats::ssh_check: records PASS for
     expected hardened sshd output'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::ssh_check: fails when external
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::ssh_check: fails when external
     root login is allowed'
 - id: LS-VAL-028
   script_path: base/checks/swap_check.sh
   function: swap_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::swap_check: passes
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::swap_check: passes
     when swap is active and fstab has a single entry'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::swap_check: reports disabled
+  - 'tests/base/unit/test_validate_additional_behavior.bats::swap_check: reports disabled
     swap when swap_size is 0'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::swap_check: fails when swap
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::swap_check: fails when swap
     is expected but inactive'
 - id: LS-VAL-029
   script_path: base/checks/sysctl_check.sh
   function: sysctl_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::sysctl_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::sysctl_check:
     records PASS when expected values are present'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::sysctl_check: records PASS
+  - 'tests/base/unit/test_validate_additional_behavior.bats::sysctl_check: records PASS
     when expected values are present'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::sysctl_check: fails when
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::sysctl_check: fails when
     hardened value deviates from expected'
 - id: LS-VAL-030
   script_path: base/checks/tailscale_check.sh
   function: tailscale_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::tailscale_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::tailscale_check:
     records PASS when interface, BackendState, and IPv4 are present'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::tailscale_check: fails when
+  - 'tests/base/unit/test_validate_additional_behavior.bats::tailscale_check: fails when
     tailscale interface is missing'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::tailscale_check: fails when
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::tailscale_check: fails when
     BackendState is not Running'
 - id: LS-VAL-031
   script_path: base/checks/timesync_check.sh
   function: timesync_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::timesync_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::timesync_check:
     passes when timedatectl reports synchronized NTP'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::timesync_check: passes when
+  - 'tests/base/unit/test_validate_additional_behavior.bats::timesync_check: passes when
     timedatectl reports synchronized NTP'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::timesync_check: fails when
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::timesync_check: fails when
     NTP is inactive outside container'
 - id: LS-VAL-032
   script_path: base/checks/ufw_check.sh
   function: ufw_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::ufw_check: records
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::ufw_check: records
     active firewall and tailscale-scoped rules'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::ufw_check: records active
+  - 'tests/base/unit/test_validate_additional_behavior.bats::ufw_check: records active
     firewall and tailscale-scoped rules'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::ufw_check: fails when dashboard
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::ufw_check: fails when dashboard
     is exposed on WAN interface'
 - id: LS-VAL-033
   script_path: overlays/coolify/checks/unattended_upgrades_check.sh
   function: unattended_upgrades_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::unattended_upgrades_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::unattended_upgrades_check:
     records PASS for security-only profile with active timers'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::unattended_upgrades_check:
+  - 'tests/base/unit/test_validate_additional_behavior.bats::unattended_upgrades_check:
     fails when local policy file is missing'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::unattended_upgrades_check:
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::unattended_upgrades_check:
     records a fail outcome when validation preconditions are not met'
 - id: LS-VAL-034
   script_path: overlays/coolify/checks/validate_timer_check.sh
   function: validate_timer_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::validate_timer_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::validate_timer_check:
     records timer state outcome'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::validate_timer_check: records
+  - 'tests/base/unit/test_validate_additional_behavior.bats::validate_timer_check: records
     timer state outcome'
-  - 'tests/unit/test_validate_check_outcomes_robust.bats::validate_timer_check: fails
+  - 'tests/base/unit/test_validate_check_outcomes_robust.bats::validate_timer_check: fails
     when timer is installed but inactive'
 - id: LS-DEP-001
   script_path: deploy.sh
   function: cleanup_temp_files
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::cleanup_temp_files:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::cleanup_temp_files:
     removes known-host and runtime secret temp files'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::cleanup_temp_files: removes
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::cleanup_temp_files: removes
     known-host and runtime secret temp files'
 - id: LS-DEP-002
   script_path: deploy.sh
   function: collect_inputs
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::collect_inputs
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::collect_inputs
     (deploy): prompts for root password only when needed'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::collect_inputs (deploy):
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::collect_inputs (deploy):
     prompts for root password only when needed'
 - id: LS-DEP-003
   script_path: deploy.sh
   function: init_root_password_auth
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::init_root_password_auth:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::init_root_password_auth:
     writes runtime password file and clears in-memory secret'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::init_root_password_auth:
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::init_root_password_auth:
     writes runtime password file and clears in-memory secret'
 - id: LS-DEP-004
   script_path: deploy.sh
   function: init_ssh_options
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::init_ssh_options:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::init_ssh_options:
     initializes SSH and root SSH options as arrays'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::init_ssh_options: initializes
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::init_ssh_options: initializes
     SSH and root SSH options as arrays'
 - id: LS-DEP-005
   script_path: deploy.sh
   function: main
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::main (deploy):
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::main (deploy):
     executes all deployment phases in order with stubs'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::main (deploy): executes
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::main (deploy): executes
     all deployment phases in order with stubs'
 - id: LS-DEP-006
   script_path: deploy.sh
   function: parse_args
   criticality: orchestration
-  behavior_test: 'tests/integration/test_deploy.bats::deploy: parse_args extracts
+  behavior_test: 'tests/base/integration/test_deploy.bats::deploy: parse_args extracts
     --server-ip'
   checks:
-  - 'tests/integration/test_deploy.bats::deploy: parse_args rejects unknown option'
-  - 'tests/integration/test_deploy.bats::deploy: parse_args extracts --admin-user'
-  - 'tests/integration/test_deploy.bats::deploy: parse_args extracts --server-ip'
+  - 'tests/base/integration/test_deploy.bats::deploy: parse_args rejects unknown option'
+  - 'tests/base/integration/test_deploy.bats::deploy: parse_args extracts --admin-user'
+  - 'tests/base/integration/test_deploy.bats::deploy: parse_args extracts --server-ip'
 - id: LS-DEP-007
   script_path: deploy.sh
   function: phase1_upload_harden
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_workflow_contract.bats::deploy: phase1 upload+harden
+  behavior_test: 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: phase1 upload+harden
     marker exists'
   checks:
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: phase1 upload+harden marker
+  - 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: phase1 upload+harden marker
     exists'
 - id: LS-DEP-008
   script_path: deploy.sh
   function: phase2_gates
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_workflow_contract.bats::deploy: gate B verifies
+  behavior_test: 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: gate B verifies
     admin identity'
   checks:
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: gate B verifies admin
+  - 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: gate B verifies admin
     identity'
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: gate A checks admin SSH
+  - 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: gate A checks admin SSH
     on tailscale'
 - id: LS-DEP-009
   script_path: deploy.sh
   function: phase3_docker_coolify
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::phase3_docker_coolify
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::phase3_docker_coolify
     (deploy): executes docker/coolify reconcile flow'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::phase3_docker_coolify
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::phase3_docker_coolify
     (deploy): executes docker/coolify reconcile flow'
 - id: LS-DEP-010
   script_path: deploy.sh
   function: phase4_binding_dns
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_workflow_contract.bats::deploy: phase4 binding+dns
+  behavior_test: 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: phase4 binding+dns
     marker exists'
   checks:
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: phase4 binding+dns marker
+  - 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: phase4 binding+dns marker
     exists'
 - id: LS-DEP-011
   script_path: deploy.sh
   function: phase5_verify
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_workflow_contract.bats::deploy: gate E fails
+  behavior_test: 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: gate E fails
     when exposure checks do not pass'
   checks:
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: gate E fails when exposure
+  - 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: gate E fails when exposure
     checks do not pass'
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: final validation is executed'
+  - 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: final validation is executed'
 - id: LS-DEP-012
   script_path: deploy.sh
   function: preflight
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_workflow_contract.bats::deploy: preflight
+  behavior_test: 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: preflight
     phase marker exists'
   checks:
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: preflight phase marker
+  - 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: preflight phase marker
     exists'
 - id: LS-DEP-013
   script_path: deploy.sh
   function: reconcile_docker_daemon_remote
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::reconcile_docker_daemon_remote:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::reconcile_docker_daemon_remote:
     pipes generated script over ssh_admin'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::reconcile_docker_daemon_remote:
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::reconcile_docker_daemon_remote:
     pipes generated script over ssh_admin'
 - id: LS-DEP-014
   script_path: deploy.sh
   function: scp_admin
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::scp_admin:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::scp_admin:
     uses identity file and ssh options'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::scp_admin: uses identity
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::scp_admin: uses identity
     file and ssh options'
 - id: LS-DEP-015
   script_path: deploy.sh
   function: scp_root
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::scp_root:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::scp_root:
     uses sshpass file-based auth for root scp'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::scp_root: uses sshpass
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::scp_root: uses sshpass
     file-based auth for root scp'
 - id: LS-DEP-016
   script_path: deploy.sh
   function: ssh_admin
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::ssh_admin:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::ssh_admin:
     uses admin key and tailscale destination'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::ssh_admin: uses admin
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::ssh_admin: uses admin
     key and tailscale destination'
 - id: LS-DEP-017
   script_path: deploy.sh
   function: ssh_admin_sudo
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::ssh_admin_sudo:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::ssh_admin_sudo:
     prefixes remote command with sudo'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::ssh_admin_sudo: prefixes
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::ssh_admin_sudo: prefixes
     remote command with sudo'
 - id: LS-DEP-018
   script_path: deploy.sh
   function: ssh_root
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::ssh_root:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::ssh_root:
     uses sshpass file-based auth and root ssh options'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::ssh_root: uses sshpass
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::ssh_root: uses sshpass
     file-based auth and root ssh options'
 - id: LS-DEP-019
   script_path: deploy.sh
   function: sync_companion_scripts
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::sync_companion_scripts:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::sync_companion_scripts:
     uploads and installs all companion scripts and lib files'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::sync_companion_scripts:
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::sync_companion_scripts:
     uploads and installs all companion scripts and lib files'
 - id: LS-DEP-020
   script_path: deploy.sh
   function: usage
   criticality: utility
-  behavior_test: 'tests/integration/test_deploy.bats::deploy: usage documents required
+  behavior_test: 'tests/base/integration/test_deploy.bats::deploy: usage documents required
     flags'
   checks:
-  - 'tests/integration/test_deploy.bats::deploy: usage documents required flags'
+  - 'tests/base/integration/test_deploy.bats::deploy: usage documents required flags'
 - id: LS-DEP-021
   script_path: deploy.sh
   function: validate_inputs
   criticality: orchestration
-  behavior_test: 'tests/integration/test_deploy.bats::deploy: validate_inputs rejects
+  behavior_test: 'tests/base/integration/test_deploy.bats::deploy: validate_inputs rejects
     invalid server IP'
   checks:
-  - 'tests/integration/test_deploy.bats::deploy: validate_inputs rejects root as admin
+  - 'tests/base/integration/test_deploy.bats::deploy: validate_inputs rejects root as admin
     user'
-  - 'tests/integration/test_deploy.bats::deploy: validate_inputs rejects invalid admin
+  - 'tests/base/integration/test_deploy.bats::deploy: validate_inputs rejects invalid admin
     username (uppercase)'
-  - 'tests/integration/test_deploy.bats::deploy: validate_inputs rejects invalid server
+  - 'tests/base/integration/test_deploy.bats::deploy: validate_inputs rejects invalid server
     IP'
 - id: LS-DEP-022
   script_path: deploy.sh
   function: verify_docker_user_gate_remote
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_workflow_contract.bats::deploy: gate D validates
+  behavior_test: 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: gate D validates
     service active and managed rules'
   checks:
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: gate D validates service
+  - 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: gate D validates service
     active and managed rules'
 - id: LS-SET-001
   script_path: setup.sh
   function: collect_inputs
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::collect_inputs
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::collect_inputs
     (setup): populates shared fields via common collector'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::collect_inputs (setup):
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::collect_inputs (setup):
     populates shared fields via common collector'
 - id: LS-SET-002
   script_path: setup.sh
   function: main
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::main (setup):
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::main (setup):
     executes setup phases with stubbed actions'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::main (setup): executes
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::main (setup): executes
     setup phases with stubbed actions'
 - id: LS-SET-003
   script_path: setup.sh
   function: parse_args
   criticality: orchestration
-  behavior_test: 'tests/unit/test_setup_workflow_contract.bats::setup: parse_args
+  behavior_test: 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: parse_args
     extracts --server-ip'
   checks:
-  - 'tests/unit/test_setup_workflow_contract.bats::setup: parse_args extracts --server-ip'
+  - 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: parse_args extracts --server-ip'
 - id: LS-SET-004
   script_path: setup.sh
   function: pause_for_operator
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::pause_for_operator
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::pause_for_operator
     (setup): displays prompt and accepts enter'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::pause_for_operator (setup):
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::pause_for_operator (setup):
     displays prompt and accepts enter'
 - id: LS-SET-005
   script_path: setup.sh
   function: phase1_harden
   criticality: orchestration
-  behavior_test: 'tests/unit/test_setup_workflow_contract.bats::setup: phase1 harden
+  behavior_test: 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: phase1 harden
     marker exists'
   checks:
-  - 'tests/unit/test_setup_workflow_contract.bats::setup: phase1 harden marker exists'
+  - 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: phase1 harden marker exists'
 - id: LS-SET-006
   script_path: setup.sh
   function: phase2_gates
   criticality: orchestration
-  behavior_test: 'tests/unit/test_setup_workflow_contract.bats::setup: gate B verifies
+  behavior_test: 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: gate B verifies
     admin user home and ssh directory'
   checks:
-  - 'tests/unit/test_setup_workflow_contract.bats::setup: gate B verifies admin user
+  - 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: gate B verifies admin user
     home and ssh directory'
-  - 'tests/unit/test_setup_workflow_contract.bats::setup: gate A requires operator
+  - 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: gate A requires operator
     laptop verification'
 - id: LS-SET-007
   script_path: setup.sh
   function: phase3_docker_coolify
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::phase3_docker_coolify
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::phase3_docker_coolify
     (setup): executes local docker/coolify reconcile flow'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::phase3_docker_coolify
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::phase3_docker_coolify
     (setup): executes local docker/coolify reconcile flow'
 - id: LS-SET-008
   script_path: setup.sh
   function: phase4_binding_dns
   criticality: orchestration
-  behavior_test: 'tests/unit/test_setup_workflow_contract.bats::setup: phase4 binding+dns
+  behavior_test: 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: phase4 binding+dns
     marker exists'
   checks:
-  - 'tests/unit/test_setup_workflow_contract.bats::setup: phase4 binding+dns marker
+  - 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: phase4 binding+dns marker
     exists'
 - id: LS-SET-009
   script_path: setup.sh
   function: phase5_verify
   criticality: orchestration
-  behavior_test: 'tests/unit/test_setup_workflow_contract.bats::setup: gate E requires
+  behavior_test: 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: gate E requires
     operator laptop verification'
   checks:
-  - 'tests/unit/test_setup_workflow_contract.bats::setup: gate E requires operator
+  - 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: gate E requires operator
     laptop verification'
-  - 'tests/unit/test_setup_workflow_contract.bats::setup: final validation is executed'
+  - 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: final validation is executed'
 - id: LS-SET-010
   script_path: setup.sh
   function: preflight
   criticality: orchestration
-  behavior_test: 'tests/unit/test_setup_workflow_contract.bats::setup: preflight phase
+  behavior_test: 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: preflight phase
     marker exists'
   checks:
-  - 'tests/unit/test_setup_workflow_contract.bats::setup: preflight phase marker exists'
+  - 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: preflight phase marker exists'
 - id: LS-SET-011
   script_path: setup.sh
   function: reconcile_docker_daemon_local
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::reconcile_docker_daemon_local:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::reconcile_docker_daemon_local:
     runs generated script locally'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::reconcile_docker_daemon_local:
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::reconcile_docker_daemon_local:
     runs generated script locally'
 - id: LS-SET-012
   script_path: setup.sh
   function: usage
   criticality: utility
-  behavior_test: 'tests/unit/test_setup_workflow_contract.bats::setup: usage documents
+  behavior_test: 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: usage documents
     required flags'
   checks:
-  - 'tests/unit/test_setup_workflow_contract.bats::setup: usage documents required
+  - 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: usage documents required
     flags'
 - id: LS-SET-013
   script_path: setup.sh
   function: validate_inputs
   criticality: orchestration
-  behavior_test: 'tests/unit/test_setup_workflow_contract.bats::setup: validate_inputs
+  behavior_test: 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: validate_inputs
     rejects invalid server IP'
   checks:
-  - 'tests/unit/test_setup_workflow_contract.bats::setup: validate_inputs rejects
+  - 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: validate_inputs rejects
     invalid server IP'
 - id: LS-SET-014
   script_path: setup.sh
   function: verify_docker_user_gate_local
   criticality: orchestration
-  behavior_test: 'tests/unit/test_setup_workflow_contract.bats::setup: gate D validates
+  behavior_test: 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: gate D validates
     service active and managed rules'
   checks:
-  - 'tests/unit/test_setup_workflow_contract.bats::setup: gate D validates service
+  - 'tests/orchestrator/unit/test_setup_workflow_contract.bats::setup: gate D validates service
     active and managed rules'
 - id: LS-COM-001
   script_path: overlays/coolify/coolify-common.sh
   function: cf_api
   criticality: orchestration
-  behavior_test: 'tests/integration/test_deploy.bats::deploy: cf_api constructs correct
+  behavior_test: 'tests/base/integration/test_deploy.bats::deploy: cf_api constructs correct
     URL'
   checks:
-  - 'tests/integration/test_deploy.bats::deploy: cf_api constructs correct URL'
+  - 'tests/base/integration/test_deploy.bats::deploy: cf_api constructs correct URL'
 - id: LS-COM-002
   script_path: overlays/coolify/coolify-common.sh
   function: cf_create_tunnel
   criticality: orchestration
-  behavior_test: 'tests/integration/test_deploy.bats::deploy: cf_create_tunnel extracts
+  behavior_test: 'tests/base/integration/test_deploy.bats::deploy: cf_create_tunnel extracts
     tunnel ID from response'
   checks:
-  - 'tests/integration/test_deploy.bats::deploy: cf_create_tunnel extracts tunnel
+  - 'tests/base/integration/test_deploy.bats::deploy: cf_create_tunnel extracts tunnel
     ID from response'
 - id: LS-COM-003
   script_path: overlays/coolify/coolify-common.sh
   function: cf_expect_success
   criticality: orchestration
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_expect_success:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_expect_success:
     passes for success=true and fails for success=false'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::cf_expect_success: passes for
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_expect_success: passes for
     success=true and fails for success=false'
 - id: LS-COM-004
   script_path: overlays/coolify/coolify-common.sh
   function: cf_get_account_id
   criticality: orchestration
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_get_account_id:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_get_account_id:
     stores account id from Cloudflare API response'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::cf_get_account_id: stores account
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_get_account_id: stores account
     id from Cloudflare API response'
 - id: LS-COM-005
   script_path: overlays/coolify/coolify-common.sh
   function: cf_get_zone_id
   criticality: orchestration
-  behavior_test: 'tests/integration/test_deploy.bats::deploy: cf_get_zone_id extracts
+  behavior_test: 'tests/base/integration/test_deploy.bats::deploy: cf_get_zone_id extracts
     zone ID from response'
   checks:
-  - 'tests/integration/test_deploy.bats::deploy: cf_get_zone_id extracts zone ID from
+  - 'tests/base/integration/test_deploy.bats::deploy: cf_get_zone_id extracts zone ID from
     response'
 - id: LS-COM-006
   script_path: overlays/coolify/coolify-common.sh
   function: cf_upsert_a_record
   criticality: orchestration
-  behavior_test: 'tests/integration/test_deploy.bats::deploy: cf_upsert_a_record updates
+  behavior_test: 'tests/base/integration/test_deploy.bats::deploy: cf_upsert_a_record updates
     existing record'
   checks:
-  - 'tests/integration/test_deploy.bats::deploy: cf_upsert_a_record updates existing
+  - 'tests/base/integration/test_deploy.bats::deploy: cf_upsert_a_record updates existing
     record'
 - id: LS-COM-007
   script_path: overlays/coolify/coolify-common.sh
   function: cf_upsert_cname
   criticality: orchestration
-  behavior_test: 'tests/integration/test_deploy.bats::deploy: cf_upsert_cname updates
+  behavior_test: 'tests/base/integration/test_deploy.bats::deploy: cf_upsert_cname updates
     existing CNAME'
   checks:
-  - 'tests/integration/test_deploy.bats::deploy: cf_upsert_cname updates existing
+  - 'tests/base/integration/test_deploy.bats::deploy: cf_upsert_cname updates existing
     CNAME'
 - id: LS-COM-008
   script_path: overlays/coolify/coolify-common.sh
   function: cf_verify_token
   criticality: orchestration
-  behavior_test: 'tests/integration/test_deploy.bats::deploy: cf_verify_token parses
+  behavior_test: 'tests/base/integration/test_deploy.bats::deploy: cf_verify_token parses
     success response'
   checks:
-  - 'tests/integration/test_deploy.bats::deploy: cf_verify_token parses success response'
+  - 'tests/base/integration/test_deploy.bats::deploy: cf_verify_token parses success response'
 - id: LS-COM-009
   script_path: overlays/coolify/coolify-common.sh
   function: collect_common_inputs
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::collect_common_inputs:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::collect_common_inputs:
     preserves pre-populated values without prompting'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::collect_common_inputs: preserves
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::collect_common_inputs: preserves
     pre-populated values without prompting'
 - id: LS-COM-010
   script_path: lib/common.sh
   function: confirm
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::confirm: AUTO_YES=true
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::confirm: AUTO_YES=true
     skips prompt and returns success'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::confirm: AUTO_YES=true skips
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::confirm: AUTO_YES=true skips
     prompt and returns success'
 - id: LS-COM-011
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_add_coolify_root_key_script
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_add_coolify_root_key_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_add_coolify_root_key_script:
     emits idempotent authorized_keys reconciliation'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_add_coolify_root_key_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_add_coolify_root_key_script:
     emits idempotent authorized_keys reconciliation'
 - id: LS-COM-012
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_configure_cloudflared_script
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_configure_cloudflared_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_configure_cloudflared_script:
     emits private-only dashboard/ws deny rules and service enable'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_configure_cloudflared_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_configure_cloudflared_script:
     emits private-only dashboard/ws deny rules and service enable'
 - id: LS-COM-013
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_fix_host_docker_internal_script
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_fix_host_docker_internal_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_fix_host_docker_internal_script:
     emits gateway patch and compose recreate'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_fix_host_docker_internal_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_fix_host_docker_internal_script:
     emits gateway patch and compose recreate'
 - id: LS-COM-014
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_install_cloudflared_script
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_install_cloudflared_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_install_cloudflared_script:
     emits apt-first then repository fallback'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_install_cloudflared_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_install_cloudflared_script:
     emits apt-first then repository fallback'
 - id: LS-COM-015
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_install_coolify_script
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_install_coolify_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_install_coolify_script:
     emits downloaded-installer execution flow'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_install_coolify_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_install_coolify_script:
     emits downloaded-installer execution flow'
 - id: LS-COM-016
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_install_docker_engine_script
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_install_docker_engine_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_install_docker_engine_script:
     emits apt-repo based install script'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_install_docker_engine_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_install_docker_engine_script:
     emits apt-repo based install script'
 - id: LS-COM-017
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase3_docker_coolify_shared
   criticality: orchestration
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase3_docker_coolify_shared:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase3_docker_coolify_shared:
     runs gate/reconcile flow and skips installs when already present'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_phase3_docker_coolify_shared:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase3_docker_coolify_shared:
     runs gate/reconcile flow and skips installs when already present'
 - id: LS-COM-018
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase4_binding_dns_shared
   criticality: orchestration
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase4_binding_dns_shared:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase4_binding_dns_shared:
     standard mode applies wildcard A-records without tunnel path'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_phase4_binding_dns_shared:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase4_binding_dns_shared:
     standard mode applies wildcard A-records without tunnel path'
 - id: LS-COM-019
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_reconcile_docker_daemon_script
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_docker_daemon_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_reconcile_docker_daemon_script:
     emits daemon hardening merge logic'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_docker_daemon_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_reconcile_docker_daemon_script:
     emits daemon hardening merge logic'
 - id: LS-COM-020
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_reconcile_pusher_env_script
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_pusher_env_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_reconcile_pusher_env_script:
     emits PUSHER mode reconciliation script'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_pusher_env_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_reconcile_pusher_env_script:
     emits PUSHER mode reconciliation script'
 - id: LS-COM-021
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_set_wildcard_domain_script
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_set_wildcard_domain_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_set_wildcard_domain_script:
     emits DB update with ON_ERROR_STOP'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_set_wildcard_domain_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_set_wildcard_domain_script:
     emits DB update with ON_ERROR_STOP'
 - id: LS-COM-023
   script_path: lib/common.sh
   function: fail
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::step/pass/fail
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::step/pass/fail
     helpers: print formatted status output'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::step/pass/fail helpers: print
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::step/pass/fail helpers: print
     formatted status output'
 - id: LS-COM-027
   script_path: overlays/coolify/coolify-common.sh
   function: summary_box_print_prefixed_text
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::summary_box_print_prefixed_text:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::summary_box_print_prefixed_text:
     formats text with label and indent'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::summary_box_print_prefixed_text:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::summary_box_print_prefixed_text:
     formats text with label and indent'
 - id: LS-COM-028
   script_path: overlays/coolify/coolify-common.sh
   function: summary_box_print_field
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::summary_box_print_field:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::summary_box_print_field:
     formats field with label prefix'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::summary_box_print_field: formats
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::summary_box_print_field: formats
     field with label prefix'
 - id: LS-COM-029
   script_path: overlays/coolify/coolify-common.sh
   function: summary_box_print_continuation
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::summary_box_print_continuation:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::summary_box_print_continuation:
     formats continuation line with indent'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::summary_box_print_continuation:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::summary_box_print_continuation:
     formats continuation line with indent'
 - id: LS-COM-026
   script_path: lib/common.sh
   function: pass
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::step/pass/fail
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::step/pass/fail
     helpers: print formatted status output'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::step/pass/fail helpers: print
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::step/pass/fail helpers: print
     formatted status output'
 - id: LS-COM-030
   script_path: overlays/coolify/coolify-common.sh
   function: print_deployment_summary
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::print_deployment_summary:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::print_deployment_summary:
     prints completion banner and key endpoints'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::print_deployment_summary: prints
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::print_deployment_summary: prints
     completion banner and key endpoints'
 - id: LS-COM-031
   script_path: lib/common.sh
   function: prompt_choice
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::prompt_choice:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::prompt_choice:
     invalid value fails validation'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::prompt_choice: invalid value
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::prompt_choice: invalid value
     fails validation'
 - id: LS-COM-032
   script_path: lib/common.sh
   function: prompt_secret
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::prompt_secret:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::prompt_secret:
     reads secret from stdin and sets variable'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::prompt_secret: reads secret
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::prompt_secret: reads secret
     from stdin and sets variable'
 - id: LS-COM-033
   script_path: lib/common.sh
   function: prompt_value
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::prompt_value: AUTO_YES
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::prompt_value: AUTO_YES
     accepts default and assigns variable'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::prompt_value: AUTO_YES accepts
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::prompt_value: AUTO_YES accepts
     default and assigns variable'
 - id: LS-COM-034
   script_path: overlays/coolify/coolify-common.sh
   function: report_validation_result
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::report_validation_result:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::report_validation_result:
     passes when fail count is zero and fails otherwise'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::report_validation_result: passes
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::report_validation_result: passes
     when fail count is zero and fails otherwise'
 - id: LS-COM-035
   script_path: overlays/coolify/coolify-common.sh
   function: resolve_app_domain
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::resolve_app_domain:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::resolve_app_domain:
     derives app domain by selected mode'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::resolve_app_domain: derives
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::resolve_app_domain: derives
     app domain by selected mode'
 - id: LS-COM-036
   script_path: lib/common.sh
   function: step
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::step/pass/fail
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::step/pass/fail
     helpers: print formatted status output'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::step/pass/fail helpers: print
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::step/pass/fail helpers: print
     formatted status output'
 - id: LS-BOOT-061
   script_path: base/modules/post_checks.sh
   function: assert_rsyslog_posture
   criticality: security
-  behavior_test: 'tests/unit/test_functions.bats::rsyslog post-check helpers: callable
+  behavior_test: 'tests/base/unit/test_functions.bats::rsyslog post-check helpers: callable
     under stubbed runtime'
   checks:
-  - 'tests/unit/test_functions.bats::rsyslog post-check helpers: callable under stubbed
+  - 'tests/base/unit/test_functions.bats::rsyslog post-check helpers: callable under stubbed
     runtime'
 - id: LS-BOOT-062
   script_path: base/modules/rsyslog.sh
   function: configure_rsyslog_targets
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_rsyslog_targets:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_rsyslog_targets:
     dry-run reports planned remediation and skips systemctl execution'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_rsyslog_targets:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_rsyslog_targets:
     dry-run reports planned remediation and skips systemctl execution'
 - id: LS-BOOT-063
   script_path: base/modules/system.sh
   function: configure_timezone
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_timezone:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_timezone:
     dry-run executes without timedatectl mutation'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_timezone: dry-run
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_timezone: dry-run
     executes without timedatectl mutation'
 - id: LS-BOOT-065
   script_path: base/modules/rsyslog.sh
   function: ensure_logrotate_create_directive
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_logrotate_create_directive:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_logrotate_create_directive:
     inserts create line once and remains idempotent'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_logrotate_create_directive:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_logrotate_create_directive:
     inserts create line once and remains idempotent'
 - id: LS-BOOT-068
   script_path: base/modules/rsyslog.sh
   function: rsyslog_collect_log_targets
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::rsyslog post-check helpers: callable
+  behavior_test: 'tests/base/unit/test_functions.bats::rsyslog post-check helpers: callable
     under stubbed runtime'
   checks:
-  - 'tests/unit/test_functions.bats::rsyslog post-check helpers: callable under stubbed
+  - 'tests/base/unit/test_functions.bats::rsyslog post-check helpers: callable under stubbed
     runtime'
 - id: LS-VAL-035
   script_path: overlays/docker-host/checks/docker_ssh_cidr_sync_check.sh
   function: docker_ssh_cidr_sync_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::docker_ssh_cidr_sync_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::docker_ssh_cidr_sync_check:
     records PASS when strict mode timer/service are healthy'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::docker_ssh_cidr_sync_check:
+  - 'tests/base/unit/test_validate_additional_behavior.bats::docker_ssh_cidr_sync_check:
     records PASS when strict mode timer/service are healthy'
-  - 'tests/unit/test_validate_additional_behavior.bats::docker_ssh_cidr_sync_check:
+  - 'tests/base/unit/test_validate_additional_behavior.bats::docker_ssh_cidr_sync_check:
     fails when normalization is missing and service is failing'
 - id: LS-VAL-036
   script_path: base/checks/_runtime.sh
   function: is_tailscale_ipv4
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_functions.bats::is_tailscale_ipv4: accepts
+  behavior_test: 'tests/base/unit/test_validate_functions.bats::is_tailscale_ipv4: accepts
     100.64.0.0/10 space and rejects others'
   checks:
-  - 'tests/unit/test_validate_functions.bats::is_tailscale_ipv4: accepts 100.64.0.0/10
+  - 'tests/base/unit/test_validate_functions.bats::is_tailscale_ipv4: accepts 100.64.0.0/10
     space and rejects others'
 - id: LS-VAL-037
   script_path: base/checks/rsyslog_check.sh
   function: rsyslog_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::rsyslog_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::rsyslog_check:
     records PASS when log targets are writable and runtime is healthy'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::rsyslog_check: records PASS
+  - 'tests/base/unit/test_validate_additional_behavior.bats::rsyslog_check: records PASS
     when log targets are writable and runtime is healthy'
-  - 'tests/unit/test_validate_additional_behavior.bats::rsyslog_check: records FAIL
+  - 'tests/base/unit/test_validate_additional_behavior.bats::rsyslog_check: records FAIL
     when /var/log is not group-writable and targets are missing'
 - id: LS-VAL-038
   script_path: base/checks/rsyslog_check.sh
   function: rsyslog_collect_log_targets
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_functions.bats::rsyslog_collect_log_targets:
+  behavior_test: 'tests/base/unit/test_validate_functions.bats::rsyslog_collect_log_targets:
     function is callable'
   checks:
-  - 'tests/unit/test_validate_functions.bats::rsyslog_collect_log_targets: function
+  - 'tests/base/unit/test_validate_functions.bats::rsyslog_collect_log_targets: function
     is callable'
 - id: LS-VAL-039
   script_path: base/checks/timezone_check.sh
   function: timezone_check
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::timezone_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::timezone_check:
     passes when current timezone matches configured state'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::timezone_check: passes when
+  - 'tests/base/unit/test_validate_additional_behavior.bats::timezone_check: passes when
     current timezone matches configured state'
-  - 'tests/unit/test_validate_additional_behavior.bats::timezone_check: fails when
+  - 'tests/base/unit/test_validate_additional_behavior.bats::timezone_check: fails when
     configured timezone does not match current timezone'
-  - 'tests/unit/test_validate_additional_behavior.bats::timezone_check: records INFO
+  - 'tests/base/unit/test_validate_additional_behavior.bats::timezone_check: records INFO
     instead of FAIL when timedatectl is unavailable'
 - id: LS-DEP-023
   script_path: deploy.sh
   function: cleanup_remote_deploy_env
   criticality: security
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::cleanup_remote_deploy_env:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::cleanup_remote_deploy_env:
     clears pending remote env via admin sudo path'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::cleanup_remote_deploy_env:
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::cleanup_remote_deploy_env:
     clears pending remote env via admin sudo path'
 - id: LS-DEP-024
   script_path: deploy.sh
   function: deploy_exit_trap
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::deploy_exit_trap:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::deploy_exit_trap:
     best-effort cleans remote deploy env then local temp files'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::deploy_exit_trap: best-effort
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::deploy_exit_trap: best-effort
     cleans remote deploy env then local temp files'
 - id: LS-DEP-025
   script_path: deploy.sh
   function: phase1_skipped
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_workflow_contract.bats::deploy: phase1 skipped
+  behavior_test: 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: phase1 skipped
     marker exists for --ts-ip resumes'
   checks:
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: phase1 skipped marker
+  - 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: phase1 skipped marker
     exists for --ts-ip resumes'
 - id: LS-DEP-026
   script_path: deploy.sh
   function: phase5_fetch_validate_json
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::phase5_fetch_validate_json
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::phase5_fetch_validate_json
     (deploy): requests remote validator json via sudo'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::phase5_fetch_validate_json
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::phase5_fetch_validate_json
     (deploy): requests remote validator json via sudo'
 - id: LS-DEP-027
   script_path: deploy.sh
   function: phase5_noop_operator_confirm
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::phase5_noop_operator_confirm
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::phase5_noop_operator_confirm
     (deploy): returns success'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::phase5_noop_operator_confirm
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::phase5_noop_operator_confirm
     (deploy): returns success'
 - id: LS-SET-015
   script_path: setup.sh
   function: phase5_fetch_validate_json
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::phase5_fetch_validate_json
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::phase5_fetch_validate_json
     (setup): executes local validator with --json'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::phase5_fetch_validate_json
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::phase5_fetch_validate_json
     (setup): executes local validator with --json'
 - id: LS-SET-016
   script_path: setup.sh
   function: setup_exit_trap
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::setup_exit_trap:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::setup_exit_trap:
     removes pending deploy env file'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::setup_exit_trap: removes
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::setup_exit_trap: removes
     pending deploy env file'
 - id: LS-COM-038
   script_path: overlays/coolify/coolify-common.sh
   function: cf_api_with_token
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::Cloudflare helper
     probes: tokened API wrapper and auth/validation checks'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
     API wrapper and auth/validation checks'
 - id: LS-COM-039
   script_path: overlays/coolify/coolify-common.sh
   function: cf_assert_private_tailscale_a_record
   criticality: orchestration
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::DNS record helpers:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::DNS record helpers:
     delete conflicting host records and validate private A records'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::DNS record helpers: delete conflicting
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::DNS record helpers: delete conflicting
     host records and validate private A records'
 - id: LS-COM-040
   script_path: overlays/coolify/coolify-common.sh
   function: cf_delete_conflicting_host_records
   criticality: orchestration
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::DNS record helpers:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::DNS record helpers:
     delete conflicting host records and validate private A records'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::DNS record helpers: delete conflicting
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::DNS record helpers: delete conflicting
     host records and validate private A records'
 - id: LS-COM-041
   script_path: overlays/coolify/coolify-common.sh
   function: cf_expect_probe_authorized_or_validation_error
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::Cloudflare helper
     probes: tokened API wrapper and auth/validation checks'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
     API wrapper and auth/validation checks'
 - id: LS-COM-042
   script_path: overlays/coolify/coolify-common.sh
   function: cf_tunnel_api
   criticality: orchestration
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_tunnel_api:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_tunnel_api:
     prefers dedicated tunnel token over DNS token'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::cf_tunnel_api: prefers dedicated
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_tunnel_api: prefers dedicated
     tunnel token over DNS token'
 - id: LS-COM-043
   script_path: overlays/coolify/coolify-common.sh
   function: cf_verify_dns_write_token
   criticality: orchestration
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::Cloudflare helper
     probes: tokened API wrapper and auth/validation checks'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
     API wrapper and auth/validation checks'
 - id: LS-COM-044
   script_path: overlays/coolify/coolify-common.sh
   function: cf_verify_tunnel_token
   criticality: orchestration
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_verify_tunnel_token:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_verify_tunnel_token:
     fails fast on auth error code 10000'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::cf_verify_tunnel_token: fails
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_verify_tunnel_token: fails
     fast on auth error code 10000'
-  - 'tests/unit/test_common_additional_behavior.bats::cf_verify_tunnel_token: skips
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_verify_tunnel_token: skips
     tunnel permission checks in standard mode'
 - id: LS-COM-045
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_configure_private_dashboard_routes_script
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_configure_private_dashboard_routes_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_configure_private_dashboard_routes_script:
     emits managed Traefik routes for dashboard and ws hosts'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_configure_private_dashboard_routes_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_configure_private_dashboard_routes_script:
     emits managed Traefik routes for dashboard and ws hosts'
 - id: LS-COM-042A
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_reconcile_instance_settings_script
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_instance_settings_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_reconcile_instance_settings_script:
     emits fqdn and registration reconciliation'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_instance_settings_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_reconcile_instance_settings_script:
     emits fqdn and registration reconciliation'
 - id: LS-COM-046
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_verify_shared
   criticality: orchestration
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_verify_shared:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_verify_shared:
     runs standard verification flow with callback fetcher'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_verify_shared:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_verify_shared:
     runs standard verification flow with callback fetcher'
 - id: LS-COM-047
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_remove_private_dashboard_routes_script
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_remove_private_dashboard_routes_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_remove_private_dashboard_routes_script:
     emits managed route cleanup logic'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_remove_private_dashboard_routes_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_remove_private_dashboard_routes_script:
     emits managed route cleanup logic'
 - id: LS-COM-048
   script_path: overlays/coolify/coolify-common.sh
   function: finalize_cloudflare_tokens
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::finalize_cloudflare_tokens:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::finalize_cloudflare_tokens:
     reuses DNS token when tunnel token is omitted'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::finalize_cloudflare_tokens:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::finalize_cloudflare_tokens:
     reuses DNS token when tunnel token is omitted'
-  - 'tests/unit/test_common_additional_behavior.bats::finalize_cloudflare_tokens:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::finalize_cloudflare_tokens:
     keeps explicit split tunnel token'
 - id: LS-COM-049
   script_path: overlays/coolify/coolify-common.sh
   function: load_cloudflare_tokens_from_files
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::read_secret_file
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::read_secret_file
     and load_cloudflare_tokens_from_files: read secure token files'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::read_secret_file and load_cloudflare_tokens_from_files:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::read_secret_file and load_cloudflare_tokens_from_files:
     read secure token files'
 - id: LS-COM-050
   script_path: lib/common.sh
   function: local_tz_offset
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals
     and time helpers: step/gate bookkeeping is callable'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
 - id: LS-COM-051
   script_path: lib/common.sh
   function: read_secret_file
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::read_secret_file
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::read_secret_file
     and load_cloudflare_tokens_from_files: read secure token files'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::read_secret_file and load_cloudflare_tokens_from_files:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::read_secret_file and load_cloudflare_tokens_from_files:
     read secure token files'
 - id: LS-COM-052
   script_path: lib/common.sh
   function: run_report_close_current_step
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals
     and time helpers: step/gate bookkeeping is callable'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
 - id: LS-COM-053
   script_path: lib/common.sh
   function: run_report_finalize
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run_report lifecycle:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run_report lifecycle:
     emits structured JSON with steps and gates'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::run_report lifecycle: emits
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run_report lifecycle: emits
     structured JSON with steps and gates'
 - id: LS-COM-054
   script_path: lib/common.sh
   function: run_report_init
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run_report lifecycle:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run_report lifecycle:
     emits structured JSON with steps and gates'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::run_report lifecycle: emits
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run_report lifecycle: emits
     structured JSON with steps and gates'
 - id: LS-COM-055
   script_path: lib/common.sh
   function: run_report_record_gate
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals
     and time helpers: step/gate bookkeeping is callable'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
 - id: LS-COM-056
   script_path: lib/common.sh
   function: run_report_step_start
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals
     and time helpers: step/gate bookkeeping is callable'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
 - id: LS-COM-057
   script_path: lib/common.sh
   function: utc_now
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run report internals
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals
     and time helpers: step/gate bookkeeping is callable'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::run report internals and time
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run report internals and time
     helpers: step/gate bookkeeping is callable'
 - id: LS-BOOT-072
   script_path: base/modules/ssh.sh
   function: unit_available
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::unit_available: returns success
+  behavior_test: 'tests/base/unit/test_functions.bats::unit_available: returns success
     when systemctl reports loaded unit'
   checks:
-  - 'tests/unit/test_functions.bats::unit_available: returns success when systemctl
+  - 'tests/base/unit/test_functions.bats::unit_available: returns success when systemctl
     reports loaded unit'
-  - 'tests/unit/test_functions.bats::unit_available: returns failure when systemctl
+  - 'tests/base/unit/test_functions.bats::unit_available: returns failure when systemctl
     reports not-found'
 - id: LS-VAL-040
   script_path: base/checks/_runtime.sh
   function: unit_available
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_functions.bats::unit_available (validate):
+  behavior_test: 'tests/base/unit/test_validate_functions.bats::unit_available (validate):
     returns success for loaded unit'
   checks:
-  - 'tests/unit/test_validate_functions.bats::unit_available (validate): returns success
+  - 'tests/base/unit/test_validate_functions.bats::unit_available (validate): returns success
     for loaded unit'
-  - 'tests/unit/test_validate_functions.bats::unit_available (validate): returns failure
+  - 'tests/base/unit/test_validate_functions.bats::unit_available (validate): returns failure
     for missing unit'
 - id: LS-COM-058
   script_path: lib/common.sh
   function: run_with_heartbeat
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::run_with_heartbeat:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run_with_heartbeat:
     emits begin/end markers and preserves command output'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::run_with_heartbeat: emits begin/end
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run_with_heartbeat: emits begin/end
     markers and preserves command output'
-  - 'tests/unit/test_common_additional_behavior.bats::run_with_heartbeat: propagates
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::run_with_heartbeat: propagates
     command failure with failed marker'
 - id: LS-COM-059
   script_path: lib/common.sh
   function: stream_command_output
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::stream_command_output:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::stream_command_output:
     writes capture file and streams output'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::stream_command_output: writes
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::stream_command_output: writes
     capture file and streams output'
 - id: LS-BOOT-073
   script_path: base/modules/system.sh
   function: apply_system_package_updates
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::apply_system_package_updates:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::apply_system_package_updates:
     dry-run reports full-upgrade plan'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::apply_system_package_updates:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::apply_system_package_updates:
     dry-run reports full-upgrade plan'
 - id: LS-BOOT-074
   script_path: base/modules/services.sh
   function: configure_apport
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_apport:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_apport:
     dry-run updates apport defaults and service state'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_apport: dry-run
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_apport: dry-run
     updates apport defaults and service state'
 - id: LS-BOOT-075
   script_path: base/modules/services.sh
   function: configure_cron_extra_opts
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_cron_extra_opts:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_cron_extra_opts:
     dry-run normalizes cron environment'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_cron_extra_opts:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_cron_extra_opts:
     dry-run normalizes cron environment'
 - id: LS-BOOT-076
   script_path: base/modules/services.sh
   function: configure_networkd_wait_online
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_networkd_wait_online:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_networkd_wait_online:
     dry-run disables stray networkd units when ifupdown is authoritative'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_networkd_wait_online:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_networkd_wait_online:
     dry-run disables stray networkd units when ifupdown is authoritative'
 - id: LS-BOOT-077
   script_path: base/modules/system.sh
   function: emit_filtered_package_output
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::emit_filtered_package_output:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::emit_filtered_package_output:
     strips noisy package-manager warnings'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::emit_filtered_package_output:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::emit_filtered_package_output:
     strips noisy package-manager warnings'
 - id: LS-BOOT-078
   script_path: base/modules/bootloader.sh
   function: ensure_bootloader_embed_safety
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_bootloader_embed_safety:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_bootloader_embed_safety:
     callable under non-gpt layouts'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_bootloader_embed_safety:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_bootloader_embed_safety:
     callable under non-gpt layouts'
 - id: LS-BOOT-079
   script_path: base/modules/system.sh
   function: ensure_power_group
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_power_group:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_power_group:
     delegates to power system group'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_power_group: delegates
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_power_group: delegates
     to power system group'
 - id: LS-BOOT-080
   script_path: base/modules/system.sh
   function: ensure_system_group
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_system_group:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_system_group:
     dry-run logs missing system group creation'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_system_group: dry-run
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_system_group: dry-run
     logs missing system group creation'
 - id: LS-BOOT-081
   script_path: lib/tailscale.sh
   function: ensure_tailscale_ssh_disabled
   criticality: security
-  behavior_test: 'tests/unit/test_tailscale.bats::ensure_tailscale_ssh_disabled: retries
+  behavior_test: 'tests/base/unit/test_tailscale.bats::ensure_tailscale_ssh_disabled: retries
     transient unknown RunSSH reads before accepting false'
   checks:
-  - 'tests/unit/test_tailscale.bats::ensure_tailscale_ssh_disabled: retries transient
+  - 'tests/base/unit/test_tailscale.bats::ensure_tailscale_ssh_disabled: retries transient
     unknown RunSSH reads before accepting false'
 - id: LS-BOOT-082
   script_path: lib/tailscale.sh
   function: ensure_tailscaled_notify_access
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_tailscaled_notify_access:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_tailscaled_notify_access:
     dry-run prepares NotifyAccess restart'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_tailscaled_notify_access:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ensure_tailscaled_notify_access:
     dry-run prepares NotifyAccess restart'
 - id: LS-BOOT-083
   script_path: base/modules/ssh.sh
   function: ifupdown_is_authoritative
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::ifupdown_is_authoritative:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::ifupdown_is_authoritative:
     callable when networking.service is present'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::ifupdown_is_authoritative:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::ifupdown_is_authoritative:
     callable when networking.service is present'
 - id: LS-BOOT-084
   script_path: base/modules/system.sh
   function: retry_apt_noninteractive
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::retry_apt_noninteractive:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::retry_apt_noninteractive:
     retries until apt command succeeds'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::retry_apt_noninteractive:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::retry_apt_noninteractive:
     retries until apt command succeeds'
 - id: LS-BOOT-085
   script_path: base/modules/system.sh
   function: run_apt_command
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::run_apt_command:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::run_apt_command:
     streams filtered output and preserves exit status'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::run_apt_command: streams
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::run_apt_command: streams
     filtered output and preserves exit status'
 - id: LS-BOOT-086
   script_path: lib/tailscale.sh
   function: tailscale_runssh_pref_value
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::tailscale_runssh_pref_value:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::tailscale_runssh_pref_value:
     returns parsed RunSSH preference'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::tailscale_runssh_pref_value:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::tailscale_runssh_pref_value:
     returns parsed RunSSH preference'
 - id: LS-BOOT-087
   script_path: base/modules/system.sh
   function: normalize_private_hosts_file
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::normalize_private_hosts_file:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::normalize_private_hosts_file:
     removes private dashboard loopback overrides and keeps short hostname alias'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::normalize_private_hosts_file:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::normalize_private_hosts_file:
     removes private dashboard loopback overrides and keeps short hostname alias'
 - id: LS-VAL-041
   script_path: base/checks/apport_check.sh
   function: apport_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::apport_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::apport_check:
     records disabled apport posture'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::apport_check: records disabled
+  - 'tests/base/unit/test_validate_additional_behavior.bats::apport_check: records disabled
     apport posture'
 - id: LS-VAL-042
   script_path: base/checks/bootloader_check.sh
   function: bootloader_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::bootloader_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::bootloader_check:
     records info in container mode'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::bootloader_check: records
+  - 'tests/base/unit/test_validate_additional_behavior.bats::bootloader_check: records
     info in container mode'
 - id: LS-VAL-043
   script_path: base/checks/cron_check.sh
   function: cron_check
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::cron_check: records
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::cron_check: records
     normalized EXTRA_OPTS and clean journal'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::cron_check: records normalized
+  - 'tests/base/unit/test_validate_additional_behavior.bats::cron_check: records normalized
     EXTRA_OPTS and clean journal'
 - id: LS-VAL-044
   script_path: base/checks/_runtime.sh
   function: ifupdown_is_authoritative
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::ifupdown_is_authoritative:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::ifupdown_is_authoritative:
     callable when networking.service is present'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::ifupdown_is_authoritative:
+  - 'tests/base/unit/test_validate_additional_behavior.bats::ifupdown_is_authoritative:
     callable when networking.service is present'
 - id: LS-VAL-045
   script_path: base/checks/networkd_wait_online_check.sh
   function: networkd_wait_online_check
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::networkd_wait_online_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::networkd_wait_online_check:
     passes when ifupdown is authoritative and apt-helper wait-online succeeds'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::networkd_wait_online_check:
+  - 'tests/base/unit/test_validate_additional_behavior.bats::networkd_wait_online_check:
     passes when ifupdown is authoritative and apt-helper wait-online succeeds'
 - id: LS-VAL-046
   script_path: base/checks/reboot_required_check.sh
   function: reboot_required_check
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::reboot_required_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::reboot_required_check:
     records pass when reboot is not required'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::reboot_required_check: records
+  - 'tests/base/unit/test_validate_additional_behavior.bats::reboot_required_check: records
     pass when reboot is not required'
 - id: LS-VAL-047
   script_path: base/checks/swap_check.sh
   function: resolve_root_disk
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::resolve_root_disk:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::resolve_root_disk:
     returns parent disk for root source'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::resolve_root_disk: returns
+  - 'tests/base/unit/test_validate_additional_behavior.bats::resolve_root_disk: returns
     parent disk for root source'
 - id: LS-VAL-048
   script_path: base/checks/_runtime.sh
   function: tailscale_runssh_pref_value
   criticality: utility
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::tailscale_runssh_pref_value:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::tailscale_runssh_pref_value:
     returns parsed RunSSH preference'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::tailscale_runssh_pref_value:
+  - 'tests/base/unit/test_validate_additional_behavior.bats::tailscale_runssh_pref_value:
     returns parsed RunSSH preference'
 - id: LS-VAL-049
   script_path: base/checks/_runtime.sh
   function: private_domain_hosts_check
   criticality: security
-  behavior_test: 'tests/unit/test_validate_additional_behavior.bats::private_domain_hosts_check:
+  behavior_test: 'tests/base/unit/test_validate_additional_behavior.bats::private_domain_hosts_check:
     fails when dashboard hosts are loopback-pinned'
   checks:
-  - 'tests/unit/test_validate_additional_behavior.bats::private_domain_hosts_check:
+  - 'tests/base/unit/test_validate_additional_behavior.bats::private_domain_hosts_check:
     passes when dashboard hosts are not loopback-pinned'
-  - 'tests/unit/test_validate_additional_behavior.bats::private_domain_hosts_check:
+  - 'tests/base/unit/test_validate_additional_behavior.bats::private_domain_hosts_check:
     fails when dashboard hosts are loopback-pinned'
 - id: LS-DEP-028
   script_path: deploy.sh
   function: gate_c_failures_are_transient
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_workflow_contract.bats::deploy: gate_c_failures_are_transient
+  behavior_test: 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: gate_c_failures_are_transient
     only accepts timesync-only failures'
   checks:
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: gate_c_failures_are_transient
+  - 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: gate_c_failures_are_transient
     only accepts timesync-only failures'
 - id: LS-DEP-029
   script_path: deploy.sh
   function: wait_for_admin_ssh_or_die
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_workflow_contract.bats::deploy: wait_for_admin_ssh_or_die
+  behavior_test: 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: wait_for_admin_ssh_or_die
     retries until ssh responds'
   checks:
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: wait_for_admin_ssh_or_die
+  - 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: wait_for_admin_ssh_or_die
     retries until ssh responds'
 - id: LS-DEP-030
   script_path: deploy.sh
   function: wait_for_gate_c_timesync_remote
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_workflow_contract.bats::deploy: wait_for_gate_c_timesync_remote
+  behavior_test: 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: wait_for_gate_c_timesync_remote
     waits for synchronized clock'
   checks:
-  - 'tests/unit/test_deploy_workflow_contract.bats::deploy: wait_for_gate_c_timesync_remote
+  - 'tests/orchestrator/unit/test_deploy_workflow_contract.bats::deploy: wait_for_gate_c_timesync_remote
     waits for synchronized clock'
 - id: LS-DEP-031
   script_path: deploy.sh
   function: retry_root_transport
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::retry_root_transport:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::retry_root_transport:
     retries ssh 255 failures and then succeeds'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::retry_root_transport:
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::retry_root_transport:
     retries ssh 255 failures and then succeeds'
 - id: LS-DEP-032
   script_path: deploy.sh
   function: sync_operator_known_host_entries
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::sync_operator_known_host_entries:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::sync_operator_known_host_entries:
     replaces stale operator known_hosts entries with verified session keys'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::sync_operator_known_host_entries:
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::sync_operator_known_host_entries:
     replaces stale operator known_hosts entries with verified session keys'
 - id: LS-COM-060
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_configure_private_tls_dns_script
   criticality: security
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_configure_private_tls_dns_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_configure_private_tls_dns_script:
     emits private TLS DNS-01 reconciliation'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_configure_private_tls_dns_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_configure_private_tls_dns_script:
     emits private TLS DNS-01 reconciliation'
 - id: LS-COM-061
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_install_binding_guard_script
   criticality: security
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_install_binding_guard_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_install_binding_guard_script:
     emits guard timer install and enable flow'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_install_binding_guard_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_install_binding_guard_script:
     emits guard timer install and enable flow'
 - id: LS-COM-062
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_mark_bind_dashboard_state_script
   criticality: orchestration
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_mark_bind_dashboard_state_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_mark_bind_dashboard_state_script:
     emits state reconciliation for bind flag'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_mark_bind_dashboard_state_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_mark_bind_dashboard_state_script:
     emits state reconciliation for bind flag'
 - id: LS-COM-063
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_fetch_pusher_app_key
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_fetch_pusher_app_key:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_fetch_pusher_app_key:
     returns the last non-empty PUSHER_APP_KEY'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_fetch_pusher_app_key:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_fetch_pusher_app_key:
     returns the last non-empty PUSHER_APP_KEY'
 - id: LS-COM-064
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_probe_websocket_code
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_probe_websocket_code:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_probe_websocket_code:
     returns 000 for invalid websocket schemes'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_probe_websocket_code:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_probe_websocket_code:
     returns 000 for invalid websocket schemes'
 - id: LS-COM-065
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_websocket_url
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_websocket_url:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_websocket_url:
     builds the expected websocket endpoint'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_websocket_url:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_websocket_url:
     builds the expected websocket endpoint'
 - id: LS-COM-066
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_tunnel_name
   criticality: orchestration
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_tunnel_name:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_tunnel_name:
     incorporates full domain and deterministic hash'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_tunnel_name: incorporates
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_tunnel_name: incorporates
     full domain and deterministic hash'
 - id: LS-COM-067
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_http_code_is_success_or_redirect
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_http_code_is_success_or_redirect:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_http_code_is_success_or_redirect:
     accepts success and redirect codes only'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_http_code_is_success_or_redirect:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_http_code_is_success_or_redirect:
     accepts success and redirect codes only'
 - id: LS-COM-068
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_dashboard_http_code_is_healthy
   criticality: security
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_dashboard_http_code_is_healthy:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_dashboard_http_code_is_healthy:
     rejects auth-only and missing-route responses'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_dashboard_http_code_is_healthy:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_dashboard_http_code_is_healthy:
     rejects auth-only and missing-route responses'
 - id: LS-BOOT-088
   script_path: base/modules/system.sh
   function: install_fail2ban_without_autostart
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::install_fail2ban_without_autostart:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::install_fail2ban_without_autostart:
     dry-run installs package without enabling service'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::install_fail2ban_without_autostart:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::install_fail2ban_without_autostart:
     dry-run installs package without enabling service'
 - id: LS-BOOT-089
   script_path: lib/tailscale.sh
   function: emit_tailscale_result_sentinel
   criticality: orchestration
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::emit_tailscale_result_sentinel:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::emit_tailscale_result_sentinel:
     prints machine-readable sentinel when IPv4 exists'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::emit_tailscale_result_sentinel:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::emit_tailscale_result_sentinel:
     prints machine-readable sentinel when IPv4 exists'
 - id: LS-BOOT-090
   script_path: overlays/docker-host/modules/readiness.sh
   function: docker_daemon_ready
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::docker helper
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper
     readiness functions: converge when Docker and managed rules become ready'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
     converge when Docker and managed rules become ready'
 - id: LS-BOOT-091
   script_path: overlays/docker-host/modules/readiness.sh
   function: wait_for_systemd_unit_success
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::docker helper
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper
     readiness functions: converge when Docker and managed rules become ready'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
     converge when Docker and managed rules become ready'
 - id: LS-BOOT-092
   script_path: overlays/docker-host/modules/readiness.sh
   function: wait_for_docker_daemon_ready
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::docker helper
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper
     readiness functions: converge when Docker and managed rules become ready'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
     converge when Docker and managed rules become ready'
 - id: LS-BOOT-093
   script_path: overlays/docker-host/modules/readiness.sh
   function: docker_user_rules_present
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::docker helper
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper
     readiness functions: converge when Docker and managed rules become ready'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
     converge when Docker and managed rules become ready'
 - id: LS-BOOT-094
   script_path: overlays/docker-host/modules/readiness.sh
   function: ensure_docker_user_service_applied
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::docker helper
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper
     readiness functions: converge when Docker and managed rules become ready'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::docker helper readiness functions:
     converge when Docker and managed rules become ready'
 - id: LS-BOOT-095
   script_path: overlays/docker-host/modules/readiness.sh
   function: wait_for_fail2ban_sshd_jail
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::wait_for_fail2ban_sshd_jail:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::wait_for_fail2ban_sshd_jail:
     returns success after jail becomes queryable'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::wait_for_fail2ban_sshd_jail:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::wait_for_fail2ban_sshd_jail:
     returns success after jail becomes queryable'
 - id: LS-BOOT-096
   script_path: base/modules/ssh_socket.sh
   function: configure_ssh_socket
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_ssh_socket:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_ssh_socket:
     dry-run logs socket binding without writing dropin'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_ssh_socket: skips
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_ssh_socket: skips
     gracefully when Tailscale IP unavailable'
 - id: LS-BOOT-097
   script_path: base/modules/password_policy.sh
   function: configure_password_policy
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_password_policy:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_password_policy:
     dry-run logs policy application without writing files'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_password_policy:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_password_policy:
     dry-run logs policy application without writing files'
 - id: LS-DEP-033
   script_path: deploy.sh
   function: extract_bootstrap_tailscale_ip
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::deploy helper
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::deploy helper
     state functions: extract bootstrap tailscale IP and validate resume state'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::deploy helper state functions:
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::deploy helper state functions:
     extract bootstrap tailscale IP and validate resume state'
 - id: LS-DEP-034
   script_path: deploy.sh
   function: assert_resume_phase1_contract_remote
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::deploy helper
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::deploy helper
     state functions: extract bootstrap tailscale IP and validate resume state'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::deploy helper state functions:
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::deploy helper state functions:
     extract bootstrap tailscale IP and validate resume state'
 - id: LS-DEP-035
   script_path: deploy.sh
   function: verify_post_reboot_services_remote
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::verify_post_reboot_services_remote:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::verify_post_reboot_services_remote:
     accepts healthy post-reboot services'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::verify_post_reboot_services_remote:
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::verify_post_reboot_services_remote:
     accepts healthy post-reboot services'
 - id: LS-SET-017
   script_path: setup.sh
   function: setup_reboot_required_file
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::setup reboot
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::setup reboot
     marker helpers: return overridable file paths'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::setup reboot marker helpers:
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::setup reboot marker helpers:
     return overridable file paths'
 - id: LS-SET-018
   script_path: setup.sh
   function: setup_reboot_required_pkgs_file
   criticality: utility
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::setup reboot
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::setup reboot
     marker helpers: return overridable file paths'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::setup reboot marker helpers:
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::setup reboot marker helpers:
     return overridable file paths'
 - id: LS-COM-069
   script_path: overlays/coolify/coolify-common.sh
   function: load_private_tls_ca_secrets_from_files
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::private TLS helper
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::private TLS helper
     inputs: load secrets, normalize CA inputs, and resolve issuer metadata'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
     secrets, normalize CA inputs, and resolve issuer metadata'
 - id: LS-COM-070
   script_path: overlays/coolify/coolify-common.sh
   function: finalize_private_tls_ca_inputs
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::private TLS helper
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::private TLS helper
     inputs: load secrets, normalize CA inputs, and resolve issuer metadata'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
     secrets, normalize CA inputs, and resolve issuer metadata'
 - id: LS-COM-071
   script_path: overlays/coolify/coolify-common.sh
   function: private_tls_resolver_name
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::private TLS helper
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::private TLS helper
     inputs: load secrets, normalize CA inputs, and resolve issuer metadata'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
     secrets, normalize CA inputs, and resolve issuer metadata'
 - id: LS-COM-072
   script_path: overlays/coolify/coolify-common.sh
   function: private_tls_ca_expected_caa_issuer
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::private TLS helper
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::private TLS helper
     inputs: load secrets, normalize CA inputs, and resolve issuer metadata'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
     secrets, normalize CA inputs, and resolve issuer metadata'
 - id: LS-COM-073
   script_path: overlays/coolify/coolify-common.sh
   function: cf_verify_private_tls_ca_caa
   criticality: security
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_verify_private_tls_ca_caa:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_verify_private_tls_ca_caa:
     accepts authorized issuer in tunnel mode'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::cf_verify_private_tls_ca_caa:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_verify_private_tls_ca_caa:
     accepts authorized issuer in tunnel mode'
 - id: LS-COM-074
   script_path: overlays/coolify/coolify-common.sh
   function: cf_delete_dns_records_by_type
   criticality: orchestration
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_delete_dns_records_by_type:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_delete_dns_records_by_type:
     deletes every conflicting record for requested types'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::cf_delete_dns_records_by_type:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::cf_delete_dns_records_by_type:
     deletes every conflicting record for requested types'
 - id: LS-COM-075
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_private_tls_diagnostic
   criticality: security
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_private_tls_diagnostic:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_private_tls_diagnostic:
     identifies routes hidden behind default cert'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_private_tls_diagnostic:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_phase5_private_tls_diagnostic:
     identifies routes hidden behind default cert'
 - id: LS-COM-076
   script_path: overlays/coolify/coolify-common.sh
   function: coolify_restore_public_dashboard_tls_script
   criticality: security
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_restore_public_dashboard_tls_script:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_restore_public_dashboard_tls_script:
     emits public TLS restoration script'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::coolify_restore_public_dashboard_tls_script:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::coolify_restore_public_dashboard_tls_script:
     emits public TLS restoration script'
 - id: LS-COM-077
   script_path: overlays/coolify/coolify-common.sh
   function: print_private_tls_ca_notice
   criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::print_private_tls_ca_notice:
+  behavior_test: 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::print_private_tls_ca_notice:
     warns clearly when ZeroSSL fallback is selected'
   checks:
-  - 'tests/unit/test_common_additional_behavior.bats::print_private_tls_ca_notice:
+  - 'tests/overlays/coolify/unit/test_common_additional_behavior.bats::print_private_tls_ca_notice:
     warns clearly when ZeroSSL fallback is selected'
 - id: LS-BOOT-098
   script_path: overlays/docker-host/modules/ssh_match_dropin.sh
   function: configure_docker_ssh_match_dropin
   criticality: security
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_match_dropin:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_match_dropin:
     dry-run logs planned write'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_match_dropin:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_match_dropin:
     dry-run logs planned write'
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_match_dropin:
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_match_dropin:
     skips when no CIDRs discovered'
 - id: LS-BOOT-099
   script_path: base/bootstrap.sh
   function: decode_env_file_value
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+  behavior_test: 'tests/base/unit/test_functions.bats::env-file helper functions: parse
     and assign safe values'
   checks:
-  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+  - 'tests/base/unit/test_functions.bats::env-file helper functions: parse and assign safe
     values'
 - id: LS-BOOT-100
   script_path: base/bootstrap.sh
   function: env_file_key_supported
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+  behavior_test: 'tests/base/unit/test_functions.bats::env-file helper functions: parse
     and assign safe values'
   checks:
-  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+  - 'tests/base/unit/test_functions.bats::env-file helper functions: parse and assign safe
     values'
 - id: LS-BOOT-101
   script_path: base/bootstrap.sh
   function: load_env_file_safely
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+  behavior_test: 'tests/base/unit/test_functions.bats::env-file helper functions: parse
     and assign safe values'
   checks:
-  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+  - 'tests/base/unit/test_functions.bats::env-file helper functions: parse and assign safe
     values'
 - id: LS-BOOT-103
   script_path: base/bootstrap.sh
   function: parse_args
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::parse_args: --admin-user sets ADMIN_USER'
+  behavior_test: 'tests/base/unit/test_functions.bats::parse_args: --admin-user sets ADMIN_USER'
   checks:
-  - 'tests/unit/test_functions.bats::parse_args: --admin-user sets ADMIN_USER'
+  - 'tests/base/unit/test_functions.bats::parse_args: --admin-user sets ADMIN_USER'
 - id: LS-BOOT-104
   script_path: base/bootstrap.sh
   function: require_root
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::require_root:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::require_root:
     fails when uid is not root'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::require_root: fails when
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::require_root: fails when
     uid is not root'
 - id: LS-BOOT-105
   script_path: base/bootstrap.sh
   function: require_value
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::require_value: non-empty value passes'
+  behavior_test: 'tests/base/unit/test_functions.bats::require_value: non-empty value passes'
   checks:
-  - 'tests/unit/test_functions.bats::require_value: non-empty value passes'
+  - 'tests/base/unit/test_functions.bats::require_value: non-empty value passes'
 - id: LS-BOOT-106
   script_path: base/bootstrap.sh
   function: run
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::script_run: dry-run logs command
+  behavior_test: 'tests/base/unit/test_functions.bats::script_run: dry-run logs command
     and skips execution'
   checks:
-  - 'tests/unit/test_functions.bats::script_run: dry-run logs command and skips execution'
+  - 'tests/base/unit/test_functions.bats::script_run: dry-run logs command and skips execution'
 - id: LS-BOOT-107
   script_path: base/bootstrap.sh
   function: set_env_file_value
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+  behavior_test: 'tests/base/unit/test_functions.bats::env-file helper functions: parse
     and assign safe values'
   checks:
-  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+  - 'tests/base/unit/test_functions.bats::env-file helper functions: parse and assign safe
     values'
 - id: LS-BOOT-108
   script_path: base/bootstrap.sh
   function: setup_logging
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::setup_logging: dry-run does not
+  behavior_test: 'tests/base/unit/test_functions.bats::setup_logging: dry-run does not
     touch log file'
   checks:
-  - 'tests/unit/test_functions.bats::setup_logging: dry-run does not touch log file'
+  - 'tests/base/unit/test_functions.bats::setup_logging: dry-run does not touch log file'
 - id: LS-BOOT-109
   script_path: base/bootstrap.sh
   function: trim_whitespace
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+  behavior_test: 'tests/base/unit/test_functions.bats::env-file helper functions: parse
     and assign safe values'
   checks:
-  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+  - 'tests/base/unit/test_functions.bats::env-file helper functions: parse and assign safe
     values'
 - id: LS-BOOT-110
   script_path: base/bootstrap.sh
   function: unescape_backslash_sequences
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+  behavior_test: 'tests/base/unit/test_functions.bats::env-file helper functions: parse
     and assign safe values'
   checks:
-  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+  - 'tests/base/unit/test_functions.bats::env-file helper functions: parse and assign safe
     values'
 - id: LS-BOOT-111
   script_path: base/bootstrap.sh
   function: usage
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::usage: prints required and optional
+  behavior_test: 'tests/base/unit/test_functions.bats::usage: prints required and optional
     flag sections'
   checks:
-  - 'tests/unit/test_functions.bats::usage: prints required and optional flag sections'
+  - 'tests/base/unit/test_functions.bats::usage: prints required and optional flag sections'
 - id: LS-BOOT-112
   script_path: base/bootstrap.sh
   function: validate_inputs
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::validate_inputs: valid inputs pass'
+  behavior_test: 'tests/base/unit/test_functions.bats::validate_inputs: valid inputs pass'
   checks:
-  - 'tests/unit/test_functions.bats::validate_inputs: valid inputs pass'
+  - 'tests/base/unit/test_functions.bats::validate_inputs: valid inputs pass'
 - id: LS-BOOT-113
   script_path: base/bootstrap.sh
   function: validate_pubkey
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::validate_pubkey: accepts ed25519
+  behavior_test: 'tests/base/unit/test_functions.bats::validate_pubkey: accepts ed25519
     key'
   checks:
-  - 'tests/unit/test_functions.bats::validate_pubkey: accepts ed25519 key'
+  - 'tests/base/unit/test_functions.bats::validate_pubkey: accepts ed25519 key'
 - id: LS-BOOT-114
   script_path: base/bootstrap.sh
   function: write_file
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::write_file: creates file with correct
+  behavior_test: 'tests/base/unit/test_functions.bats::write_file: creates file with correct
     permissions'
   checks:
-  - 'tests/unit/test_functions.bats::write_file: creates file with correct permissions'
+  - 'tests/base/unit/test_functions.bats::write_file: creates file with correct permissions'
 - id: LS-COM-115
   script_path: lib/common.sh
   function: die
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::die: exits 1 with ERROR message'
+  behavior_test: 'tests/base/unit/test_functions.bats::die: exits 1 with ERROR message'
   checks:
-  - 'tests/unit/test_functions.bats::die: exits 1 with ERROR message'
+  - 'tests/base/unit/test_functions.bats::die: exits 1 with ERROR message'
 - id: LS-COM-116
   script_path: lib/common.sh
   function: is_true
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::is_true: ''1'' returns 0'
+  behavior_test: 'tests/base/unit/test_functions.bats::is_true: ''1'' returns 0'
   checks:
-  - 'tests/unit/test_functions.bats::is_true: ''1'' returns 0'
+  - 'tests/base/unit/test_functions.bats::is_true: ''1'' returns 0'
 - id: LS-COM-117
   script_path: lib/common.sh
   function: log
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::log: outputs timestamped message'
+  behavior_test: 'tests/base/unit/test_functions.bats::log: outputs timestamped message'
   checks:
-  - 'tests/unit/test_functions.bats::log: outputs timestamped message'
+  - 'tests/base/unit/test_functions.bats::log: outputs timestamped message'
 - id: LS-COM-118
   script_path: lib/common.sh
   function: warn
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::warn: outputs WARN-prefixed message'
+  behavior_test: 'tests/base/unit/test_functions.bats::warn: outputs WARN-prefixed message'
   checks:
-  - 'tests/unit/test_functions.bats::warn: outputs WARN-prefixed message'
+  - 'tests/base/unit/test_functions.bats::warn: outputs WARN-prefixed message'
 - id: LS-BOOT-119
   script_path: base/bootstrap.sh
   function: on_err
   criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::on_err: logs error with line number
+  behavior_test: 'tests/base/unit/test_functions.bats::on_err: logs error with line number
     and command'
   checks:
-  - 'tests/unit/test_functions.bats::on_err: logs error with line number and command'
+  - 'tests/base/unit/test_functions.bats::on_err: logs error with line number and command'
 - id: LS-STATE-001
   script_path: base/modules/state.sh
   function: migrate_legacy_state
   criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::migrate_legacy_state:
+  behavior_test: 'tests/base/unit/test_bootstrap_additional_behavior.bats::migrate_legacy_state:
     skips when legacy dir does not exist'
   checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::migrate_legacy_state: skips
+  - 'tests/base/unit/test_bootstrap_additional_behavior.bats::migrate_legacy_state: skips
     when legacy dir does not exist'
 - id: LS-OVL-001
   script_path: lib/overlay-loader.sh
   function: overlay_topo_sort
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::overlay_topo_sort:
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::overlay_topo_sort:
     returns single overlay with no deps'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::overlay_topo_sort: returns
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::overlay_topo_sort: returns
     single overlay with no deps'
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::overlay_topo_sort: detects
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::overlay_topo_sort: detects
     dependency cycle'
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::overlay_topo_sort: respects
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::overlay_topo_sort: respects
     dependency order'
 - id: LS-OVL-002
   script_path: deploy.sh
   function: paas_phase3_dispatch
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::paas_phase3_dispatch
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::paas_phase3_dispatch
     (deploy): calls overlay_topo_sort then coolify shared'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::paas_phase3_dispatch
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::paas_phase3_dispatch
     (deploy): calls overlay_topo_sort then coolify shared'
 - id: LS-OVL-003
   script_path: deploy.sh
   function: paas_phase4_dispatch
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::paas_phase4_dispatch
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::paas_phase4_dispatch
     (deploy): delegates to coolify shared'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::paas_phase4_dispatch
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::paas_phase4_dispatch
     (deploy): delegates to coolify shared'
 - id: LS-OVL-004
   script_path: deploy.sh
   function: paas_phase5_dispatch
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::paas_phase5_dispatch
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::paas_phase5_dispatch
     (deploy): delegates to coolify shared'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::paas_phase5_dispatch
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::paas_phase5_dispatch
     (deploy): delegates to coolify shared'
 - id: LS-OVL-005
   script_path: setup.sh
   function: paas_phase3_dispatch
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::paas_phase3_dispatch
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::paas_phase3_dispatch
     (setup): calls overlay_topo_sort then coolify shared'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::paas_phase3_dispatch
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::paas_phase3_dispatch
     (setup): calls overlay_topo_sort then coolify shared'
 - id: LS-OVL-006
   script_path: setup.sh
   function: paas_phase4_dispatch
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::paas_phase4_dispatch
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::paas_phase4_dispatch
     (setup): delegates to coolify shared'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::paas_phase4_dispatch
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::paas_phase4_dispatch
     (setup): delegates to coolify shared'
 - id: LS-OVL-007
   script_path: setup.sh
   function: paas_phase5_dispatch
   criticality: orchestration
-  behavior_test: 'tests/unit/test_deploy_setup_additional_behavior.bats::paas_phase5_dispatch
+  behavior_test: 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::paas_phase5_dispatch
     (setup): delegates to coolify shared'
   checks:
-  - 'tests/unit/test_deploy_setup_additional_behavior.bats::paas_phase5_dispatch
+  - 'tests/orchestrator/unit/test_deploy_setup_additional_behavior.bats::paas_phase5_dispatch
     (setup): delegates to coolify shared'

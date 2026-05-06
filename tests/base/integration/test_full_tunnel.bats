@@ -3,7 +3,7 @@
 # Requires: --privileged Docker container with systemd as PID 1.
 # Verifies --tunnel-mode inverse behavior: no WAN 80/443 rules.
 
-load '../helpers'
+load '../../helpers/helpers'
 
 TEST_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDataForTunnelTests test@bats"
 TEST_USER="tunneladmin"

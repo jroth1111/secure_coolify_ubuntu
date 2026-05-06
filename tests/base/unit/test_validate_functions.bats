@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Runtime-focused unit tests for core validate_hardening.sh helper behavior.
 
-load '../helpers'
+load '../../helpers/helpers'
 
 setup() {
   source_validate_script

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-load '../helpers'
+load '../../helpers/helpers'
 
 HARNESS_SCRIPT="${PROJECT_ROOT}/scripts/run_token_edge_matrix.sh"
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Tier 1/2 validation script tests: verify validate_hardening.sh behavior.
 
-load '../helpers'
+load '../../helpers/helpers'
 
 TEST_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDataForValidateTests test@bats"
 TEST_USER="validateadmin"

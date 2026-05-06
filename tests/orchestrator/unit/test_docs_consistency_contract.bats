@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Tier 0: Contract tests for workflow consistency docs/checker
 
-load '../helpers'
+load '../../helpers/helpers'
 
 CONTRACT_FILE="${PROJECT_ROOT}/docs/workflow_contract.yaml"
 CHECKER_SCRIPT="${PROJECT_ROOT}/scripts/check_workflow_consistency.sh"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Additional behavior tests to close function coverage gaps in validate_hardening.sh
 
-load '../helpers'
+load '../../helpers/helpers'
 
 start_fake_unix_socket() {
   local sock_path="$1"

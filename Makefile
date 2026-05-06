@@ -91,14 +91,14 @@ test-lint-docker: docker-build-tier1
 
 # Tier 0: Unit tests - local (fastest, no Docker)
 test-unit-local: setup-bats
-	bats tests/unit/
+	bats tests/base/unit/ tests/overlays/coolify/unit/ tests/orchestrator/unit/
 
 # Tier 1: Unit tests in Docker (for CI consistency)
 test-unit-docker: docker-build-tier1
 	$(RUNNER_BATS_TIER1) \
 	  --image $(IMAGE_TIER1) \
 	  --lane unit \
-	  --target /workspace/tests/unit/ \
+	  --target /workspace/tests/base/unit/ /workspace/tests/overlays/coolify/unit/ /workspace/tests/orchestrator/unit/ \
 	  --workspace $(WORKSPACE) \
 	  --artifacts-dir $(ARTIFACTS_DIR)
 
@@ -110,7 +110,7 @@ test-orchestrator-smoke: docker-build-tier1
 	$(RUNNER_BATS_TIER1) \
 	  --image $(IMAGE_TIER1) \
 	  --lane orchestrator-smoke \
-	  --target /workspace/tests/integration/test_deploy.bats \
+	  --target /workspace/tests/base/integration/test_deploy.bats \
 	  --workspace $(WORKSPACE) \
 	  --artifacts-dir $(ARTIFACTS_DIR)
 
@@ -119,7 +119,7 @@ test-dry-run: docker-build-tier1
 	$(RUNNER_BATS_TIER1) \
 	  --image $(IMAGE_TIER1) \
 	  --lane dry-run \
-	  --target /workspace/tests/integration/test_dry_run.bats \
+	  --target /workspace/tests/base/integration/test_dry_run.bats \
 	  --workspace $(WORKSPACE) \
 	  --artifacts-dir $(ARTIFACTS_DIR) \
 	  --docker-arg --cap-add \
@@ -130,7 +130,7 @@ test-full-standard: docker-build-tier2
 	$(RUNNER_BATS_TIER2) \
 	  --image $(IMAGE_TIER2) \
 	  --lane full-standard \
-	  --target /workspace/tests/integration/test_full_run.bats \
+	  --target /workspace/tests/base/integration/test_full_run.bats \
 	  --workspace $(WORKSPACE) \
 	  --artifacts-dir $(ARTIFACTS_DIR) \
 	  --container-prefix $(CONTAINER_PREFIX)
@@ -139,7 +139,7 @@ test-full-tunnel: docker-build-tier2
 	$(RUNNER_BATS_TIER2) \
 	  --image $(IMAGE_TIER2) \
 	  --lane full-tunnel \
-	  --target /workspace/tests/integration/test_full_tunnel.bats \
+	  --target /workspace/tests/base/integration/test_full_tunnel.bats \
 	  --workspace $(WORKSPACE) \
 	  --artifacts-dir $(ARTIFACTS_DIR) \
 	  --container-prefix $(CONTAINER_PREFIX)
@@ -148,7 +148,7 @@ test-validate: docker-build-tier2
 	$(RUNNER_BATS_TIER2) \
 	  --image $(IMAGE_TIER2) \
 	  --lane validate \
-	  --target /workspace/tests/integration/test_validate_script.bats \
+	  --target /workspace/tests/base/integration/test_validate_script.bats \
 	  --workspace $(WORKSPACE) \
 	  --artifacts-dir $(ARTIFACTS_DIR) \
 	  --container-prefix $(CONTAINER_PREFIX)
@@ -157,7 +157,7 @@ test-idempotency: docker-build-tier2
 	$(RUNNER_BATS_TIER2) \
 	  --image $(IMAGE_TIER2) \
 	  --lane idempotency \
-	  --target /workspace/tests/integration/test_idempotency.bats \
+	  --target /workspace/tests/base/integration/test_idempotency.bats \
 	  --workspace $(WORKSPACE) \
 	  --artifacts-dir $(ARTIFACTS_DIR) \
 	  --container-prefix $(CONTAINER_PREFIX)
@@ -167,7 +167,7 @@ test-bootstrap-matrix: docker-build-tier2
 	$(RUNNER_MATRIX_TIER2) \
 	  --image $(IMAGE_TIER2) \
 	  --lane bootstrap-matrix \
-	  --file /workspace/tests/integration/test_bootstrap_matrix.bats \
+	  --file /workspace/tests/base/integration/test_bootstrap_matrix.bats \
 	  --workspace $(WORKSPACE) \
 	  --artifacts-dir $(ARTIFACTS_DIR) \
 	  --container-prefix $(CONTAINER_PREFIX)
@@ -176,7 +176,7 @@ test-validate-negative-matrix: docker-build-tier2
 	$(RUNNER_MATRIX_TIER2) \
 	  --image $(IMAGE_TIER2) \
 	  --lane validate-negative-matrix \
-	  --file /workspace/tests/integration/test_validate_negative_matrix.bats \
+	  --file /workspace/tests/base/integration/test_validate_negative_matrix.bats \
 	  --workspace $(WORKSPACE) \
 	  --artifacts-dir $(ARTIFACTS_DIR) \
 	  --container-prefix $(CONTAINER_PREFIX)

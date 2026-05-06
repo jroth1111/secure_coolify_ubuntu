@@ -4,7 +4,7 @@
 # Note: deploy.sh is a laptop-side orchestrator that SSHes to remote servers.
 # These tests verify the local logic without requiring actual SSH/cloud resources.
 
-load '../helpers'
+load '../../helpers/helpers'
 
 # ── Test constants ────────────────────────────────────────────────────────────
 

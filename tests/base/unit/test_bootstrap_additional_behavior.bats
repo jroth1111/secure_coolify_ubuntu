@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Additional behavior tests to close function coverage gaps in bootstrap_hardening.sh
 
-load '../helpers'
+load '../../helpers/helpers'
 
 setup() {
   source_script

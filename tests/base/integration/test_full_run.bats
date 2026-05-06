@@ -3,7 +3,7 @@
 # Requires: --privileged Docker container with systemd as PID 1.
 # setup_file runs the script once; individual tests assert outcomes.
 
-load '../helpers'
+load '../../helpers/helpers'
 
 TEST_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDataForFullRunTests test@bats"
 TEST_USER="testadmin"
