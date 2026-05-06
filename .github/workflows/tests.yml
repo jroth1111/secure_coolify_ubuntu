@@ -39,7 +39,10 @@ jobs:
           bash -n base/validate.sh
           bash -n lib/common.sh
           bash -n lib/tailscale.sh
-          bash -n lib/coolify-common.sh
+          bash -n overlays/coolify/coolify-common.sh
+          bash -n overlays/coolify/configure_coolify_binding.sh
+          bash -n deploy.sh
+          bash -n setup.sh
 
       - name: Shellcheck
         run: |
@@ -47,7 +50,8 @@ jobs:
           shellcheck base/validate.sh
           shellcheck lib/common.sh
           shellcheck lib/tailscale.sh
-          shellcheck lib/coolify-common.sh
+          shellcheck overlays/coolify/coolify-common.sh
+          shellcheck overlays/coolify/configure_coolify_binding.sh
 
   tests-pr-fast:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main')

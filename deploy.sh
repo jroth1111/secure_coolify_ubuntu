@@ -597,7 +597,7 @@ preflight() {
   step "0/5" "Pre-flight checks"
 
   # Check local tools
-  local required_cmds=(ssh scp curl jq sshpass ssh-keygen openssl)
+  local required_cmds=(ssh scp curl jq sshpass ssh-keygen openssl tar)
   for cmd in "${required_cmds[@]}"; do
     command -v "${cmd}" >/dev/null 2>&1 || die "Required command not found: ${cmd}. Install it first."
   done
@@ -646,42 +646,31 @@ EOF
   printf -v bootstrap_cmd 'bash -lc %q' "${bootstrap_cmd_script}"
   local bootstrap_transport="root"
 
-  # Upload scripts
-  local scripts=(base/bootstrap.sh base/validate.sh overlays/coolify/configure_coolify_binding.sh)
-  for script in "${scripts[@]}"; do
-    local path="${SCRIPT_DIR}/${script}"
-    [[ -f "${path}" ]] || die "Script not found: ${path}"
-    local script_dn
-    script_dn="$(dirname "${script}")"
-    if [[ "${script_dn}" != "." ]]; then
-      retry_root_transport "Creating /root/${script_dn} on ${SERVER_IP}" \
-        ssh_root "install -d -m 0755 -o root -g root /root/${script_dn}" \
-        || die "Failed to create /root/${script_dn} on ${SERVER_IP}"
-    fi
-    retry_root_transport "Uploading ${script} to ${SERVER_IP}" \
-      scp_root "${path}" "root@${SERVER_IP}:/root/${script}" \
-      || die "Failed to upload ${script} to ${SERVER_IP}"
-    retry_root_transport "Setting execute bit on /root/${script}" \
-      ssh_root "chmod +x /root/${script}" \
-      || die "Failed to set execute bit on /root/${script}"
+  # Upload deployment tree as a single tarball. base/, lib/, and overlays/
+  # together contain every file bootstrap.sh and validate.sh source, so packaging
+  # them in one transfer keeps phase 1 robust against per-file SSH bursts on
+  # password-authenticated transports. Phase 2 sync_companion_scripts later
+  # re-syncs the same tree via admin SSH for resume runs.
+  for d in base lib overlays; do
+    [[ -d "${SCRIPT_DIR}/${d}" ]] || die "Required directory not found: ${SCRIPT_DIR}/${d}"
   done
+  local tree_tar
+  tree_tar="$(mktemp -t deploy-tree.XXXXXXXX.tar.gz)" || die "Failed to create temp tarball"
+  if ! ( cd "${SCRIPT_DIR}" && tar -czf "${tree_tar}" base lib overlays ); then
+    rm -f "${tree_tar}"
+    die "Failed to package deployment tree from ${SCRIPT_DIR}"
+  fi
 
-  retry_root_transport "Creating /root/lib on ${SERVER_IP}" \
-    ssh_root "install -d -m 0755 -o root -g root /root/lib" \
-    || die "Failed to create /root/lib on ${SERVER_IP}"
-  local lib_files=(lib/tailscale.sh)
-  for libfile in "${lib_files[@]}"; do
-    local libpath="${SCRIPT_DIR}/${libfile}"
-    local libname
-    libname="$(basename "${libfile}")"
-    [[ -f "${libpath}" ]] || die "Library not found: ${libpath}"
-    retry_root_transport "Uploading ${libfile} to ${SERVER_IP}" \
-      scp_root "${libpath}" "root@${SERVER_IP}:/root/lib/${libname}" \
-      || die "Failed to upload ${libfile} to ${SERVER_IP}"
-    retry_root_transport "Setting permissions on /root/lib/${libname}" \
-      ssh_root "chmod 644 /root/lib/${libname}" \
-      || die "Failed to set permissions on /root/lib/${libname}"
-  done
+  if ! retry_root_transport "Uploading deployment tree to ${SERVER_IP}" \
+       scp_root "${tree_tar}" "root@${SERVER_IP}:/root/deploy-tree.tar.gz"; then
+    rm -f "${tree_tar}"
+    die "Failed to upload deployment tree to ${SERVER_IP}"
+  fi
+  rm -f "${tree_tar}"
+
+  retry_root_transport "Extracting deployment tree on ${SERVER_IP}" \
+    ssh_root "tar -C /root -xzf /root/deploy-tree.tar.gz && rm -f /root/deploy-tree.tar.gz && chmod 755 /root/base/bootstrap.sh /root/base/validate.sh /root/overlays/coolify/configure_coolify_binding.sh" \
+    || die "Failed to extract deployment tree on ${SERVER_IP}"
   pass "Scripts uploaded"
 
   # We have just opened a burst of short-lived root password-auth sessions for upload/chmod.
@@ -1108,7 +1097,7 @@ phase3_docker_coolify() {
 
 phase4_binding_dns() {
   phase4_coolify_env_exists() { ssh_admin_sudo 'test -f /data/coolify/source/.env' >/dev/null 2>&1; }
-  phase4_configure_binding() { ssh_admin_sudo "/root/configure_coolify_binding.sh --tailscale-ip ${TS_IP}"; }
+  phase4_configure_binding() { ssh_admin_sudo "/root/overlays/coolify/configure_coolify_binding.sh --tailscale-ip ${TS_IP}"; }
   phase4_mark_binding_state() {
     {
       coolify_mark_bind_dashboard_state_script

@@ -129,7 +129,7 @@ fi
 docker_retry exec "${name}" test -f /var/log/server-hardening-report.json \
   && docker_retry exec "${name}" cat /var/log/server-hardening-report.json >"${REPORT_FILE}" || true
 
-docker_retry exec "${name}" bash -lc '/workspace/validate_hardening.sh --json' >"${VALIDATE_FILE}" 2>/dev/null || true
+docker_retry exec "${name}" bash -lc '/workspace/base/validate.sh --json' >"${VALIDATE_FILE}" 2>/dev/null || true
 
 end_ts="$(date +%s)"
 tests_passed="$(grep -cE '^ok[[:space:]]+[0-9]+' "${LOG_FILE}" 2>/dev/null || true)"

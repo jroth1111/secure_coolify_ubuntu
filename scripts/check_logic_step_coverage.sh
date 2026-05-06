@@ -564,7 +564,7 @@ for idx, entry in enumerate(entries, start=1):
                 f"[{entry_id}] check does not execute {fn}: {check_file}::{check_title}"
             )
 
-    if script_path == "validate_hardening.sh" and fn in ROBUST_VALIDATE_CHECK_FUNCTIONS:
+    if script_path == "base/validate.sh" and fn in ROBUST_VALIDATE_CHECK_FUNCTIONS:
         independent_checks = [c for c in checks if isinstance(c, str) and c != behavior_ref]
         if not independent_checks:
             errors.append(

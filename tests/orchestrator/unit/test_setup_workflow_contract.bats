@@ -73,8 +73,8 @@ load '../../helpers/helpers'
     SERVER_TIMEZONE="UTC"
     AUTO_YES="true"
     PREFLIGHT_ONLY="false"
-    mkdir -p "${tmpdir}/base"
-    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base" "${tmpdir}/overlays/coolify"
+    for script in base/bootstrap.sh base/validate.sh overlays/coolify/configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     SCRIPT_DIR="${tmpdir}"
@@ -306,8 +306,8 @@ EOF
     source "'"${SETUP_SCRIPT}"'"
     tmpdir="$(mktemp -d)"
     SCRIPT_DIR="${tmpdir}"
-    mkdir -p "${tmpdir}/base"
-    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base" "${tmpdir}/overlays/coolify"
+    for script in base/bootstrap.sh base/validate.sh overlays/coolify/configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     ssh-keygen -q -t ed25519 -N "" -f "${tmpdir}/id_ed25519" >/dev/null
@@ -344,11 +344,12 @@ EOF
     calls=""
     tmpdir="$(mktemp -d)"
     SCRIPT_DIR="${tmpdir}"
-    cat > "${tmpdir}/configure_coolify_binding.sh" <<'\''EOF'\''
+    mkdir -p "${tmpdir}/overlays/coolify"
+    cat > "${tmpdir}/overlays/coolify/configure_coolify_binding.sh" <<'\''EOF'\''
 #!/usr/bin/env bash
 exit 0
 EOF
-    chmod +x "${tmpdir}/configure_coolify_binding.sh"
+    chmod +x "${tmpdir}/overlays/coolify/configure_coolify_binding.sh"
     sleep() { :; }
 
     coolify_set_wildcard_domain_script() { echo "true"; }
@@ -383,11 +384,12 @@ EOF
     TS_IP="100.64.0.25"
     tmpdir="$(mktemp -d)"
     SCRIPT_DIR="${tmpdir}"
-    cat > "${tmpdir}/configure_coolify_binding.sh" <<'\''EOF'\''
+    mkdir -p "${tmpdir}/overlays/coolify"
+    cat > "${tmpdir}/overlays/coolify/configure_coolify_binding.sh" <<'\''EOF'\''
 #!/usr/bin/env bash
 exit 0
 EOF
-    chmod +x "${tmpdir}/configure_coolify_binding.sh"
+    chmod +x "${tmpdir}/overlays/coolify/configure_coolify_binding.sh"
     sleep() { :; }
     coolify_set_wildcard_domain_script() { cat <<'\''EOF'\'' 
 [[ "${APP_DOMAIN}" == "vps.example.com" ]]

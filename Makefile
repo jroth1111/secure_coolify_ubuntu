@@ -87,7 +87,7 @@ test-lint-docker: docker-build-tier1
 	  --lane lint-docker \
 	  --workspace $(WORKSPACE) \
 	  --artifacts-dir $(ARTIFACTS_DIR) \
-	  --cmd 'bash -n base/bootstrap.sh base/validate.sh setup.sh deploy.sh configure_coolify_binding.sh lib/coolify-common.sh lib/common.sh lib/tailscale.sh && shellcheck -S error base/bootstrap.sh base/validate.sh setup.sh deploy.sh configure_coolify_binding.sh lib/coolify-common.sh lib/common.sh lib/tailscale.sh scripts/*.sh'
+	  --cmd 'bash -n base/bootstrap.sh base/validate.sh setup.sh deploy.sh overlays/coolify/configure_coolify_binding.sh overlays/coolify/coolify-common.sh lib/common.sh lib/tailscale.sh && shellcheck -S error base/bootstrap.sh base/validate.sh setup.sh deploy.sh overlays/coolify/configure_coolify_binding.sh overlays/coolify/coolify-common.sh lib/common.sh lib/tailscale.sh scripts/*.sh'
 
 # Tier 0: Unit tests - local (fastest, no Docker)
 test-unit-local: setup-bats

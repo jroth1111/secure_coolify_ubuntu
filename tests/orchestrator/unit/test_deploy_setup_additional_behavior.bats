@@ -445,9 +445,9 @@ EOF
     TAILSCALE_DIRECT_WAN="false"
     REMOTE_DEPLOY_ENV_PATH="/root/deploy.env"
     upload_counter="${tmpdir}/upload-count"
-    chmod_counter="${tmpdir}/chmod-count"
+    extract_counter="${tmpdir}/extract-count"
     echo 0 > "${upload_counter}"
-    echo 0 > "${chmod_counter}"
+    echo 0 > "${extract_counter}"
     scp_root() {
       count="$(cat "${upload_counter}")"
       count=$((count + 1))
@@ -458,17 +458,14 @@ EOF
       return 0
     }
     ssh_root() {
-      if [[ "$1" == "chmod +x /root/base/bootstrap.sh" ]]; then
-        count="$(cat "${chmod_counter}")"
+      if [[ "$1" == *"tar -C /root -xzf "* ]]; then
+        count="$(cat "${extract_counter}")"
         count=$((count + 1))
-        echo "${count}" > "${chmod_counter}"
+        echo "${count}" > "${extract_counter}"
         if (( count == 1 )); then
           return 255
         fi
-      elif [[ "$1" == chmod\ +x\ /root/* ]]; then
-        count="$(cat "${chmod_counter}")"
-        count=$((count + 1))
-        echo "${count}" > "${chmod_counter}"
+        return 0
       fi
       if [[ "$1" == *"/root/base/bootstrap.sh --env-file "* ]] && [[ "$1" == *"--install-tailscale --force"* ]]; then
         echo "HARDEN_RESULT_TAILSCALE_IP=100.64.0.10"
@@ -478,9 +475,10 @@ EOF
     run_with_heartbeat() { local label="$1"; shift; "$@"; }
     sleep() { :; }
     phase1_upload_harden
-    # 3 scripts (bootstrap retried once = 4) + 1 lib/tailscale.sh + 1 deploy.env = 6 scp_root calls
-    [[ "$(cat "${upload_counter}")" -eq 6 ]]
-    [[ "$(cat "${chmod_counter}")" -eq 4 ]]
+    # tarball upload retried once = 2 + deploy.env = 3 scp_root calls
+    [[ "$(cat "${upload_counter}")" -eq 3 ]]
+    # extract retried once = 2 ssh_root tar -xzf calls
+    [[ "$(cat "${extract_counter}")" -eq 2 ]]
     [[ "${TS_IP}" == "100.64.0.10" ]]
   '
   assert_success

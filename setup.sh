@@ -229,7 +229,7 @@ validate_inputs() {
   esac
 
   # Verify scripts are present in current directory
-  local scripts=(base/bootstrap.sh base/validate.sh configure_coolify_binding.sh)
+  local scripts=(base/bootstrap.sh base/validate.sh overlays/coolify/configure_coolify_binding.sh)
   for script in "${scripts[@]}"; do
     [[ -f "${SCRIPT_DIR}/${script}" ]] || die "Required script not found: ${SCRIPT_DIR}/${script}"
   done
@@ -480,7 +480,7 @@ phase3_docker_coolify() {
 
 phase4_binding_dns() {
   phase4_coolify_env_exists() { [[ -f /data/coolify/source/.env ]]; }
-  phase4_configure_binding() { "${SCRIPT_DIR}/configure_coolify_binding.sh" --tailscale-ip "${TS_IP}"; }
+  phase4_configure_binding() { "${SCRIPT_DIR}/overlays/coolify/configure_coolify_binding.sh" --tailscale-ip "${TS_IP}"; }
   phase4_mark_binding_state() {
     {
       coolify_mark_bind_dashboard_state_script
