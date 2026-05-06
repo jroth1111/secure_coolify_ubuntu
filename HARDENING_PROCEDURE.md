@@ -5,7 +5,7 @@ This procedure targets a dedicated Coolify host on Ubuntu `24.04.4 LTS` with:
 - Public web ingress on `80/443` (or no inbound web when using `--tunnel-mode`)
 - Automatic security updates with scheduled reboots
 
-The script `bootstrap_hardening.sh` (v1.2.4) applies 15 baseline controls in this order. (Note: These are logical control groups; the script's `main()` implements them via 31 function calls.)
+The script `base/bootstrap.sh` (v1.2.4) applies 15 baseline controls in this order. (Note: These are logical control groups; the script's `main()` implements them via 31 function calls.)
 1. Preflight checks and readiness verification (OS/root/session safety/interface detection/package prerequisites)
 2. NTP time synchronization verification
 3. Swap file creation (configurable size, default 2G, OOM protection)

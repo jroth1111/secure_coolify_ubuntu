@@ -98,7 +98,7 @@ Phase 5: Final reachability + security verification
 |--------|-------------|--------------|
 | `deploy.sh` | From your laptop, fresh VPS | Full automation: SSH in, harden, install Coolify, configure DNS |
 | `setup.sh` | Already SSH'd into server | Same as deploy.sh but runs locally (no root password needed) |
-| `bootstrap_hardening.sh` | You only want hardening, no Coolify | Just the 15 security controls, nothing else |
+| `base/bootstrap.sh` | You only want hardening, no Coolify | Just the 15 security controls, nothing else |
 
 ### AI-Assisted Deployment
 
@@ -107,7 +107,7 @@ This project is designed to be LLM-friendly. If you're using Claude, GPT-5 Codex
 - **[AGENTS.md](AGENTS.md)** — Canonical governance + deployment operator instructions for AI agents
 - **Clear phase structure** — Each phase has explicit inputs, outputs, and verification gates
 - **Idempotent operations** — Safe to re-run if interrupted or if the AI needs to retry
-- **Validation at every step** — `validate_hardening.sh` provides machine-readable JSON output
+- **Validation at every step** — `base/validate.sh` provides machine-readable JSON output
 
 Point your AI assistant to `AGENTS.md` and it can guide you through the entire process.
 
@@ -195,7 +195,7 @@ After this, every new app gets: auto-assigned subdomain → wildcard DNS → Clo
 | **Attack surface** | Zero public HTTP/S | Origin IP exposed behind Cloudflare |
 | **Per-subdomain bypass** | Not possible | DNS-only ("grey cloud") available |
 
-`--tunnel-mode` / `--mode tunnel` select the same private-only exposure model (`bootstrap_hardening.sh` vs `deploy.sh`/`setup.sh`).
+`--tunnel-mode` / `--mode tunnel` select the same private-only exposure model (`base/bootstrap.sh` vs `deploy.sh`/`setup.sh`).
 
 **Tunnel is the default** because it eliminates direct-to-origin bypass entirely.
 
@@ -224,7 +224,7 @@ Wildcard DNS (`*.example.com`) and tunnel ingress rules are created automaticall
 
 ## What Gets Hardened
 
-`bootstrap_hardening.sh` applies **15 security controls**. See [HARDENING_PROCEDURE.md](HARDENING_PROCEDURE.md) for full technical detail.
+`base/bootstrap.sh` applies **15 security controls**. See [HARDENING_PROCEDURE.md](HARDENING_PROCEDURE.md) for full technical detail.
 
 | # | Control | Key details |
 |---|---------|-------------|
@@ -265,7 +265,7 @@ JOURNAL_RETENTION=3month
 EOF
 chmod 0600 /etc/bootstrap-hardening.env
 
-sudo ./bootstrap_hardening.sh --env-file /etc/bootstrap-hardening.env
+sudo ./base/bootstrap.sh --env-file /etc/bootstrap-hardening.env
 ```
 
 `--env-file` is parsed as strict `KEY=VALUE` data (not shell-evaluated code).  
@@ -276,7 +276,7 @@ Accepted permissions are `0600` or `0400` by default (`--insecure-env` bypasses 
 Install Tailscale and restrict Coolify dashboard to VPN only:
 
 ```bash
-sudo ./bootstrap_hardening.sh \
+sudo ./base/bootstrap.sh \
   --admin-user coolifyadmin \
   --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host" \
   --install-tailscale \
@@ -289,7 +289,7 @@ sudo ./bootstrap_hardening.sh \
 Preview what would change without applying:
 
 ```bash
-sudo ./bootstrap_hardening.sh \
+sudo ./base/bootstrap.sh \
   --admin-user coolifyadmin \
   --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host" \
   --dry-run
@@ -301,10 +301,10 @@ sudo ./bootstrap_hardening.sh \
 
 ```bash
 # Validate hardening (text output)
-sudo ./validate_hardening.sh
+sudo ./base/validate.sh
 
 # Validate hardening (JSON, for automation/CI)
-sudo ./validate_hardening.sh --json
+sudo ./base/validate.sh --json
 ```
 
 ### Test Suite
@@ -417,7 +417,7 @@ Legacy flags removed (breaking change): `--cf-api-token`, `--cf-tunnel-api-token
 </details>
 
 <details>
-<summary>📋 bootstrap_hardening.sh flags</summary>
+<summary>📋 base/bootstrap.sh flags</summary>
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -460,18 +460,32 @@ All flags have corresponding environment variables (e.g., `ADMIN_USER`, `TUNNEL_
 secure_coolify_ubuntu/
 ├── deploy.sh                    # Laptop-side deployment orchestrator
 ├── setup.sh                     # Server-side deployment orchestrator
-├── bootstrap_hardening.sh       # Security hardening script (15 controls)
-├── validate_hardening.sh        # Post-hardening verification
-├── configure_coolify_binding.sh # Enforces tailscale0-only UFW rules for 8000/6001/6002
+├── base/
+│   ├── bootstrap.sh             # Security hardening script (15 controls)
+│   ├── validate.sh              # Post-hardening verification
+│   ├── modules/                 # Hardening modules (ssh, ufw, auditd, ...)
+│   └── checks/                  # Validation checks
+├── overlays/
+│   ├── coolify/
+│   │   ├── coolify-common.sh    # Shared utilities (Cloudflare API, validation)
+│   │   ├── modules/             # Binding, watchdog
+│   │   └── checks/              # Coolify-specific validation checks
+│   └── docker-host/
+│       ├── modules/             # Docker SSH CIDR, daemon config
+│       └── checks/              # Docker-specific validation checks
 ├── lib/
-│   └── coolify-common.sh        # Shared utilities (Cloudflare API, validation)
+│   ├── common.sh                # Core utilities (log, die, is_true, ...)
+│   ├── tailscale.sh             # Tailscale install/detect helpers
+│   └── overlay-loader.sh        # Overlay topo-sort and dispatch
 ├── HARDENING_PROCEDURE.md       # Detailed hardening technical reference
 ├── docs/
 │   ├── DEPLOYMENT_RUNBOOK.md    # Manual step-by-step deployment guide
 │   └── testing.md               # Test documentation
 ├── tests/
-│   ├── unit/                    # Fast unit tests
-│   └── integration/             # Docker-based integration tests
+│   ├── helpers/helpers.bash     # BATS test helpers
+│   ├── base/                    # Base tier tests (unit + integration)
+│   ├── overlays/coolify/        # Coolify overlay tests
+│   └── orchestrator/            # Deploy/setup orchestrator tests
 ├── Makefile                     # Test automation
 └── scripts/
     └── check_workflow_consistency.sh
@@ -521,7 +535,7 @@ ssh admin@100.x.x.x  # Use the Tailscale IP output by the script
 
 ### Validation Failures
 
-Run `sudo ./validate_hardening.sh` for details. Common fixes:
+Run `sudo ./base/validate.sh` for details. Common fixes:
 - **UFW inactive:** `sudo ufw enable`
 - **Auditd not running:** `sudo systemctl enable --now auditd`
 - **Docker not installed:** Hardening-only mode doesn't install Docker; use `deploy.sh` for full setup
