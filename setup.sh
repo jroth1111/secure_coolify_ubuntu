@@ -23,6 +23,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=overlays/coolify/coolify-common.sh
 source "${SCRIPT_DIR}/overlays/coolify/coolify-common.sh"
+# shellcheck source=lib/overlay-loader.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/overlay-loader.sh"
 
 # ── Inputs (populated by flags or prompts) ──────────────────────────────────
 
@@ -30,6 +33,7 @@ SERVER_IP="${SERVER_IP:-}"
 ADMIN_USER="${ADMIN_USER:-}"
 PUBKEY_FILE="${PUBKEY_FILE:-}"
 TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
+PAAS="${PAAS:-coolify}"
 DEPLOY_MODE="${DEPLOY_MODE:-}"
 DOMAIN="${DOMAIN:-}"
 CF_API_TOKEN="${CF_API_TOKEN:-}"
@@ -431,6 +435,19 @@ phase2_gates() {
 
 # ── Phase 3: Docker + Coolify ──────────────────────────────────────────────
 
+paas_phase3_dispatch() {
+  overlay_topo_sort "${PAAS}"
+  coolify_phase3_docker_coolify_shared "$@"
+}
+
+paas_phase4_dispatch() {
+  coolify_phase4_binding_dns_shared "$@"
+}
+
+paas_phase5_dispatch() {
+  coolify_phase5_verify_shared "$@"
+}
+
 phase3_docker_coolify() {
   phase3_has_docker() { docker version >/dev/null 2>&1; }
   phase3_install_docker() { coolify_install_docker_engine_script | bash -s; }
@@ -445,7 +462,7 @@ phase3_docker_coolify() {
   phase3_sync_docker_ssh_cidrs() { systemctl start docker-ssh-cidr-sync.service; }
 
   # Gate D: Verify DOCKER-USER rules
-  coolify_phase3_docker_coolify_shared \
+  paas_phase3_dispatch \
     phase3_has_docker \
     phase3_install_docker \
     phase3_start_docker_user \
@@ -526,7 +543,7 @@ phase4_binding_dns() {
   # PUSHER_HOST=ws.${DOMAIN}
   # coolify-private-dashboard.yaml
   # ws.${DOMAIN}
-  coolify_phase4_binding_dns_shared \
+  paas_phase4_dispatch \
     phase4_coolify_env_exists \
     phase4_configure_binding \
     phase4_mark_binding_state \
@@ -553,7 +570,7 @@ phase5_verify() {
   # Running final base/validate.sh...
   # setup.sh runs on the server itself; public-IP reachability checks are confirmed
   # from an operator laptop in coolify_phase5_verify_shared (public_probe_mode=operator).
-  coolify_phase5_verify_shared phase5_fetch_validate_json operator pause_for_operator
+  paas_phase5_dispatch phase5_fetch_validate_json operator pause_for_operator
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────

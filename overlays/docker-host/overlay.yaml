@@ -1,0 +1,5 @@
+version: 1
+id: docker-host
+display_name: "Docker Host"
+depends_on: []
+state_namespace: /var/lib/server-hardening/overlays/docker-host

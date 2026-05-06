@@ -16,6 +16,7 @@ SCRIPT_TARGETS = (
     "setup.sh",
     "lib/common.sh",
     "lib/tailscale.sh",
+    "lib/overlay-loader.sh",
     "overlays/coolify/coolify-common.sh",
     "overlays/coolify/modules/binding.sh",
     "overlays/coolify/modules/binding_watchdog.sh",
@@ -119,6 +120,9 @@ ALLOWED_TEST_FILES = {
     "lib/tailscale.sh": {
         "tests/unit/test_tailscale.bats",
         "tests/unit/test_bootstrap_additional_behavior.bats",
+    },
+    "lib/overlay-loader.sh": {
+        "tests/unit/test_deploy_setup_additional_behavior.bats",
     },
     "overlays/coolify/coolify-common.sh": {
         "tests/unit/test_common_additional_behavior.bats",
@@ -334,6 +338,11 @@ SOURCE_PATTERNS = {
     "lib/tailscale.sh": [
         r"\bsource_script\b",
         r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh|tailscale\.sh)",
+    ],
+    "lib/overlay-loader.sh": [
+        r"\bsource_deploy_script\b",
+        r"\bsource_setup_script\b",
+        r"\bsource\b[^\n]*(?:DEPLOY_SCRIPT|SETUP_SCRIPT|deploy\.sh|setup\.sh)",
     ],
     "overlays/coolify/coolify-common.sh": [
         r"\bsource_common_lib\b",

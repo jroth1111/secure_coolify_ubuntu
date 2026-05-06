@@ -829,3 +829,102 @@ EOF
   assert_success
   assert_output --partial "phase5"
 }
+
+@test "overlay_topo_sort: returns single overlay with no deps" {
+  tmpdir="$(mktemp -d)"
+  mkdir -p "${tmpdir}/overlays/base"
+  printf 'version: 1\ndepends_on: []\n' > "${tmpdir}/overlays/base/overlay.yaml"
+  source_deploy_script
+  SCRIPT_DIR="${tmpdir}"
+  run overlay_topo_sort base
+  assert_success
+  assert_output --partial "base"
+}
+
+@test "overlay_topo_sort: detects dependency cycle" {
+  tmpdir="$(mktemp -d)"
+  mkdir -p "${tmpdir}/overlays/a" "${tmpdir}/overlays/b"
+  printf 'version: 1\ndepends_on: [b]\n' > "${tmpdir}/overlays/a/overlay.yaml"
+  printf 'version: 1\ndepends_on: [a]\n' > "${tmpdir}/overlays/b/overlay.yaml"
+  source_deploy_script
+  SCRIPT_DIR="${tmpdir}"
+  run overlay_topo_sort a
+  assert_failure
+  assert_output --partial "cycle detected"
+}
+
+@test "overlay_topo_sort: respects dependency order" {
+  tmpdir="$(mktemp -d)"
+  mkdir -p "${tmpdir}/overlays/base" "${tmpdir}/overlays/app"
+  printf 'version: 1\ndepends_on: []\n' > "${tmpdir}/overlays/base/overlay.yaml"
+  printf 'version: 1\ndepends_on: [base]\n' > "${tmpdir}/overlays/app/overlay.yaml"
+  source_deploy_script
+  SCRIPT_DIR="${tmpdir}"
+  run overlay_topo_sort app
+  assert_success
+  # base must appear before app in topo-sorted output
+  result="$output"
+  [[ "${result%%app*}" == *"base"* ]]
+}
+
+@test "paas_phase3_dispatch (deploy): calls overlay_topo_sort then coolify shared" {
+  tmpdir="$(mktemp -d)"
+  mkdir -p "${tmpdir}/overlays/coolify"
+  cp "${PROJECT_ROOT}/overlays/coolify/overlay.yaml" "${tmpdir}/overlays/coolify/overlay.yaml"
+  mkdir -p "${tmpdir}/overlays/docker-host"
+  cp "${PROJECT_ROOT}/overlays/docker-host/overlay.yaml" "${tmpdir}/overlays/docker-host/overlay.yaml"
+  source_deploy_script
+  coolify_phase3_docker_coolify_shared() { echo "dispatched3:$*"; }
+  SCRIPT_DIR="${tmpdir}"
+  PAAS=coolify
+  run paas_phase3_dispatch arg1 arg2
+  assert_success
+  assert_output --partial "dispatched3:arg1 arg2"
+}
+
+@test "paas_phase4_dispatch (deploy): delegates to coolify shared" {
+  source_deploy_script
+  coolify_phase4_binding_dns_shared() { echo "dispatched4:$*"; }
+  run paas_phase4_dispatch myarg
+  assert_success
+  assert_output --partial "dispatched4:myarg"
+}
+
+@test "paas_phase5_dispatch (deploy): delegates to coolify shared" {
+  source_deploy_script
+  coolify_phase5_verify_shared() { echo "dispatched5:$*"; }
+  run paas_phase5_dispatch verifyarg
+  assert_success
+  assert_output --partial "dispatched5:verifyarg"
+}
+
+@test "paas_phase3_dispatch (setup): calls overlay_topo_sort then coolify shared" {
+  tmpdir="$(mktemp -d)"
+  mkdir -p "${tmpdir}/overlays/coolify"
+  cp "${PROJECT_ROOT}/overlays/coolify/overlay.yaml" "${tmpdir}/overlays/coolify/overlay.yaml"
+  mkdir -p "${tmpdir}/overlays/docker-host"
+  cp "${PROJECT_ROOT}/overlays/docker-host/overlay.yaml" "${tmpdir}/overlays/docker-host/overlay.yaml"
+  source_setup_script
+  coolify_phase3_docker_coolify_shared() { echo "sdispatched3:$*"; }
+  SCRIPT_DIR="${tmpdir}"
+  PAAS=coolify
+  run paas_phase3_dispatch sarg1
+  assert_success
+  assert_output --partial "sdispatched3:sarg1"
+}
+
+@test "paas_phase4_dispatch (setup): delegates to coolify shared" {
+  source_setup_script
+  coolify_phase4_binding_dns_shared() { echo "sdispatched4:$*"; }
+  run paas_phase4_dispatch sarg
+  assert_success
+  assert_output --partial "sdispatched4:sarg"
+}
+
+@test "paas_phase5_dispatch (setup): delegates to coolify shared" {
+  source_setup_script
+  coolify_phase5_verify_shared() { echo "sdispatched5:$*"; }
+  run paas_phase5_dispatch sarg5
+  assert_success
+  assert_output --partial "sdispatched5:sarg5"
+}

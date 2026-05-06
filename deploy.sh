@@ -23,6 +23,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=overlays/coolify/coolify-common.sh
 source "${SCRIPT_DIR}/overlays/coolify/coolify-common.sh"
+# shellcheck source=lib/overlay-loader.sh
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/overlay-loader.sh"
 
 # ── Inputs (populated by flags or prompts) ──────────────────────────────────
 
@@ -30,6 +33,7 @@ SERVER_IP="${SERVER_IP:-}"
 ROOT_PASS="${ROOT_PASS:-}"
 ROOT_PASS_FILE="${ROOT_PASS_FILE:-}"
 ROOT_PASS_RUNTIME_FILE=""
+PAAS="${PAAS:-coolify}"
 ADMIN_USER="${ADMIN_USER:-}"
 PUBKEY_FILE="${PUBKEY_FILE:-}"
 TAILSCALE_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
@@ -270,6 +274,7 @@ parse_args() {
       --tailscale-direct-wan) TAILSCALE_DIRECT_WAN="true"; shift ;;
       --no-tailscale-direct-wan) TAILSCALE_DIRECT_WAN="false"; shift ;;
       --preflight-only)  PREFLIGHT_ONLY="true"; shift ;;
+      --paas)            PAAS="${2:-coolify}"; shift 2 ;;
       --yes)             AUTO_YES="true"; shift ;;
       --ts-ip)           TS_IP="${2:?--ts-ip requires a value}"; SKIP_HARDEN="true"; shift 2 ;;
       -h|--help)         usage; exit 0 ;;
@@ -1056,6 +1061,19 @@ phase2_gates() {
 
 # ── Phase 3: Docker + Coolify ──────────────────────────────────────────────
 
+paas_phase3_dispatch() {
+  overlay_topo_sort "${PAAS}"
+  coolify_phase3_docker_coolify_shared "$@"
+}
+
+paas_phase4_dispatch() {
+  coolify_phase4_binding_dns_shared "$@"
+}
+
+paas_phase5_dispatch() {
+  coolify_phase5_verify_shared "$@"
+}
+
 phase3_docker_coolify() {
   phase3_has_docker() { ssh_admin_sudo 'docker version >/dev/null 2>&1'; }
   phase3_install_docker() { coolify_install_docker_engine_script | ssh_admin_sudo 'bash -s'; }
@@ -1072,7 +1090,7 @@ phase3_docker_coolify() {
   phase3_sync_docker_ssh_cidrs() { ssh_admin_sudo 'systemctl start docker-ssh-cidr-sync.service'; }
 
   # Gate D: Verify DOCKER-USER rules
-  coolify_phase3_docker_coolify_shared \
+  paas_phase3_dispatch \
     phase3_has_docker \
     phase3_install_docker \
     phase3_start_docker_user \
@@ -1184,7 +1202,7 @@ EOF
   # PUSHER_HOST=ws.${DOMAIN}
   # coolify-private-dashboard.yaml
   # ws.${DOMAIN}
-  coolify_phase4_binding_dns_shared \
+  paas_phase4_dispatch \
     phase4_coolify_env_exists \
     phase4_configure_binding \
     phase4_mark_binding_state \
@@ -1210,7 +1228,7 @@ phase5_verify() {
   # Contract anchors kept for docs/consistency checks:
   # Gate E: Checking dashboard accessibility...
   # Running final base/validate.sh...
-  coolify_phase5_verify_shared phase5_fetch_validate_json external phase5_noop_operator_confirm
+  paas_phase5_dispatch phase5_fetch_validate_json external phase5_noop_operator_confirm
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────
