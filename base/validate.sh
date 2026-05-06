@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Re-runnable: prints PASS/FAIL per check, exits 0 if all pass, 1 if any fail.
 # Usage: sudo ./validate_hardening.sh [--json|--health-check]
 
-STATE_FILE="/var/lib/bootstrap-hardening/state"
+STATE_FILE="/var/lib/server-hardening/state"
 STATE_LOCK_FILE="${STATE_FILE}.lock"
 JOURNALD_DROPIN="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
 AUDITD_CONF="/etc/audit/auditd.conf"

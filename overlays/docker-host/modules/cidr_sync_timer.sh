@@ -19,7 +19,7 @@ configure_docker_ssh_cidr_sync_timer() {
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-STATE_FILE="/var/lib/bootstrap-hardening/state"
+STATE_FILE="/var/lib/server-hardening/state"
 STATE_LOCK_FILE="${STATE_FILE}.lock"
 DOCKER_SSH_MATCH_DROPIN="/etc/ssh/sshd_config.d/15-docker-ssh-match.conf"
 RULE_COMMENT="coolify-hardening-ssh-docker-bridge"

@@ -162,7 +162,7 @@ EOF
 @test "setup_logging: dry-run does not touch log file" {
   local tmpdir
   tmpdir="$(mktemp -d)"
-  LOG_FILE="${tmpdir}/bootstrap-hardening.log"
+  LOG_FILE="${tmpdir}/server-hardening.log"
   DRY_RUN="true"
 
   run setup_logging

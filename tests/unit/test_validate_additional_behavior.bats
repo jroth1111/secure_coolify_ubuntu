@@ -50,7 +50,7 @@ setup() {
 @test "parse_cli_args: sets json mode and state file path" {
   parse_cli_args --json
   [ "${JSON_MODE}" = "true" ]
-  [ "${STATE_FILE}" = "/var/lib/bootstrap-hardening/state" ]
+  [ "${STATE_FILE}" = "/var/lib/server-hardening/state" ]
 }
 
 @test "record (runtime): increments PASS count for PASS status" {

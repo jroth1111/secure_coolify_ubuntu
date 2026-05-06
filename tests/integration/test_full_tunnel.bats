@@ -80,12 +80,12 @@ ip6tables_usable() {
 }
 
 @test "tunnel: state file shows tunnel_mode=true" {
-  run grep -q '^tunnel_mode=true$' /var/lib/bootstrap-hardening/state
+  run grep -q '^tunnel_mode=true$' /var/lib/server-hardening/state
   assert_success
 }
 
 @test "tunnel: report JSON shows tunnel_mode=true" {
-  run jq -r '.tunnel_mode' /var/log/bootstrap-hardening-report.json
+  run jq -r '.tunnel_mode' /var/log/server-hardening-report.json
   assert_success
   assert_output "true"
 }

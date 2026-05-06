@@ -5,7 +5,7 @@ load '../helpers'
 
 TEST_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDataForBootstrapMatrix test@bats"
 TEST_WAN="eth0"
-STATE_FILE="/var/lib/bootstrap-hardening/state"
+STATE_FILE="/var/lib/server-hardening/state"
 APT_LOCAL_FILE="/etc/apt/apt.conf.d/52unattended-upgrades-local"
 DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
 

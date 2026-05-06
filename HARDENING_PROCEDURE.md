@@ -75,13 +75,13 @@ sudo ./bootstrap_hardening.sh \
 Using an env file for automation:
 
 ```bash
-# /etc/bootstrap-hardening.env (chmod 0600)
+# /etc/server-hardening.env (chmod 0600)
 ADMIN_USER=coolifyadmin
 ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host"
 TUNNEL_MODE=true
 SSH_PORT=22
 
-sudo ./bootstrap_hardening.sh --env-file /etc/bootstrap-hardening.env
+sudo ./bootstrap_hardening.sh --env-file /etc/server-hardening.env
 ```
 
 CLI flags override env-file values. The env file uses the same variable names as environment variables.
@@ -116,9 +116,9 @@ This eliminates the "direct-to-origin bypass" attack surface entirely.
 
 ## Outputs
 
-- Main log: `/var/log/bootstrap-hardening.log`
-- Verification report: `/var/log/bootstrap-hardening-report.json`
-- State marker: `/var/lib/bootstrap-hardening/state`
+- Main log: `/var/log/server-hardening.log`
+- Verification report: `/var/log/server-hardening-report.json`
+- State marker: `/var/lib/server-hardening/state`
 - Sysctl drop-in: `/etc/sysctl.d/99-coolify-hardening.conf`
 - fail2ban jail: `/etc/fail2ban/jail.d/coolify-hardening.local`
 - Docker daemon config: `/etc/docker/daemon.json` (creates or merges with existing; hardening owns: `log-driver`, `log-opts`, `live-restore`, `default-ipc-mode`, `storage-driver`, `default-ulimits`)
@@ -135,7 +135,7 @@ sudo ./validate_hardening.sh          # Human-readable table
 sudo ./validate_hardening.sh --json   # Machine-readable JSON
 ```
 
-It reads `/var/lib/bootstrap-hardening/state` to determine tunnel mode, admin user, etc. Exits 0 if all checks pass, 1 if any fail. Safe to run from cron or during incident response.
+It reads `/var/lib/server-hardening/state` to determine tunnel mode, admin user, etc. Exits 0 if all checks pass, 1 if any fail. Safe to run from cron or during incident response.
 
 ### Manual checks
 

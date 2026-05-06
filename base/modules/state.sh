@@ -232,3 +232,16 @@ generate_report() {
 
   chmod 0600 "${REPORT_FILE}"
 }
+
+migrate_legacy_state() {
+  local legacy="/var/lib/bootstrap-hardening"
+  local target="/var/lib/server-hardening"
+
+  [[ -d "${legacy}" ]] || return 0
+  [[ -d "${target}" ]] && return 0
+
+  log "Migrating state: ${legacy} → ${target}"
+  install -d -m 0750 "$(dirname "${target}")"
+  mv "${legacy}" "${target}"
+  log "State migration complete."
+}

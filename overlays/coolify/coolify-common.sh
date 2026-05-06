@@ -1267,7 +1267,7 @@ coolify_reconcile_docker_daemon_script() {
   cat <<'EOF'
 set -Eeuo pipefail
 daemon_json="/etc/docker/daemon.json"
-state_file="/var/lib/bootstrap-hardening/state"
+state_file="/var/lib/server-hardening/state"
 nproc_hard="8192"
 nproc_soft="4096"
 tmp="$(mktemp)" || { echo "Failed to create temp file for daemon.json merge" >&2; exit 1; }
@@ -1353,11 +1353,11 @@ EOF
 }
 
 # coolify_mark_bind_dashboard_state_script — Emit host-side script that updates
-# bootstrap-hardening state after phase-4 dashboard binding is enforced.
+# server-hardening state after phase-4 dashboard binding is enforced.
 coolify_mark_bind_dashboard_state_script() {
   cat <<'EOF'
 set -Eeuo pipefail
-state_file="/var/lib/bootstrap-hardening/state"
+state_file="/var/lib/server-hardening/state"
 state_lock_file="${state_file}.lock"
 tmp="$(mktemp)"
 

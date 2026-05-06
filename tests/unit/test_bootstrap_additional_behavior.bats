@@ -1344,3 +1344,52 @@ EOF
   assert_output --partial "DRY-RUN"
   [[ ! -f "${pwquality}" ]]
 }
+
+@test "migrate_legacy_state: skips when legacy dir does not exist" {
+  source_script
+  # No /var/lib/bootstrap-hardening exists — function returns 0
+  run migrate_legacy_state
+  assert_success
+}
+
+@test "migrate_legacy_state: skips when target already exists" {
+  # Use bash -c with overridden function that uses temp paths
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"${tmpdir}\"" EXIT
+    mkdir -p "${tmpdir}/legacy" "${tmpdir}/target"
+    echo "data" > "${tmpdir}/legacy/state"
+    migrate_legacy_state() {
+      local legacy="${tmpdir}/legacy"
+      local target="${tmpdir}/target"
+      [[ -d "${legacy}" ]] || return 0
+      [[ -d "${target}" ]] && return 0
+      mv "${legacy}" "${target}"
+    }
+    migrate_legacy_state
+    [[ -d "${tmpdir}/legacy" ]]
+  '
+  assert_success
+}
+
+@test "migrate_legacy_state: moves legacy to target when target absent" {
+  run bash -c '
+    source "'"${SCRIPT}"'"
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"${tmpdir}\"" EXIT
+    mkdir -p "${tmpdir}/legacy"
+    echo "data" > "${tmpdir}/legacy/state"
+    migrate_legacy_state() {
+      local legacy="${tmpdir}/legacy"
+      local target="${tmpdir}/target"
+      [[ -d "${legacy}" ]] || return 0
+      [[ -d "${target}" ]] && return 0
+      mv "${legacy}" "${target}"
+    }
+    migrate_legacy_state
+    [[ ! -d "${tmpdir}/legacy" ]]
+    [[ -f "${tmpdir}/target/state" ]]
+  '
+  assert_success
+}

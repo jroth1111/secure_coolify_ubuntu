@@ -101,9 +101,9 @@ source "${SCRIPT_DIR}/modules/state.sh"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/modules/validation_timer.sh"
 
-LOG_FILE="/var/log/bootstrap-hardening.log"
-REPORT_FILE="/var/log/bootstrap-hardening-report.json"
-STATE_DIR="/var/lib/bootstrap-hardening"
+LOG_FILE="/var/log/server-hardening.log"
+REPORT_FILE="/var/log/server-hardening-report.json"
+STATE_DIR="/var/lib/server-hardening"
 STATE_FILE="${STATE_DIR}/state"
 STATE_LOCK_FILE="${STATE_FILE}.lock"
 HOSTS_FILE="${HOSTS_FILE:-/etc/hosts}"
@@ -753,6 +753,7 @@ main() {
   setup_logging
 
   log "Starting ${SCRIPT_NAME} v${SCRIPT_VERSION}"
+  migrate_legacy_state
   warn_on_state_version_mismatch
   validate_inputs
   detect_os

@@ -10,7 +10,7 @@ TEST_WAN="eth0"
 SSH_DROPIN="/etc/ssh/sshd_config.d/00-coolify-hardening.conf"
 JOURNALD_DROPIN="/etc/systemd/journald.conf.d/90-coolify-persistent.conf"
 APT_LOCAL_FILE="/etc/apt/apt.conf.d/52unattended-upgrades-local"
-STATE_FILE="/var/lib/bootstrap-hardening/state"
+STATE_FILE="/var/lib/server-hardening/state"
 
 setup_file() {
   ip link add tailscale0 type dummy 2>/dev/null || true

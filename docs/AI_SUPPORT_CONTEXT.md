@@ -40,9 +40,9 @@ This server runs **Ubuntu 24.04** hardened for **Coolify** (self-hosted PaaS) wi
 | `/etc/systemd/system/coolify-binding-guard.timer` | Optional timer for the binding watchdog |
 | `/etc/cloudflared/config.yml` | Tunnel ingress policy (must keep dashboard/realtime/terminal off public ingress in private-only mode) |
 | `/data/coolify/proxy/dynamic/coolify-private-dashboard.yaml` | Managed private dashboard/realtime route file for Traefik |
-| `/var/lib/bootstrap-hardening/state` | Script state (version, settings) |
-| `/var/log/bootstrap-hardening-report.json` | Last-run verification report |
-| `/var/log/bootstrap-hardening.log` | Script execution log |
+| `/var/lib/server-hardening/state` | Script state (version, settings) |
+| `/var/log/server-hardening-report.json` | Last-run verification report |
+| `/var/log/server-hardening.log` | Script execution log |
 
 ## Diagnostic Commands
 
@@ -77,10 +77,10 @@ swapon --show
 timedatectl status
 
 # State file
-cat /var/lib/bootstrap-hardening/state
+cat /var/lib/server-hardening/state
 
 # Report
-cat /var/log/bootstrap-hardening-report.json
+cat /var/log/server-hardening-report.json
 
 # Tunnel private-only posture (when tunnel_mode=true)
 sudo systemctl status cloudflared --no-pager
@@ -110,7 +110,7 @@ When advising on this server, you **MUST** follow these rules:
 - **ALWAYS check Tailscale connectivity first** when diagnosing SSH issues (`tailscale status`, `tailscale ping <hostname>`).
 - **ALWAYS check the DOCKER-USER chain** when diagnosing container connectivity issues, not just UFW.
 - **ALWAYS verify with `validate_hardening.sh`** after making any manual changes.
-- **ALWAYS check `/var/log/bootstrap-hardening.log`** for error context.
+- **ALWAYS check `/var/log/server-hardening.log`** for error context.
 - **ALWAYS check cloudflared ingress + private route files** when debugging tunnel-mode dashboard/realtime behavior.
 
 ## Tunnel Mode

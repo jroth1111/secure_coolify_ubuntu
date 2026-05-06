@@ -13,7 +13,7 @@
 
 ### 2. **test_validate_negative_matrix.bats: Unguarded State File Mutations**
 **File:** `tests/integration/test_validate_negative_matrix.bats`  
-**Tests:** Multiple tests mutate `/var/lib/bootstrap-hardening/state` without per-test isolation  
+**Tests:** Multiple tests mutate `/var/lib/server-hardening/state` without per-test isolation  
 - Line 78-85: `fail2ban stopped triggers failure` — stops fail2ban, restarts after test
 - Line 87-103: `journald volatile setting triggers failure` — modifies journald config
 - Line 145-160: `SSH policy drift triggers failure` — modifies SSH config with `sed -i`

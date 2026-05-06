@@ -7,7 +7,7 @@ TEST_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyDataForIdempotencyTests
 TEST_USER="idempotentadmin"
 TEST_PORT="2222"
 TEST_WAN="eth0"
-STATE_FILE="/var/lib/bootstrap-hardening/state"
+STATE_FILE="/var/lib/server-hardening/state"
 
 setup_file() {
   ip link add tailscale0 type dummy 2>/dev/null || true

@@ -219,7 +219,7 @@ change is the explicit, user-confirmed goal.
 |----------|-----------|-------------|
 | `validate_hardening.sh --json` schema: `{"pass":N,"fail":N,"info":N,"checks":[...]}` | `validate_hardening.sh` | `report_validation_result()` in `lib/coolify-common.sh` |
 | `HARDEN_RESULT_TAILSCALE_IP=<ip>` sentinel (stdout) | `bootstrap_hardening.sh` | `deploy.sh` phase 1 capture via `tee` |
-| State file `/var/lib/bootstrap-hardening/state` (key=value) | `bootstrap_hardening.sh write_state()` | `validate_hardening.sh` (state-derived checks) |
+| State file `/var/lib/server-hardening/state` (key=value) | `bootstrap_hardening.sh write_state()` | `validate_hardening.sh` (state-derived checks) |
 | Tunnel name `coolify-<domain-slug>-<sha256-12>` | `lib/coolify-common.sh coolify_tunnel_name()` / `cf_create_tunnel()` | same function on re-run (reuse configured tunnel when possible; otherwise reconcile by deterministic name) |
 
 Changing these without updating all consumers is a breaking change.
@@ -320,7 +320,7 @@ with `--ts-ip <ip>`.
 
 Distinguish cause before changes:
 
-1. **Real server failure**: inspect `/var/log/bootstrap-hardening.log`; run
+1. **Real server failure**: inspect `/var/log/server-hardening.log`; run
    `sudo /root/validate_hardening.sh --json --gate-c`; fix server state; resume with `--ts-ip`.
 2. **Script false positive**: verify expected state manually, then fix validator logic.
 

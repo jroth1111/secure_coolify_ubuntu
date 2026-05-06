@@ -329,9 +329,9 @@ phase1_harden() {
   if ! run_with_heartbeat \
     "base/bootstrap.sh (local server)" \
     "${SCRIPT_DIR}/base/bootstrap.sh" --env-file "${deploy_env_file}" --install-tailscale --force; then
-    warn "base/bootstrap.sh failed. Last 50 lines from /var/log/bootstrap-hardening.log:"
-    tail -n 50 /var/log/bootstrap-hardening.log 2>/dev/null || true
-    die "base/bootstrap.sh failed. Check: /var/log/bootstrap-hardening.log"
+    warn "base/bootstrap.sh failed. Last 50 lines from /var/log/server-hardening.log:"
+    tail -n 50 /var/log/server-hardening.log 2>/dev/null || true
+    die "base/bootstrap.sh failed. Check: /var/log/server-hardening.log"
   fi
   pass "Hardening completed"
 

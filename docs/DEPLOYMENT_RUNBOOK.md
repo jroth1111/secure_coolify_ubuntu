@@ -558,8 +558,8 @@ sysctl net.ipv4.tcp_congestion_control
 Capture current hardening state and report output for incident response and handoff:
 
 ```bash
-cat /var/lib/bootstrap-hardening/state
-cat /var/log/bootstrap-hardening-report.json
+cat /var/lib/server-hardening/state
+cat /var/log/server-hardening-report.json
 ```
 
 ---
@@ -583,15 +583,15 @@ sudo ./bootstrap_hardening.sh \
 
 ```bash
 sudo ./validate_hardening.sh
-cat /var/lib/bootstrap-hardening/state
-cat /var/log/bootstrap-hardening-report.json
+cat /var/lib/server-hardening/state
+cat /var/log/server-hardening-report.json
 ```
 
 ### Viewing Logs
 
 ```bash
 # Hardening script log
-sudo cat /var/log/bootstrap-hardening.log
+sudo cat /var/log/server-hardening.log
 
 # fail2ban bans
 sudo fail2ban-client status sshd

@@ -194,8 +194,8 @@ while IFS=$'\t' read -r scenario_id scenario_title scenario_filter; do
     rc=$?
   fi
 
-  docker_retry exec "${name}" test -f /var/log/bootstrap-hardening-report.json \
-    && docker_retry exec "${name}" cat /var/log/bootstrap-hardening-report.json >"${report_file}" || true
+  docker_retry exec "${name}" test -f /var/log/server-hardening-report.json \
+    && docker_retry exec "${name}" cat /var/log/server-hardening-report.json >"${report_file}" || true
 
   docker_retry exec "${name}" bash -lc '/workspace/validate_hardening.sh --json' >"${validate_file}" 2>/dev/null || true
 

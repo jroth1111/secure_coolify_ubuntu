@@ -126,8 +126,8 @@ else
   rc=$?
 fi
 
-docker_retry exec "${name}" test -f /var/log/bootstrap-hardening-report.json \
-  && docker_retry exec "${name}" cat /var/log/bootstrap-hardening-report.json >"${REPORT_FILE}" || true
+docker_retry exec "${name}" test -f /var/log/server-hardening-report.json \
+  && docker_retry exec "${name}" cat /var/log/server-hardening-report.json >"${REPORT_FILE}" || true
 
 docker_retry exec "${name}" bash -lc '/workspace/validate_hardening.sh --json' >"${VALIDATE_FILE}" 2>/dev/null || true
 

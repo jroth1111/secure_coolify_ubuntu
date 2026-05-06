@@ -15,8 +15,8 @@ DOCKER_USER_SCRIPT="/usr/local/sbin/docker-user-hardening.sh"
 DOCKER_USER_ENV="/etc/default/docker-user-hardening"
 DOCKER_USER_UNIT="/etc/systemd/system/docker-user-hardening.service"
 APT_LOCAL_FILE="/etc/apt/apt.conf.d/52unattended-upgrades-local"
-STATE_FILE="/var/lib/bootstrap-hardening/state"
-REPORT_FILE="/var/log/bootstrap-hardening-report.json"
+STATE_FILE="/var/lib/server-hardening/state"
+REPORT_FILE="/var/log/server-hardening-report.json"
 
 run_dry_run() {
   bash "${SCRIPT}" \

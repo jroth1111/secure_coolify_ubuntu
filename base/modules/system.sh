@@ -53,7 +53,7 @@ install_fail2ban_without_autostart() {
   fi
 
   if [[ -e "${policy_rc_d}" ]]; then
-    policy_backup="$(mktemp "${policy_rc_d}.bootstrap-hardening.XXXXXX")"
+    policy_backup="$(mktemp "${policy_rc_d}.server-hardening.XXXXXX")"
     cp -a "${policy_rc_d}" "${policy_backup}"
     policy_restore="true"
   fi

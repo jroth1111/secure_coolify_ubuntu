@@ -743,9 +743,9 @@ EOF
 
   bootstrap_remote_tail_log() {
     if [[ "${bootstrap_transport}" == "admin" ]]; then
-      ssh_admin_sudo 'tail -n 50 /var/log/bootstrap-hardening.log 2>/dev/null || true'
+      ssh_admin_sudo 'tail -n 50 /var/log/server-hardening.log 2>/dev/null || true'
     else
-      ssh_root 'tail -n 50 /var/log/bootstrap-hardening.log 2>/dev/null || true'
+      ssh_root 'tail -n 50 /var/log/server-hardening.log 2>/dev/null || true'
     fi
   }
 
@@ -796,10 +796,10 @@ EOF
   if (( bootstrap_rc != 0 )); then
     warn "bootstrap_hardening.sh failed. Last 50 lines of captured output:"
     tail -n 50 "${harden_tmp}" || true
-    warn "Attempting to fetch remote /var/log/bootstrap-hardening.log tail (best effort)..."
+    warn "Attempting to fetch remote /var/log/server-hardening.log tail (best effort)..."
     bootstrap_remote_tail_log || true
     rm -f "${harden_tmp}"
-    die "bootstrap_hardening.sh failed. Check server logs: /var/log/bootstrap-hardening.log"
+    die "bootstrap_hardening.sh failed. Check server logs: /var/log/server-hardening.log"
   fi
   pass "Hardening completed"
 
@@ -865,7 +865,7 @@ assert_resume_phase1_contract_remote() {
   [[ "${DEPLOY_MODE}" == "tunnel" ]] && expected_tunnel_mode="true"
 
   state_line="$(ssh_admin_sudo 'bash -ceu '"'"'
-    state_file="/var/lib/bootstrap-hardening/state"
+    state_file="/var/lib/server-hardening/state"
     state_lock_file="${state_file}.lock"
     state_snapshot="$(mktemp)"
     cleanup() {

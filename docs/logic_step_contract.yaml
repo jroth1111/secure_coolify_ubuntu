@@ -2577,6 +2577,15 @@ entries:
     and command'
   checks:
   - 'tests/unit/test_functions.bats::on_err: logs error with line number and command'
+- id: LS-STATE-001
+  script_path: base/modules/state.sh
+  function: migrate_legacy_state
+  criticality: utility
+  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::migrate_legacy_state:
+    skips when legacy dir does not exist'
+  checks:
+  - 'tests/unit/test_bootstrap_additional_behavior.bats::migrate_legacy_state: skips
+    when legacy dir does not exist'
 - id: LS-OVL-001
   script_path: lib/overlay-loader.sh
   function: overlay_topo_sort
