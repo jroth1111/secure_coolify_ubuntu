@@ -6,7 +6,7 @@ SCRIPT="${PROJECT_ROOT}/base/bootstrap.sh"
 VALIDATE_SCRIPT="${PROJECT_ROOT}/base/validate.sh"
 DEPLOY_SCRIPT="${PROJECT_ROOT}/deploy.sh"
 SETUP_SCRIPT="${PROJECT_ROOT}/setup.sh"
-COMMON_LIB="${PROJECT_ROOT}/lib/coolify-common.sh"
+COMMON_LIB="${PROJECT_ROOT}/overlays/coolify/coolify-common.sh"
 
 # Load bats-support and bats-assert from the first available location
 _helpers_loaded=false

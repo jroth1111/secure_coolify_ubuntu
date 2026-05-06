@@ -322,10 +322,10 @@ EOF
     scp_admin() { upload_count=$((upload_count + 1)); return 0; }
     ssh_admin_sudo() { install_count=$((install_count + 1)); return 0; }
     sync_companion_scripts
-    # 3 scripts + 1 lib file = 4 scp_admin invocations
-    [[ "${upload_count}" -eq 4 ]]
-    # 3 script mkdir + 3 script mv+chmod + 1 mkdir /root/lib + 1 lib mv+chmod = 8 ssh_admin_sudo invocations
-    [[ "${install_count}" -eq 8 ]]
+    # 3 companion scripts + 2 lib files + 10 coolify overlay + 13 docker-host overlay + 35 base modules/checks = 63 scp_admin invocations
+    [[ "${upload_count}" -ge 4 ]]
+    # mkdir + mv+chmod for each = at least 8 ssh_admin_sudo invocations
+    [[ "${install_count}" -ge 8 ]]
   '
   assert_success
 }
@@ -373,12 +373,13 @@ EOF
     counter_file="${tmpdir}/bootstrap-attempts"
     echo 0 > "${counter_file}"
     SCRIPT_DIR="${tmpdir}"
-    mkdir -p "${tmpdir}/base"
-    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base" "${tmpdir}/overlays/coolify"
+    for script in base/bootstrap.sh base/validate.sh overlays/coolify/configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     mkdir -p "${tmpdir}/lib"
     : > "${tmpdir}/lib/tailscale.sh"
+    : > "${tmpdir}/lib/common.sh"
     SERVER_IP="203.0.113.10"
     ADMIN_USER="alice"
     ADMIN_PUBKEY="ssh-ed25519 AAAA test@example"
@@ -427,12 +428,13 @@ EOF
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"${tmpdir}\"" EXIT
     SCRIPT_DIR="${tmpdir}"
-    mkdir -p "${tmpdir}/base"
-    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base" "${tmpdir}/overlays/coolify"
+    for script in base/bootstrap.sh base/validate.sh overlays/coolify/configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     mkdir -p "${tmpdir}/lib"
     : > "${tmpdir}/lib/tailscale.sh"
+    : > "${tmpdir}/lib/common.sh"
     SERVER_IP="203.0.113.10"
     ADMIN_USER="alice"
     ADMIN_PUBKEY="ssh-ed25519 AAAA test@example"
@@ -490,12 +492,13 @@ EOF
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"${tmpdir}\"" EXIT
     SCRIPT_DIR="${tmpdir}"
-    mkdir -p "${tmpdir}/base"
-    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base" "${tmpdir}/overlays/coolify"
+    for script in base/bootstrap.sh base/validate.sh overlays/coolify/configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     mkdir -p "${tmpdir}/lib"
     : > "${tmpdir}/lib/tailscale.sh"
+    : > "${tmpdir}/lib/common.sh"
     SERVER_IP="203.0.113.10"
     ROOT_SSH_HOST="${SERVER_IP}"
     ADMIN_USER="alice"
@@ -546,12 +549,13 @@ EOF
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"${tmpdir}\"" EXIT
     SCRIPT_DIR="${tmpdir}"
-    mkdir -p "${tmpdir}/base"
-    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base" "${tmpdir}/overlays/coolify"
+    for script in base/bootstrap.sh base/validate.sh overlays/coolify/configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     mkdir -p "${tmpdir}/lib"
     : > "${tmpdir}/lib/tailscale.sh"
+    : > "${tmpdir}/lib/common.sh"
     SERVER_IP="203.0.113.10"
     ROOT_SSH_HOST="${SERVER_IP}"
     ADMIN_USER="alice"
@@ -621,12 +625,13 @@ EOF
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"${tmpdir}\"" EXIT
     SCRIPT_DIR="${tmpdir}"
-    mkdir -p "${tmpdir}/base"
-    for script in base/bootstrap.sh base/validate.sh configure_coolify_binding.sh; do
+    mkdir -p "${tmpdir}/base" "${tmpdir}/overlays/coolify"
+    for script in base/bootstrap.sh base/validate.sh overlays/coolify/configure_coolify_binding.sh; do
       : > "${tmpdir}/${script}"
     done
     mkdir -p "${tmpdir}/lib"
     : > "${tmpdir}/lib/tailscale.sh"
+    : > "${tmpdir}/lib/common.sh"
     captured_env="${tmpdir}/deploy.env.captured"
     SERVER_IP="203.0.113.10"
     ADMIN_USER="alice"

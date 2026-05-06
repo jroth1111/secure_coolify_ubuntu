@@ -1,0 +1,19 @@
+version: 1
+id: coolify
+display_name: "Coolify"
+depends_on: [docker-host]
+state_namespace: /var/lib/server-hardening/overlays/coolify
+modules:
+  bootstrap:
+    - modules/binding.sh
+    - modules/binding_watchdog.sh
+  validate:
+    - {file: checks/coolify_binding_check.sh, gate_c: false}
+    - {file: checks/coolify_ssh_check.sh, gate_c: false}
+    - {file: checks/unattended_upgrades_check.sh, gate_c: true}
+    - {file: checks/coolify_container_check.sh, gate_c: false}
+    - {file: checks/coolify_instance_settings_check.sh, gate_c: false}
+    - {file: checks/validate_timer_check.sh, gate_c: false}
+    - {file: checks/cloudflared_check.sh, gate_c: false}
+companion_scripts:
+  - configure_coolify_binding.sh

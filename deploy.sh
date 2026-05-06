@@ -21,8 +21,8 @@ set -Eeuo pipefail
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=lib/coolify-common.sh
-source "${SCRIPT_DIR}/lib/coolify-common.sh"
+# shellcheck source=overlays/coolify/coolify-common.sh
+source "${SCRIPT_DIR}/overlays/coolify/coolify-common.sh"
 
 # ── Inputs (populated by flags or prompts) ──────────────────────────────────
 
@@ -368,7 +368,7 @@ validate_inputs() {
   esac
 
   # Verify companion scripts exist before prompting to proceed
-  local scripts=(base/bootstrap.sh base/validate.sh configure_coolify_binding.sh)
+  local scripts=(base/bootstrap.sh base/validate.sh overlays/coolify/configure_coolify_binding.sh)
   for script in "${scripts[@]}"; do
     [[ -f "${SCRIPT_DIR}/${script}" ]] || die "Required script not found: ${SCRIPT_DIR}/${script}"
   done
@@ -432,7 +432,7 @@ ssh_admin_sudo() {
 # Called at start of phase 2 so all phases always use the latest local scripts,
 # even when phase 1 (root SCP upload) was skipped via --ts-ip.
 sync_companion_scripts() {
-  local scripts=(base/bootstrap.sh base/validate.sh configure_coolify_binding.sh)
+  local scripts=(base/bootstrap.sh base/validate.sh overlays/coolify/configure_coolify_binding.sh)
   log "Syncing companion scripts to server /root/..."
   for script in "${scripts[@]}"; do
     local local_path="${SCRIPT_DIR}/${script}"
@@ -449,7 +449,7 @@ sync_companion_scripts() {
       || die "Failed to install ${script} to ${remote_dir}/"
   done
 
-  local lib_files=(lib/tailscale.sh)
+  local lib_files=(lib/common.sh lib/tailscale.sh)
   ssh_admin_sudo 'install -d -m 0755 -o root -g root /root/lib' \
     || die "Failed to create /root/lib on server"
   for libfile in "${lib_files[@]}"; do
@@ -462,6 +462,97 @@ sync_companion_scripts() {
     ssh_admin_sudo "bash -c 'mv /tmp/${libname} /root/lib/${libname} && chmod 644 /root/lib/${libname}'" \
       || die "Failed to install ${libfile} to /root/lib/"
   done
+
+  # Upload overlay files (coolify)
+  local overlay_files=(
+    overlays/coolify/coolify-common.sh
+    overlays/coolify/modules/binding.sh
+    overlays/coolify/modules/binding_watchdog.sh
+    overlays/coolify/checks/coolify_binding_check.sh
+    overlays/coolify/checks/unattended_upgrades_check.sh
+    overlays/coolify/checks/coolify_ssh_check.sh
+    overlays/coolify/checks/cloudflared_check.sh
+    overlays/coolify/checks/coolify_container_check.sh
+    overlays/coolify/checks/coolify_instance_settings_check.sh
+    overlays/coolify/checks/validate_timer_check.sh
+  )
+  for ofile in "${overlay_files[@]}"; do
+    local opath="${SCRIPT_DIR}/${ofile}"
+    local odir
+    odir="$(dirname "${ofile}")"
+    [[ -f "${opath}" ]] || die "Overlay file not found: ${opath}"
+    ssh_admin_sudo "install -d -m 0755 -o root -g root '/root/${odir}'" \
+      || die "Failed to create /root/${odir} on server"
+    local obase
+    obase="$(basename "${ofile}")"
+    scp_admin "${opath}" "${ADMIN_USER}@${TS_IP}:/tmp/${obase}" \
+      || die "Failed to upload ${ofile}"
+    ssh_admin_sudo "bash -c 'mv /tmp/${obase} /root/${odir}/${obase} && chmod 644 /root/${odir}/${obase}'" \
+      || die "Failed to install ${ofile} to /root/${odir}/"
+  done
+
+  # Upload docker-host overlay files
+  local dh_files=(
+    overlays/docker-host/modules/cidrs.sh
+    overlays/docker-host/modules/detect.sh
+    overlays/docker-host/modules/readiness.sh
+    overlays/docker-host/modules/user_rules.sh
+    overlays/docker-host/modules/daemon.sh
+    overlays/docker-host/modules/cidr_sync_timer.sh
+    overlays/docker-host/modules/ssh_match_dropin.sh
+    overlays/docker-host/checks/_helpers.sh
+    overlays/docker-host/checks/docker_user_check.sh
+    overlays/docker-host/checks/docker_user_lifecycle_check.sh
+    overlays/docker-host/checks/docker_ssh_cidr_sync_check.sh
+    overlays/docker-host/checks/docker_daemon_check.sh
+    overlays/docker-host/checks/docker_trust_boundary_check.sh
+  )
+  for dfile in "${dh_files[@]}"; do
+    local dpath="${SCRIPT_DIR}/${dfile}"
+    local ddir
+    ddir="$(dirname "${dfile}")"
+    [[ -f "${dpath}" ]] || die "Overlay file not found: ${dpath}"
+    ssh_admin_sudo "install -d -m 0755 -o root -g root '/root/${ddir}'" \
+      || die "Failed to create /root/${ddir} on server"
+    local dbase
+    dbase="$(basename "${dfile}")"
+    scp_admin "${dpath}" "${ADMIN_USER}@${TS_IP}:/tmp/${dbase}" \
+      || die "Failed to upload ${dfile}"
+    ssh_admin_sudo "bash -c 'mv /tmp/${dbase} /root/${ddir}/${dbase} && chmod 644 /root/${ddir}/${dbase}'" \
+      || die "Failed to install ${dfile} to /root/${ddir}/"
+  done
+
+  # Upload base module and check files
+  local base_files=(
+    base/modules/os_detect.sh base/modules/system.sh base/modules/bootloader.sh
+    base/modules/services.sh base/modules/kernel_sysctl.sh base/modules/fail2ban.sh
+    base/modules/ssh.sh base/modules/ssh_socket.sh base/modules/password_policy.sh
+    base/modules/ufw.sh base/modules/rsyslog.sh base/modules/journald.sh
+    base/modules/auditd.sh base/modules/unattended.sh base/modules/post_checks.sh
+    base/modules/state.sh base/modules/validation_timer.sh
+    base/checks/_runtime.sh base/checks/ssh_check.sh base/checks/ufw_check.sh
+    base/checks/sysctl_check.sh base/checks/fail2ban_check.sh base/checks/auditd_check.sh
+    base/checks/journald_check.sh base/checks/rsyslog_check.sh base/checks/timesync_check.sh
+    base/checks/timezone_check.sh base/checks/swap_check.sh base/checks/bootloader_check.sh
+    base/checks/reboot_required_check.sh base/checks/banner_check.sh base/checks/admin_sudo_check.sh
+    base/checks/apparmor_check.sh base/checks/disabled_services_check.sh base/checks/apport_check.sh
+    base/checks/cron_check.sh base/checks/networkd_wait_online_check.sh base/checks/tailscale_check.sh
+  )
+  for bfile in "${base_files[@]}"; do
+    local bpath="${SCRIPT_DIR}/${bfile}"
+    local bdir
+    bdir="$(dirname "${bfile}")"
+    [[ -f "${bpath}" ]] || die "Base file not found: ${bpath}"
+    ssh_admin_sudo "install -d -m 0755 -o root -g root '/root/${bdir}'" \
+      || die "Failed to create /root/${bdir} on server"
+    local bbase
+    bbase="$(basename "${bfile}")"
+    scp_admin "${bpath}" "${ADMIN_USER}@${TS_IP}:/tmp/${bbase}" \
+      || die "Failed to upload ${bfile}"
+    ssh_admin_sudo "bash -c 'mv /tmp/${bbase} /root/${bdir}/${bbase} && chmod 644 /root/${bdir}/${bbase}'" \
+      || die "Failed to install ${bfile} to /root/${bdir}/"
+  done
+
   pass "Companion scripts synced to server"
 }
 
@@ -551,7 +642,7 @@ EOF
   local bootstrap_transport="root"
 
   # Upload scripts
-  local scripts=(base/bootstrap.sh base/validate.sh configure_coolify_binding.sh)
+  local scripts=(base/bootstrap.sh base/validate.sh overlays/coolify/configure_coolify_binding.sh)
   for script in "${scripts[@]}"; do
     local path="${SCRIPT_DIR}/${script}"
     [[ -f "${path}" ]] || die "Script not found: ${path}"

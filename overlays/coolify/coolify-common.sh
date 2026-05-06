@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib/coolify-common.sh — Coolify-overlay shared logic (cf_*, coolify_phase*_shared, heredoc generators).
+# overlays/coolify/coolify-common.sh — Coolify-overlay shared logic (cf_*, coolify_phase*_shared, heredoc generators).
 # Source this file; do not execute it directly.
 # Requires: set -Eeuo pipefail in the caller.
 
@@ -13,9 +13,9 @@ fi
 _COOLIFY_COMMON_LOADED=1
 
 # Generic helpers (log/warn/die, prompt_*, regex, RUN_REPORT_*, etc.) live in lib/common.sh.
-# shellcheck source=lib/common.sh
+# shellcheck source=../../lib/common.sh
 # shellcheck disable=SC1091
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../../lib/common.sh"
 
 load_private_tls_ca_secrets_from_files() {
   if [[ -n "${ZEROSSL_EAB_KID_FILE:-}" ]]; then

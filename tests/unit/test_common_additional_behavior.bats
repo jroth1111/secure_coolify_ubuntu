@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Additional behavior tests for uncovered lib/coolify-common.sh functions.
+# Additional behavior tests for uncovered overlays/coolify/coolify-common.sh functions.
 
 load '../helpers'
 

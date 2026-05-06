@@ -21,8 +21,8 @@ set -Eeuo pipefail
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=lib/coolify-common.sh
-source "${SCRIPT_DIR}/lib/coolify-common.sh"
+# shellcheck source=overlays/coolify/coolify-common.sh
+source "${SCRIPT_DIR}/overlays/coolify/coolify-common.sh"
 
 # ── Inputs (populated by flags or prompts) ──────────────────────────────────
 

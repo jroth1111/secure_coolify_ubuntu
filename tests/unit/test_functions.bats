@@ -955,10 +955,9 @@ allowusers testadmin"
 # ── on_err() ──────────────────────────────────────────────────────────────────
 
 @test "on_err: logs error with line number and command" {
-  local output
-  output="$(on_err 42 "some-command --arg" 2>&1)"
-  [[ "${output}" == *"line 42"* ]] || return 1
-  [[ "${output}" == *"some-command"* ]] || return 1
+  run on_err 42 "some-command --arg"
+  assert_output --partial "line 42"
+  assert_output --partial "some-command"
 }
 
 # ── parse_args edge cases ─────────────────────────────────────────────────────

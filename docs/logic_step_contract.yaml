@@ -82,7 +82,7 @@ entries:
   - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_banner: dry-run
     logs banner file write'
 - id: LS-BOOT-010
-  script_path: base/bootstrap.sh
+  script_path: overlays/coolify/modules/binding.sh
   function: configure_coolify_binding
   criticality: security
   behavior_test: 'tests/unit/test_dashboard_binding.bats::configure_coolify_binding:
@@ -93,7 +93,7 @@ entries:
   - 'tests/unit/test_dashboard_binding.bats::configure_coolify_binding: dry-run shows
     planned changes'
 - id: LS-BOOT-011
-  script_path: base/bootstrap.sh
+  script_path: overlays/coolify/modules/binding_watchdog.sh
   function: configure_coolify_binding_watchdog
   criticality: security
   behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::configure_coolify_binding_watchdog:
@@ -353,23 +353,6 @@ entries:
   checks:
   - 'tests/unit/test_bootstrap_additional_behavior.bats::main: executes orchestration
     with stubbed phase functions'
-- id: LS-BOOT-040
-  script_path: base/bootstrap.sh
-  function: on_err
-  criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::on_err: reports
-    failing command context'
-  checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::on_err: reports failing command
-    context'
-- id: LS-BOOT-041
-  script_path: base/bootstrap.sh
-  function: parse_args
-  criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::parse_args: unknown flag fails'
-  checks:
-  - 'tests/unit/test_functions.bats::parse_args: unknown flag fails'
-  - 'tests/unit/test_functions.bats::parse_args: --admin-user sets ADMIN_USER'
 - id: LS-BOOT-042
   script_path: base/modules/ssh.sh
   function: reload_ssh_service
@@ -390,27 +373,6 @@ entries:
     is missing'
   - 'tests/unit/test_functions.bats::require_commands: dry-run only requires base
     command set'
-- id: LS-BOOT-044
-  script_path: base/bootstrap.sh
-  function: require_root
-  criticality: utility
-  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::require_root:
-    fails when uid is not root'
-  checks:
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::require_root: fails when
-    uid is not root'
-  - 'tests/unit/test_bootstrap_additional_behavior.bats::require_root: passes when
-    uid is root'
-- id: LS-BOOT-045
-  script_path: base/bootstrap.sh
-  function: require_value
-  criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::require_value: empty value dies
-    with ''requires a value'''
-  checks:
-  - 'tests/unit/test_functions.bats::require_value: empty value dies with ''requires
-    a value'''
-  - 'tests/unit/test_functions.bats::require_value: non-empty value passes'
 - id: LS-BOOT-046
   script_path: base/modules/ssh.sh
   function: restore_ssh_dropin
@@ -427,14 +389,6 @@ entries:
     retries'
   checks:
   - 'tests/unit/test_functions.bats::retry_apt_update: dies after exhausted retries'
-- id: LS-BOOT-048
-  script_path: base/bootstrap.sh
-  function: run
-  criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::script_run: dry-run logs command
-    and skips execution'
-  checks:
-  - 'tests/unit/test_functions.bats::script_run: dry-run logs command and skips execution'
 - id: LS-BOOT-049
   script_path: base/modules/post_checks.sh
   function: run_post_checks
@@ -453,14 +407,6 @@ entries:
   checks:
   - 'tests/unit/test_functions.bats::set_auditd_conf_kv: returns 0 immediately when
     conf file does not exist'
-- id: LS-BOOT-051
-  script_path: base/bootstrap.sh
-  function: setup_logging
-  criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::setup_logging: dry-run does not
-    touch log file'
-  checks:
-  - 'tests/unit/test_functions.bats::setup_logging: dry-run does not touch log file'
 - id: LS-BOOT-052
   script_path: base/modules/os_detect.sh
   function: ssh_session_safety_gate
@@ -470,31 +416,6 @@ entries:
   checks:
   - 'tests/unit/test_functions.bats::ssh_session_safety_gate: non-Tailscale IP blocked'
   - 'tests/unit/test_functions.bats::ssh_session_safety_gate: no SSH_CONNECTION passes'
-- id: LS-BOOT-053
-  script_path: base/bootstrap.sh
-  function: usage
-  criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::usage: prints required and optional
-    flag sections'
-  checks:
-  - 'tests/unit/test_functions.bats::usage: prints required and optional flag sections'
-- id: LS-BOOT-054
-  script_path: base/bootstrap.sh
-  function: validate_inputs
-  criticality: security
-  behavior_test: 'tests/unit/test_functions.bats::validate_inputs: missing ADMIN_USER
-    fails'
-  checks:
-  - 'tests/unit/test_functions.bats::validate_inputs: missing ADMIN_USER fails'
-  - 'tests/unit/test_functions.bats::validate_inputs: valid inputs pass'
-- id: LS-BOOT-055
-  script_path: base/bootstrap.sh
-  function: validate_pubkey
-  criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::validate_pubkey: rejects garbage'
-  checks:
-  - 'tests/unit/test_functions.bats::validate_pubkey: rejects garbage'
-  - 'tests/unit/test_functions.bats::validate_pubkey: accepts ed25519 key'
 - id: LS-BOOT-056
   script_path: lib/tailscale.sh
   function: verify_tailscale_iface
@@ -520,13 +441,6 @@ entries:
   checks:
   - 'tests/unit/test_bootstrap_additional_behavior.bats::warn_on_state_version_mismatch:
     warns when state version differs'
-- id: LS-BOOT-059
-  script_path: base/bootstrap.sh
-  function: write_file
-  criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::write_file: content is written correctly'
-  checks:
-  - 'tests/unit/test_functions.bats::write_file: content is written correctly'
 - id: LS-BOOT-060
   script_path: base/modules/state.sh
   function: write_state
@@ -592,7 +506,7 @@ entries:
   - 'tests/unit/test_validate_additional_behavior.bats::check (runtime): records FAIL
     when command exits non-zero'
 - id: LS-VAL-006
-  script_path: base/validate.sh
+  script_path: overlays/coolify/checks/cloudflared_check.sh
   function: cloudflared_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::cloudflared_check:
@@ -603,7 +517,7 @@ entries:
   - 'tests/unit/test_validate_check_outcomes_robust.bats::cloudflared_check: fails
     when service is installed but inactive'
 - id: LS-VAL-007
-  script_path: base/validate.sh
+  script_path: overlays/coolify/checks/coolify_binding_check.sh
   function: coolify_binding_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::coolify_binding_check:
@@ -614,7 +528,7 @@ entries:
   - 'tests/unit/test_validate_check_outcomes_robust.bats::coolify_binding_check: fails
     when dashboard binding is enabled but ufw is missing'
 - id: LS-VAL-008
-  script_path: base/validate.sh
+  script_path: overlays/coolify/checks/coolify_container_check.sh
   function: coolify_container_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::coolify_container_check:
@@ -623,7 +537,7 @@ entries:
   - 'tests/unit/test_validate_additional_behavior.bats::coolify_container_check: reports
     info when Docker is missing'
 - id: LS-VAL-008A
-  script_path: base/validate.sh
+  script_path: overlays/coolify/checks/coolify_instance_settings_check.sh
   function: coolify_instance_settings_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::coolify_instance_settings_check:
@@ -632,7 +546,7 @@ entries:
   - 'tests/unit/test_validate_additional_behavior.bats::coolify_instance_settings_check:
     fails when registration is enabled and fqdn is empty'
 - id: LS-VAL-009
-  script_path: base/validate.sh
+  script_path: overlays/coolify/checks/coolify_ssh_check.sh
   function: coolify_ssh_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::coolify_ssh_check:
@@ -889,7 +803,7 @@ entries:
   - 'tests/unit/test_validate_check_outcomes_robust.bats::ufw_check: fails when dashboard
     is exposed on WAN interface'
 - id: LS-VAL-033
-  script_path: base/validate.sh
+  script_path: overlays/coolify/checks/unattended_upgrades_check.sh
   function: unattended_upgrades_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::unattended_upgrades_check:
@@ -900,7 +814,7 @@ entries:
   - 'tests/unit/test_validate_check_outcomes_robust.bats::unattended_upgrades_check:
     records a fail outcome when validation preconditions are not met'
 - id: LS-VAL-034
-  script_path: base/validate.sh
+  script_path: overlays/coolify/checks/validate_timer_check.sh
   function: validate_timer_check
   criticality: security
   behavior_test: 'tests/unit/test_validate_additional_behavior.bats::validate_timer_check:
@@ -1242,7 +1156,7 @@ entries:
   - 'tests/unit/test_setup_workflow_contract.bats::setup: gate D validates service
     active and managed rules'
 - id: LS-COM-001
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_api
   criticality: orchestration
   behavior_test: 'tests/integration/test_deploy.bats::deploy: cf_api constructs correct
@@ -1250,7 +1164,7 @@ entries:
   checks:
   - 'tests/integration/test_deploy.bats::deploy: cf_api constructs correct URL'
 - id: LS-COM-002
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_create_tunnel
   criticality: orchestration
   behavior_test: 'tests/integration/test_deploy.bats::deploy: cf_create_tunnel extracts
@@ -1259,7 +1173,7 @@ entries:
   - 'tests/integration/test_deploy.bats::deploy: cf_create_tunnel extracts tunnel
     ID from response'
 - id: LS-COM-003
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_expect_success
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_expect_success:
@@ -1268,7 +1182,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::cf_expect_success: passes for
     success=true and fails for success=false'
 - id: LS-COM-004
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_get_account_id
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_get_account_id:
@@ -1277,7 +1191,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::cf_get_account_id: stores account
     id from Cloudflare API response'
 - id: LS-COM-005
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_get_zone_id
   criticality: orchestration
   behavior_test: 'tests/integration/test_deploy.bats::deploy: cf_get_zone_id extracts
@@ -1286,7 +1200,7 @@ entries:
   - 'tests/integration/test_deploy.bats::deploy: cf_get_zone_id extracts zone ID from
     response'
 - id: LS-COM-006
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_upsert_a_record
   criticality: orchestration
   behavior_test: 'tests/integration/test_deploy.bats::deploy: cf_upsert_a_record updates
@@ -1295,7 +1209,7 @@ entries:
   - 'tests/integration/test_deploy.bats::deploy: cf_upsert_a_record updates existing
     record'
 - id: LS-COM-007
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_upsert_cname
   criticality: orchestration
   behavior_test: 'tests/integration/test_deploy.bats::deploy: cf_upsert_cname updates
@@ -1304,7 +1218,7 @@ entries:
   - 'tests/integration/test_deploy.bats::deploy: cf_upsert_cname updates existing
     CNAME'
 - id: LS-COM-008
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_verify_token
   criticality: orchestration
   behavior_test: 'tests/integration/test_deploy.bats::deploy: cf_verify_token parses
@@ -1312,7 +1226,7 @@ entries:
   checks:
   - 'tests/integration/test_deploy.bats::deploy: cf_verify_token parses success response'
 - id: LS-COM-009
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: collect_common_inputs
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::collect_common_inputs:
@@ -1330,7 +1244,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::confirm: AUTO_YES=true skips
     prompt and returns success'
 - id: LS-COM-011
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_add_coolify_root_key_script
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_add_coolify_root_key_script:
@@ -1339,7 +1253,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_add_coolify_root_key_script:
     emits idempotent authorized_keys reconciliation'
 - id: LS-COM-012
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_configure_cloudflared_script
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_configure_cloudflared_script:
@@ -1348,7 +1262,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_configure_cloudflared_script:
     emits private-only dashboard/ws deny rules and service enable'
 - id: LS-COM-013
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_fix_host_docker_internal_script
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_fix_host_docker_internal_script:
@@ -1357,7 +1271,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_fix_host_docker_internal_script:
     emits gateway patch and compose recreate'
 - id: LS-COM-014
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_install_cloudflared_script
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_install_cloudflared_script:
@@ -1366,7 +1280,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_install_cloudflared_script:
     emits apt-first then repository fallback'
 - id: LS-COM-015
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_install_coolify_script
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_install_coolify_script:
@@ -1375,7 +1289,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_install_coolify_script:
     emits downloaded-installer execution flow'
 - id: LS-COM-016
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_install_docker_engine_script
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_install_docker_engine_script:
@@ -1384,7 +1298,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_install_docker_engine_script:
     emits apt-repo based install script'
 - id: LS-COM-017
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase3_docker_coolify_shared
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase3_docker_coolify_shared:
@@ -1393,7 +1307,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_phase3_docker_coolify_shared:
     runs gate/reconcile flow and skips installs when already present'
 - id: LS-COM-018
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase4_binding_dns_shared
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase4_binding_dns_shared:
@@ -1402,7 +1316,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_phase4_binding_dns_shared:
     standard mode applies wildcard A-records without tunnel path'
 - id: LS-COM-019
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_reconcile_docker_daemon_script
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_docker_daemon_script:
@@ -1411,7 +1325,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_docker_daemon_script:
     emits daemon hardening merge logic'
 - id: LS-COM-020
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_reconcile_pusher_env_script
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_pusher_env_script:
@@ -1420,7 +1334,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_pusher_env_script:
     emits PUSHER mode reconciliation script'
 - id: LS-COM-021
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_set_wildcard_domain_script
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_set_wildcard_domain_script:
@@ -1428,15 +1342,6 @@ entries:
   checks:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_set_wildcard_domain_script:
     emits DB update with ON_ERROR_STOP'
-- id: LS-COM-022
-  script_path: lib/common.sh
-  function: die
-  criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::die helper: exits
-    non-zero with fatal message'
-  checks:
-  - 'tests/unit/test_common_additional_behavior.bats::die helper: exits non-zero with
-    fatal message'
 - id: LS-COM-023
   script_path: lib/common.sh
   function: fail
@@ -1447,7 +1352,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::step/pass/fail helpers: print
     formatted status output'
 - id: LS-COM-027
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: summary_box_print_prefixed_text
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::summary_box_print_prefixed_text:
@@ -1456,7 +1361,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::summary_box_print_prefixed_text:
     formats text with label and indent'
 - id: LS-COM-028
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: summary_box_print_field
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::summary_box_print_field:
@@ -1465,7 +1370,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::summary_box_print_field: formats
     field with label prefix'
 - id: LS-COM-029
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: summary_box_print_continuation
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::summary_box_print_continuation:
@@ -1473,24 +1378,6 @@ entries:
   checks:
   - 'tests/unit/test_common_additional_behavior.bats::summary_box_print_continuation:
     formats continuation line with indent'
-- id: LS-COM-024
-  script_path: lib/common.sh
-  function: is_true
-  criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::is_true (common):
-    truthy and falsy values return expected status'
-  checks:
-  - 'tests/unit/test_common_additional_behavior.bats::is_true (common): truthy and
-    falsy values return expected status'
-- id: LS-COM-025
-  script_path: lib/common.sh
-  function: log
-  criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::log/warn helpers:
-    emit expected prefixes'
-  checks:
-  - 'tests/unit/test_common_additional_behavior.bats::log/warn helpers: emit expected
-    prefixes'
 - id: LS-COM-026
   script_path: lib/common.sh
   function: pass
@@ -1501,7 +1388,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::step/pass/fail helpers: print
     formatted status output'
 - id: LS-COM-030
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: print_deployment_summary
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::print_deployment_summary:
@@ -1537,7 +1424,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::prompt_value: AUTO_YES accepts
     default and assigns variable'
 - id: LS-COM-034
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: report_validation_result
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::report_validation_result:
@@ -1546,7 +1433,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::report_validation_result: passes
     when fail count is zero and fails otherwise'
 - id: LS-COM-035
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: resolve_app_domain
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::resolve_app_domain:
@@ -1563,15 +1450,6 @@ entries:
   checks:
   - 'tests/unit/test_common_additional_behavior.bats::step/pass/fail helpers: print
     formatted status output'
-- id: LS-COM-037
-  script_path: lib/common.sh
-  function: warn
-  criticality: utility
-  behavior_test: 'tests/unit/test_common_additional_behavior.bats::log/warn helpers:
-    emit expected prefixes'
-  checks:
-  - 'tests/unit/test_common_additional_behavior.bats::log/warn helpers: emit expected
-    prefixes'
 - id: LS-BOOT-061
   script_path: base/modules/post_checks.sh
   function: assert_rsyslog_posture
@@ -1599,15 +1477,6 @@ entries:
   checks:
   - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_timezone: dry-run
     executes without timedatectl mutation'
-- id: LS-BOOT-064
-  script_path: base/bootstrap.sh
-  function: decode_env_file_value
-  criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
-    and assign safe values'
-  checks:
-  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
-    values'
 - id: LS-BOOT-065
   script_path: base/modules/rsyslog.sh
   function: ensure_logrotate_create_directive
@@ -1617,24 +1486,6 @@ entries:
   checks:
   - 'tests/unit/test_bootstrap_additional_behavior.bats::ensure_logrotate_create_directive:
     inserts create line once and remains idempotent'
-- id: LS-BOOT-066
-  script_path: base/bootstrap.sh
-  function: env_file_key_supported
-  criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
-    and assign safe values'
-  checks:
-  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
-    values'
-- id: LS-BOOT-067
-  script_path: base/bootstrap.sh
-  function: load_env_file_safely
-  criticality: security
-  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
-    and assign safe values'
-  checks:
-  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
-    values'
 - id: LS-BOOT-068
   script_path: base/modules/rsyslog.sh
   function: rsyslog_collect_log_targets
@@ -1644,33 +1495,6 @@ entries:
   checks:
   - 'tests/unit/test_functions.bats::rsyslog post-check helpers: callable under stubbed
     runtime'
-- id: LS-BOOT-069
-  script_path: base/bootstrap.sh
-  function: set_env_file_value
-  criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
-    and assign safe values'
-  checks:
-  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
-    values'
-- id: LS-BOOT-070
-  script_path: base/bootstrap.sh
-  function: trim_whitespace
-  criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
-    and assign safe values'
-  checks:
-  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
-    values'
-- id: LS-BOOT-071
-  script_path: base/bootstrap.sh
-  function: unescape_backslash_sequences
-  criticality: utility
-  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
-    and assign safe values'
-  checks:
-  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
-    values'
 - id: LS-VAL-035
   script_path: overlays/docker-host/checks/docker_ssh_cidr_sync_check.sh
   function: docker_ssh_cidr_sync_check
@@ -1788,7 +1612,7 @@ entries:
   - 'tests/unit/test_deploy_setup_additional_behavior.bats::setup_exit_trap: removes
     pending deploy env file'
 - id: LS-COM-038
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_api_with_token
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper
@@ -1797,7 +1621,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
     API wrapper and auth/validation checks'
 - id: LS-COM-039
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_assert_private_tailscale_a_record
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::DNS record helpers:
@@ -1806,7 +1630,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::DNS record helpers: delete conflicting
     host records and validate private A records'
 - id: LS-COM-040
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_delete_conflicting_host_records
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::DNS record helpers:
@@ -1815,7 +1639,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::DNS record helpers: delete conflicting
     host records and validate private A records'
 - id: LS-COM-041
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_expect_probe_authorized_or_validation_error
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper
@@ -1824,7 +1648,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
     API wrapper and auth/validation checks'
 - id: LS-COM-042
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_tunnel_api
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_tunnel_api:
@@ -1833,7 +1657,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::cf_tunnel_api: prefers dedicated
     tunnel token over DNS token'
 - id: LS-COM-043
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_verify_dns_write_token
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper
@@ -1842,7 +1666,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::Cloudflare helper probes: tokened
     API wrapper and auth/validation checks'
 - id: LS-COM-044
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_verify_tunnel_token
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_verify_tunnel_token:
@@ -1853,7 +1677,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::cf_verify_tunnel_token: skips
     tunnel permission checks in standard mode'
 - id: LS-COM-045
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_configure_private_dashboard_routes_script
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_configure_private_dashboard_routes_script:
@@ -1862,7 +1686,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_configure_private_dashboard_routes_script:
     emits managed Traefik routes for dashboard and ws hosts'
 - id: LS-COM-042A
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_reconcile_instance_settings_script
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_instance_settings_script:
@@ -1871,7 +1695,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_reconcile_instance_settings_script:
     emits fqdn and registration reconciliation'
 - id: LS-COM-046
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_verify_shared
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_verify_shared:
@@ -1880,7 +1704,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_verify_shared:
     runs standard verification flow with callback fetcher'
 - id: LS-COM-047
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_remove_private_dashboard_routes_script
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_remove_private_dashboard_routes_script:
@@ -1889,7 +1713,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_remove_private_dashboard_routes_script:
     emits managed route cleanup logic'
 - id: LS-COM-048
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: finalize_cloudflare_tokens
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::finalize_cloudflare_tokens:
@@ -1900,7 +1724,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::finalize_cloudflare_tokens:
     keeps explicit split tunnel token'
 - id: LS-COM-049
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: load_cloudflare_tokens_from_files
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::read_secret_file
@@ -2286,7 +2110,7 @@ entries:
   - 'tests/unit/test_deploy_setup_additional_behavior.bats::sync_operator_known_host_entries:
     replaces stale operator known_hosts entries with verified session keys'
 - id: LS-COM-060
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_configure_private_tls_dns_script
   criticality: security
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_configure_private_tls_dns_script:
@@ -2295,7 +2119,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_configure_private_tls_dns_script:
     emits private TLS DNS-01 reconciliation'
 - id: LS-COM-061
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_install_binding_guard_script
   criticality: security
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_install_binding_guard_script:
@@ -2304,7 +2128,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_install_binding_guard_script:
     emits guard timer install and enable flow'
 - id: LS-COM-062
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_mark_bind_dashboard_state_script
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_mark_bind_dashboard_state_script:
@@ -2313,7 +2137,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_mark_bind_dashboard_state_script:
     emits state reconciliation for bind flag'
 - id: LS-COM-063
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_fetch_pusher_app_key
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_fetch_pusher_app_key:
@@ -2322,7 +2146,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_fetch_pusher_app_key:
     returns the last non-empty PUSHER_APP_KEY'
 - id: LS-COM-064
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_probe_websocket_code
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_probe_websocket_code:
@@ -2331,7 +2155,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_probe_websocket_code:
     returns 000 for invalid websocket schemes'
 - id: LS-COM-065
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_websocket_url
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_websocket_url:
@@ -2340,7 +2164,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_websocket_url:
     builds the expected websocket endpoint'
 - id: LS-COM-066
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_tunnel_name
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_tunnel_name:
@@ -2349,7 +2173,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_tunnel_name: incorporates
     full domain and deterministic hash'
 - id: LS-COM-067
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_http_code_is_success_or_redirect
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_http_code_is_success_or_redirect:
@@ -2358,7 +2182,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_http_code_is_success_or_redirect:
     accepts success and redirect codes only'
 - id: LS-COM-068
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_dashboard_http_code_is_healthy
   criticality: security
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_dashboard_http_code_is_healthy:
@@ -2502,7 +2326,7 @@ entries:
   - 'tests/unit/test_deploy_setup_additional_behavior.bats::setup reboot marker helpers:
     return overridable file paths'
 - id: LS-COM-069
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: load_private_tls_ca_secrets_from_files
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::private TLS helper
@@ -2511,7 +2335,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
     secrets, normalize CA inputs, and resolve issuer metadata'
 - id: LS-COM-070
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: finalize_private_tls_ca_inputs
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::private TLS helper
@@ -2520,7 +2344,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
     secrets, normalize CA inputs, and resolve issuer metadata'
 - id: LS-COM-071
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: private_tls_resolver_name
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::private TLS helper
@@ -2529,7 +2353,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
     secrets, normalize CA inputs, and resolve issuer metadata'
 - id: LS-COM-072
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: private_tls_ca_expected_caa_issuer
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::private TLS helper
@@ -2538,7 +2362,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::private TLS helper inputs: load
     secrets, normalize CA inputs, and resolve issuer metadata'
 - id: LS-COM-073
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_verify_private_tls_ca_caa
   criticality: security
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_verify_private_tls_ca_caa:
@@ -2547,7 +2371,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::cf_verify_private_tls_ca_caa:
     accepts authorized issuer in tunnel mode'
 - id: LS-COM-074
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: cf_delete_dns_records_by_type
   criticality: orchestration
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::cf_delete_dns_records_by_type:
@@ -2556,7 +2380,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::cf_delete_dns_records_by_type:
     deletes every conflicting record for requested types'
 - id: LS-COM-075
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_phase5_private_tls_diagnostic
   criticality: security
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_private_tls_diagnostic:
@@ -2565,7 +2389,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_phase5_private_tls_diagnostic:
     identifies routes hidden behind default cert'
 - id: LS-COM-076
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: coolify_restore_public_dashboard_tls_script
   criticality: security
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::coolify_restore_public_dashboard_tls_script:
@@ -2574,7 +2398,7 @@ entries:
   - 'tests/unit/test_common_additional_behavior.bats::coolify_restore_public_dashboard_tls_script:
     emits public TLS restoration script'
 - id: LS-COM-077
-  script_path: lib/coolify-common.sh
+  script_path: overlays/coolify/coolify-common.sh
   function: print_private_tls_ca_notice
   criticality: utility
   behavior_test: 'tests/unit/test_common_additional_behavior.bats::print_private_tls_ca_notice:
@@ -2593,3 +2417,163 @@ entries:
     dry-run logs planned write'
   - 'tests/unit/test_bootstrap_additional_behavior.bats::configure_docker_ssh_match_dropin:
     skips when no CIDRs discovered'
+- id: LS-BOOT-099
+  script_path: base/bootstrap.sh
+  function: decode_env_file_value
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+    and assign safe values'
+  checks:
+  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+    values'
+- id: LS-BOOT-100
+  script_path: base/bootstrap.sh
+  function: env_file_key_supported
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+    and assign safe values'
+  checks:
+  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+    values'
+- id: LS-BOOT-101
+  script_path: base/bootstrap.sh
+  function: load_env_file_safely
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+    and assign safe values'
+  checks:
+  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+    values'
+- id: LS-BOOT-103
+  script_path: base/bootstrap.sh
+  function: parse_args
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::parse_args: --admin-user sets ADMIN_USER'
+  checks:
+  - 'tests/unit/test_functions.bats::parse_args: --admin-user sets ADMIN_USER'
+- id: LS-BOOT-104
+  script_path: base/bootstrap.sh
+  function: require_root
+  criticality: utility
+  behavior_test: 'tests/unit/test_bootstrap_additional_behavior.bats::require_root:
+    fails when uid is not root'
+  checks:
+  - 'tests/unit/test_bootstrap_additional_behavior.bats::require_root: fails when
+    uid is not root'
+- id: LS-BOOT-105
+  script_path: base/bootstrap.sh
+  function: require_value
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::require_value: non-empty value passes'
+  checks:
+  - 'tests/unit/test_functions.bats::require_value: non-empty value passes'
+- id: LS-BOOT-106
+  script_path: base/bootstrap.sh
+  function: run
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::script_run: dry-run logs command
+    and skips execution'
+  checks:
+  - 'tests/unit/test_functions.bats::script_run: dry-run logs command and skips execution'
+- id: LS-BOOT-107
+  script_path: base/bootstrap.sh
+  function: set_env_file_value
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+    and assign safe values'
+  checks:
+  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+    values'
+- id: LS-BOOT-108
+  script_path: base/bootstrap.sh
+  function: setup_logging
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::setup_logging: dry-run does not
+    touch log file'
+  checks:
+  - 'tests/unit/test_functions.bats::setup_logging: dry-run does not touch log file'
+- id: LS-BOOT-109
+  script_path: base/bootstrap.sh
+  function: trim_whitespace
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+    and assign safe values'
+  checks:
+  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+    values'
+- id: LS-BOOT-110
+  script_path: base/bootstrap.sh
+  function: unescape_backslash_sequences
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::env-file helper functions: parse
+    and assign safe values'
+  checks:
+  - 'tests/unit/test_functions.bats::env-file helper functions: parse and assign safe
+    values'
+- id: LS-BOOT-111
+  script_path: base/bootstrap.sh
+  function: usage
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::usage: prints required and optional
+    flag sections'
+  checks:
+  - 'tests/unit/test_functions.bats::usage: prints required and optional flag sections'
+- id: LS-BOOT-112
+  script_path: base/bootstrap.sh
+  function: validate_inputs
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::validate_inputs: valid inputs pass'
+  checks:
+  - 'tests/unit/test_functions.bats::validate_inputs: valid inputs pass'
+- id: LS-BOOT-113
+  script_path: base/bootstrap.sh
+  function: validate_pubkey
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::validate_pubkey: accepts ed25519
+    key'
+  checks:
+  - 'tests/unit/test_functions.bats::validate_pubkey: accepts ed25519 key'
+- id: LS-BOOT-114
+  script_path: base/bootstrap.sh
+  function: write_file
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::write_file: creates file with correct
+    permissions'
+  checks:
+  - 'tests/unit/test_functions.bats::write_file: creates file with correct permissions'
+- id: LS-COM-115
+  script_path: lib/common.sh
+  function: die
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::die: exits 1 with ERROR message'
+  checks:
+  - 'tests/unit/test_functions.bats::die: exits 1 with ERROR message'
+- id: LS-COM-116
+  script_path: lib/common.sh
+  function: is_true
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::is_true: ''1'' returns 0'
+  checks:
+  - 'tests/unit/test_functions.bats::is_true: ''1'' returns 0'
+- id: LS-COM-117
+  script_path: lib/common.sh
+  function: log
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::log: outputs timestamped message'
+  checks:
+  - 'tests/unit/test_functions.bats::log: outputs timestamped message'
+- id: LS-COM-118
+  script_path: lib/common.sh
+  function: warn
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::warn: outputs WARN-prefixed message'
+  checks:
+  - 'tests/unit/test_functions.bats::warn: outputs WARN-prefixed message'
+- id: LS-BOOT-119
+  script_path: base/bootstrap.sh
+  function: on_err
+  criticality: utility
+  behavior_test: 'tests/unit/test_functions.bats::on_err: logs error with line number
+    and command'
+  checks:
+  - 'tests/unit/test_functions.bats::on_err: logs error with line number and command'

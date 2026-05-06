@@ -33,7 +33,16 @@ SCRIPT_TARGETS = (
     "setup.sh",
     "lib/common.sh",
     "lib/tailscale.sh",
-    "lib/coolify-common.sh",
+    "overlays/coolify/coolify-common.sh",
+    "overlays/coolify/modules/binding.sh",
+    "overlays/coolify/modules/binding_watchdog.sh",
+    "overlays/coolify/checks/coolify_binding_check.sh",
+    "overlays/coolify/checks/unattended_upgrades_check.sh",
+    "overlays/coolify/checks/coolify_ssh_check.sh",
+    "overlays/coolify/checks/cloudflared_check.sh",
+    "overlays/coolify/checks/coolify_container_check.sh",
+    "overlays/coolify/checks/coolify_instance_settings_check.sh",
+    "overlays/coolify/checks/validate_timer_check.sh",
     "overlays/docker-host/modules/cidrs.sh",
     "overlays/docker-host/modules/detect.sh",
     "overlays/docker-host/modules/readiness.sh",
@@ -151,13 +160,6 @@ SOURCE_PATTERNS = {
         r"\bsource_script\b",
         r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh|tailscale\.sh)",
     ],
-    "lib/coolify-common.sh": [
-        r"\bsource_common_lib\b",
-        r"\bsource_deploy_script\b",
-        r"\bsource_setup_script\b",
-        r"\bsource_script\b",
-        r"\bsource\b[^\n]*(?:COMMON_LIB|coolify-common\.sh|DEPLOY_SCRIPT|SETUP_SCRIPT|SCRIPT)",
-    ],
     "overlays/docker-host/modules/cidrs.sh": [
         r"\bsource_script\b",
         r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh)",
@@ -241,6 +243,35 @@ SOURCE_PATTERNS = {
         "base/checks/disabled_services_check.sh", "base/checks/apport_check.sh",
         "base/checks/cron_check.sh", "base/checks/networkd_wait_online_check.sh",
         "base/checks/tailscale_check.sh",
+    ]},
+    # coolify overlay
+    "overlays/coolify/coolify-common.sh": [
+        r"\bsource_common_lib\b",
+        r"\bsource_deploy_script\b",
+        r"\bsource_setup_script\b",
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:COMMON_LIB|coolify-common\.sh|DEPLOY_SCRIPT|SETUP_SCRIPT|SCRIPT)",
+    ],
+    # coolify overlay modules: sourced via bootstrap.sh
+    **{p: [
+        r"\bsource_script\b",
+        r"\bsource\b[^\n]*(?:SCRIPT|bootstrap\.sh)",
+    ] for p in [
+        "overlays/coolify/modules/binding.sh",
+        "overlays/coolify/modules/binding_watchdog.sh",
+    ]},
+    # coolify overlay checks: sourced via validate.sh
+    **{p: [
+        r"\bsource_validate_script\b",
+        r"\bsource\b[^\n]*(?:VALIDATE_SCRIPT|validate\.sh)",
+    ] for p in [
+        "overlays/coolify/checks/coolify_binding_check.sh",
+        "overlays/coolify/checks/unattended_upgrades_check.sh",
+        "overlays/coolify/checks/coolify_ssh_check.sh",
+        "overlays/coolify/checks/cloudflared_check.sh",
+        "overlays/coolify/checks/coolify_container_check.sh",
+        "overlays/coolify/checks/coolify_instance_settings_check.sh",
+        "overlays/coolify/checks/validate_timer_check.sh",
     ]},
 }
 
