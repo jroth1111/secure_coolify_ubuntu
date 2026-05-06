@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tier 2 scenario matrix tests for bootstrap_hardening.sh (Docker-feasible variants).
+# Tier 2 scenario matrix tests for base/bootstrap.sh (Docker-feasible variants).
 
 load '../../helpers/helpers'
 

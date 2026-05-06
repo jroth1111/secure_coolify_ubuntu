@@ -312,7 +312,7 @@ EOF
   assert_output --partial "Gate B failed."
 }
 
-@test "deploy: gate C runs validate_hardening.sh json" {
+@test "deploy: gate C runs base/validate.sh json" {
   run bash -c '
     source "'"${DEPLOY_SCRIPT}"'"
     TS_IP="100.64.0.25"

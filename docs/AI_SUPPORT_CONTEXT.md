@@ -1,6 +1,6 @@
 # AI Support Context — Coolify Hardening Stack
 
-This document provides context for AI assistants (ChatGPT, Claude, Copilot, etc.) helping operators troubleshoot or modify a server hardened with `bootstrap_hardening.sh`.
+This document provides context for AI assistants (ChatGPT, Claude, Copilot, etc.) helping operators troubleshoot or modify a server hardened with `base/bootstrap.sh`.
 
 **Paste this into your AI chat when asking for server help.**
 
@@ -48,8 +48,8 @@ This server runs **Ubuntu 24.04** hardened for **Coolify** (self-hosted PaaS) wi
 
 ```bash
 # Overall health check
-sudo ./validate_hardening.sh
-sudo ./validate_hardening.sh --json
+sudo ./base/validate.sh
+sudo ./base/validate.sh --json
 
 # SSH effective config
 sudo sshd -T | grep -E '^(port|permitrootlogin|passwordauthentication|allowusers)'
@@ -96,7 +96,7 @@ When advising on this server, you **MUST** follow these rules:
 
 - **NEVER suggest `iptables -F`** — this flushes the DOCKER-USER chain and removes all container-level protection. Docker will recreate its own chains but our managed hardening rules will be lost until the service restarts.
 - **NEVER suggest opening SSH on a public interface** — SSH is Tailscale-only by design. Opening it publicly creates a lockout-prone attack surface.
-- **NEVER suggest editing `/etc/ssh/sshd_config.d/00-coolify-hardening.conf` directly** — changes will be overwritten on next script run. Re-run `bootstrap_hardening.sh` with updated flags instead.
+- **NEVER suggest editing `/etc/ssh/sshd_config.d/00-coolify-hardening.conf` directly** — changes will be overwritten on next script run. Re-run `base/bootstrap.sh` with updated flags instead.
 - **NEVER suggest `ufw disable`** without an immediate plan to re-enable — this drops all firewall protection including the DOCKER-USER chain coordination.
 - **NEVER suggest `NOPASSWD:ALL`** in sudoers — this eliminates the last authentication barrier for compromised sessions.
 - **NEVER suggest `set +e`** in hardening scripts — this silently hides failures in security-critical code.
@@ -106,10 +106,10 @@ When advising on this server, you **MUST** follow these rules:
 
 ### ALWAYS Do
 
-- **ALWAYS recommend re-running `bootstrap_hardening.sh`** to change hardening configuration. The script is idempotent.
+- **ALWAYS recommend re-running `base/bootstrap.sh`** to change hardening configuration. The script is idempotent.
 - **ALWAYS check Tailscale connectivity first** when diagnosing SSH issues (`tailscale status`, `tailscale ping <hostname>`).
 - **ALWAYS check the DOCKER-USER chain** when diagnosing container connectivity issues, not just UFW.
-- **ALWAYS verify with `validate_hardening.sh`** after making any manual changes.
+- **ALWAYS verify with `base/validate.sh`** after making any manual changes.
 - **ALWAYS check `/var/log/server-hardening.log`** for error context.
 - **ALWAYS check cloudflared ingress + private route files** when debugging tunnel-mode dashboard/realtime behavior.
 

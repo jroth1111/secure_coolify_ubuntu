@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tier 2 negative matrix for validate_hardening.sh.
+# Tier 2 negative matrix for base/validate.sh.
 
 load '../../helpers/helpers'
 

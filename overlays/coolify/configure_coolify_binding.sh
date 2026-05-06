@@ -12,7 +12,7 @@ fi
 set -Eeuo pipefail
 
 # configure_coolify_binding.sh — Restrict Coolify dashboard access to Tailscale via UFW
-# Companion script for bootstrap_hardening.sh
+# Companion script for base/bootstrap.sh
 #
 # Usage:
 #   sudo ./configure_coolify_binding.sh [--tailscale-ip <ip>] [--dry-run]

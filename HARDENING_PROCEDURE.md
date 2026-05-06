@@ -56,7 +56,7 @@ Optional:
 Example command:
 
 ```bash
-sudo ./bootstrap_hardening.sh \
+sudo ./base/bootstrap.sh \
   --admin-user coolifyadmin \
   --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host" \
   --enable-auto-reboot true \
@@ -66,7 +66,7 @@ sudo ./bootstrap_hardening.sh \
 With Cloudflare Tunnel (no inbound web ports):
 
 ```bash
-sudo ./bootstrap_hardening.sh \
+sudo ./base/bootstrap.sh \
   --admin-user coolifyadmin \
   --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host" \
   --tunnel-mode
@@ -81,7 +81,7 @@ ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host"
 TUNNEL_MODE=true
 SSH_PORT=22
 
-sudo ./bootstrap_hardening.sh --env-file /etc/server-hardening.env
+sudo ./base/bootstrap.sh --env-file /etc/server-hardening.env
 ```
 
 CLI flags override env-file values. The env file uses the same variable names as environment variables.
@@ -90,7 +90,7 @@ CLI flags override env-file values. The env file uses the same variable names as
 With custom journal retention:
 
 ```bash
-sudo ./bootstrap_hardening.sh \
+sudo ./base/bootstrap.sh \
   --admin-user coolifyadmin \
   --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host" \
   --journal-retention 6month
@@ -99,7 +99,7 @@ sudo ./bootstrap_hardening.sh \
 Dry-run preview:
 
 ```bash
-sudo ./bootstrap_hardening.sh \
+sudo ./base/bootstrap.sh \
   --admin-user coolifyadmin \
   --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host" \
   --dry-run
@@ -126,13 +126,13 @@ This eliminates the "direct-to-origin bypass" attack surface entirely.
 
 ## Post-Run Verification
 
-### Quick check with validate_hardening.sh
+### Quick check with base/validate.sh
 
-The companion script `validate_hardening.sh` runs all checks non-destructively:
+The companion script `base/validate.sh` runs all checks non-destructively:
 
 ```bash
-sudo ./validate_hardening.sh          # Human-readable table
-sudo ./validate_hardening.sh --json   # Machine-readable JSON
+sudo ./base/validate.sh          # Human-readable table
+sudo ./base/validate.sh --json   # Machine-readable JSON
 ```
 
 It reads `/var/lib/server-hardening/state` to determine tunnel mode, admin user, etc. Exits 0 if all checks pass, 1 if any fail. Safe to run from cron or during incident response.
@@ -225,7 +225,7 @@ Standard mode:
 - Unattended-upgrades covers both Ubuntu security/updates **and** Docker CE packages (`origin=Docker,label=Docker CE`) — `docker-ce`, `containerd.io`, etc. receive security patches automatically
 - `MinimalSteps` enabled — partial upgrade on power loss leaves packages in a consistent state
 - Unused services (rpcbind, avahi, cups) masked
-- `hardening-validate.timer` active — runs daily `validate_hardening.sh` to detect configuration drift
+- `hardening-validate.timer` active — runs daily `base/validate.sh` to detect configuration drift
 
 Split-horizon binding mode (additional, when `--bind-dashboard-to-tailscale`):
 - `coolify-binding-guard.timer` active — runs `/usr/local/sbin/coolify-binding-guard.sh` every 5 minutes

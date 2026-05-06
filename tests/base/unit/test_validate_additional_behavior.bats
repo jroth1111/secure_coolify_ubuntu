@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Additional behavior tests to close function coverage gaps in validate_hardening.sh
+# Additional behavior tests to close function coverage gaps in base/validate.sh
 
 load '../../helpers/helpers'
 

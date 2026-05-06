@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tier 1/2 validation script tests: verify validate_hardening.sh behavior.
+# Tier 1/2 validation script tests: verify base/validate.sh behavior.
 
 load '../../helpers/helpers'
 

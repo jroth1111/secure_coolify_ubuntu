@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tier 2 idempotency tests for bootstrap_hardening.sh.
+# Tier 2 idempotency tests for base/bootstrap.sh.
 
 load '../../helpers/helpers'
 

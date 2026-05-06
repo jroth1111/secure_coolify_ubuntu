@@ -714,10 +714,10 @@ EOF
   pass "Environment file written"
 
   # Run hardening, streaming output to terminal while capturing it for TS_IP extraction.
-  # bootstrap_hardening.sh emits HARDEN_RESULT_TAILSCALE_IP as soon as Tailscale is
+  # base/bootstrap.sh emits HARDEN_RESULT_TAILSCALE_IP as soon as Tailscale is
   # verified, and again at the end. Retries pivot to root@TS_IP first, then to
   # admin@TS_IP via sudo once root password auth is no longer a valid recovery path.
-  log "Running bootstrap_hardening.sh (this may take a few minutes)..."
+  log "Running base/bootstrap.sh (this may take a few minutes)..."
   local harden_tmp bootstrap_attempt bootstrap_rc
   harden_tmp="$(mktemp)" || die "Failed to create temp file for hardening output"
   bootstrap_rc=0
@@ -753,7 +753,7 @@ EOF
   # Emit heartbeat lines so the operator sees progress even when apt/tee is quiet.
   for bootstrap_attempt in 1 2 3; do
     if run_with_heartbeat \
-      "bootstrap_hardening.sh via ${bootstrap_transport}@${ROOT_SSH_HOST:-${TS_IP:-${SERVER_IP}}} (attempt ${bootstrap_attempt}/3)" \
+      "base/bootstrap.sh via ${bootstrap_transport}@${ROOT_SSH_HOST:-${TS_IP:-${SERVER_IP}}} (attempt ${bootstrap_attempt}/3)" \
       stream_command_output "${harden_tmp}" \
       bootstrap_remote_exec; then
       bootstrap_rc=0
@@ -771,9 +771,9 @@ EOF
       fi
       if (( bootstrap_rc == 255 && bootstrap_attempt < 3 )); then
         if promote_bootstrap_transport_to_admin; then
-          warn "bootstrap_hardening.sh SSH transport failed on attempt ${bootstrap_attempt}/3; retrying via admin sudo in 3s."
+          warn "base/bootstrap.sh SSH transport failed on attempt ${bootstrap_attempt}/3; retrying via admin sudo in 3s."
         else
-          warn "bootstrap_hardening.sh SSH transport/auth failed on attempt ${bootstrap_attempt}/3; retrying in 3s."
+          warn "base/bootstrap.sh SSH transport/auth failed on attempt ${bootstrap_attempt}/3; retrying in 3s."
         fi
         sleep 3
         continue
@@ -783,12 +783,12 @@ EOF
   done
 
   if (( bootstrap_rc != 0 )); then
-    warn "bootstrap_hardening.sh failed. Last 50 lines of captured output:"
+    warn "base/bootstrap.sh failed. Last 50 lines of captured output:"
     tail -n 50 "${harden_tmp}" || true
     warn "Attempting to fetch remote /var/log/server-hardening.log tail (best effort)..."
     bootstrap_remote_tail_log || true
     rm -f "${harden_tmp}"
-    die "bootstrap_hardening.sh failed. Check server logs: /var/log/server-hardening.log"
+    die "base/bootstrap.sh failed. Check server logs: /var/log/server-hardening.log"
   fi
   pass "Hardening completed"
 

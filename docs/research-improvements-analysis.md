@@ -2,7 +2,7 @@
 
 **Updated:** 2026-03-04  
 **Source Research:** `/Users/gwizz/CascadeProjects/coolify-docs/research/`  
-**Target Scripts:** `bootstrap_hardening.sh`, `validate_hardening.sh`
+**Target Scripts:** `base/bootstrap.sh`, `base/validate.sh`
 
 ## Summary
 
@@ -16,13 +16,13 @@ This update reflects the real implementation state and the follow-up fix applied
 **Original suggestion:** Replace `archive=` with `suite=` in unattended-upgrades Docker origin matching.
 
 **Current code status:**
-- `bootstrap_hardening.sh` currently writes Docker origin with `archive=...`.
-- `validate_hardening.sh` now accepts **either** `archive=` or `suite=` for Docker origin checks.
+- `base/bootstrap.sh` currently writes Docker origin with `archive=...`.
+- `base/validate.sh` now accepts **either** `archive=` or `suite=` for Docker origin checks.
 
 **Decision:** Keep bootstrap output unchanged for now; accept both forms in validation.  
 **Why:** `unattended-upgrades` supports both forms; enforcing only one creates avoidable Gate C false positives.
 
-**Implemented fix:** `validate_hardening.sh` now treats Docker origin as valid when pinned with:
+**Implemented fix:** `base/validate.sh` now treats Docker origin as valid when pinned with:
 - `origin=Docker,label=Docker CE,archive=${distro_codename},component=stable`
 - or `origin=Docker,label=Docker CE,suite=${distro_codename},component=stable`
 
@@ -32,7 +32,7 @@ This update reflects the real implementation state and the follow-up fix applied
 
 **Original suggestion:** Add `auditctl -s` lost/backlog monitoring.
 
-**Current code status:** Already implemented in `validate_hardening.sh` (`auditd_check`):
+**Current code status:** Already implemented in `base/validate.sh` (`auditd_check`):
 - queue loss parsing (`lost`)
 - backlog reporting (`backlog`)
 - PASS/INFO/FAIL thresholds
@@ -48,7 +48,7 @@ This update reflects the real implementation state and the follow-up fix applied
 **Current code status:** Implemented for auto-updates:
 - `UPDATE_PROFILE` exists (`security-only` default, `balanced` optional)
 - `--update-profile` CLI flag
-- profile-aware validation in `validate_hardening.sh`
+- profile-aware validation in `base/validate.sh`
 
 **Decision:** No additional change needed for this cycle.
 
@@ -59,11 +59,11 @@ This update reflects the real implementation state and the follow-up fix applied
 **Original suggestion:** Document as optimization, not hard dependency.
 
 **Current code status:** Implemented as explicit behavior:
-- New `TAILSCALE_DIRECT_WAN` setting (default `false`) in `bootstrap_hardening.sh`
+- New `TAILSCALE_DIRECT_WAN` setting (default `false`) in `base/bootstrap.sh`
 - New CLI flags: `--tailscale-direct-wan` / `--no-tailscale-direct-wan`
 - UFW only opens WAN UDP `41641` when explicitly enabled
 - State/report now record `tailscale_direct_wan`
-- `validate_hardening.sh` now validates presence/absence of UDP `41641` based on state
+- `base/validate.sh` now validates presence/absence of UDP `41641` based on state
 
 **Decision:** Applied as a script-level hardening improvement.  
 Default behavior now minimizes WAN exposure while preserving opt-in direct-path performance.

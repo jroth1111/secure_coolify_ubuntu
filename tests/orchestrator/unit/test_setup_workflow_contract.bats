@@ -211,7 +211,7 @@ EOF
   assert_output --partial "Gate B failed."
 }
 
-@test "setup: gate C runs validate_hardening.sh json" {
+@test "setup: gate C runs base/validate.sh json" {
   run bash -c '
     source "'"${SETUP_SCRIPT}"'"
     tmpdir="$(mktemp -d)"

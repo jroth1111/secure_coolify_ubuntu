@@ -24,7 +24,7 @@ make test-ci-max
 | `make test-contracts` | Workflow/function/logic-step/target coverage contracts | None |
 | `make test-orchestrator-smoke` | `deploy.sh`/`setup.sh` orchestrator behavior smoke lane | None |
 | `make test-dry-run` | Dry-run integration (`--dry-run`) | `--cap-add NET_ADMIN` |
-| `make test-validate` | `validate_hardening.sh` pass/fail behavior | Privileged + systemd |
+| `make test-validate` | `base/validate.sh` pass/fail behavior | Privileged + systemd |
 | `make test-full-standard` | Full standard-mode integration | Privileged + systemd |
 | `make test-full-tunnel` | Full tunnel-mode integration | Privileged + systemd |
 | `make test-idempotency` | Re-run safety / duplicate-prevention checks | Privileged + systemd |
@@ -48,11 +48,11 @@ Logs and JSON snapshots are written to `artifacts/` during execution. These are 
 
 `docs/logic_step_contract.yaml` now tracks every discovered function in:
 
-- `bootstrap_hardening.sh`
-- `validate_hardening.sh`
+- `base/bootstrap.sh`
+- `base/validate.sh`
 - `deploy.sh`
 - `setup.sh`
-- `lib/coolify-common.sh`
+- `overlays/coolify/coolify-common.sh`
 
 Each function entry must reference:
 

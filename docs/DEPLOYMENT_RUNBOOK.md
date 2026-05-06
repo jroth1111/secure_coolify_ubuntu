@@ -107,7 +107,7 @@ Treat this runbook as a gated procedure. Do not proceed to the next phase until 
 
 - **Gate A (before hardening):** Root SSH over Tailscale works.
 - **Gate B (immediately after hardening):** Admin SSH over Tailscale works from a new terminal before closing the root session.
-- **Gate C (before Docker/Coolify):** `validate_hardening.sh` exits `0` with no FAIL checks.
+- **Gate C (before Docker/Coolify):** `base/validate.sh` exits `0` with no FAIL checks.
 - **Gate D (after Docker install):** `docker-user-hardening.service` is active and managed DOCKER-USER rules exist.
 - **Gate E (after management-port enforcement):** Coolify dashboard (`:8000`) and websocket (`:6001`) are reachable on Tailscale IP and not reachable on public IP.
 
@@ -206,10 +206,11 @@ If this works, Gate A passes. **From this point forward, use the Tailscale IP fo
 ### 2.1 Upload the Script
 
 ```bash
-scp bootstrap_hardening.sh root@<tailscale-ip>:/root/
-scp validate_hardening.sh root@<tailscale-ip>:/root/
+scp -r base/ root@<tailscale-ip>:/root/
+scp -r lib/ root@<tailscale-ip>:/root/
+scp -r overlays/ root@<tailscale-ip>:/root/
 ssh root@<tailscale-ip>
-chmod +x /root/bootstrap_hardening.sh /root/validate_hardening.sh
+chmod +x /root/base/bootstrap.sh /root/base/validate.sh
 ```
 
 ### 2.2 Run Hardening
@@ -217,7 +218,7 @@ chmod +x /root/bootstrap_hardening.sh /root/validate_hardening.sh
 **Tunnel mode (recommended)** — no inbound web ports; public traffic via Cloudflare Tunnel:
 
 ```bash
-sudo ./bootstrap_hardening.sh \
+sudo ./base/bootstrap.sh \
   --admin-user coolifyadmin \
   --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key" \
   --tunnel-mode \
@@ -228,7 +229,7 @@ sudo ./bootstrap_hardening.sh \
 **Standard mode** — direct web traffic on ports 80/443 (use only if Cloudflare Tunnel is not an option):
 
 ```bash
-sudo ./bootstrap_hardening.sh \
+sudo ./base/bootstrap.sh \
   --admin-user coolifyadmin \
   --admin-pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key" \
   --timezone Australia/Melbourne \
@@ -238,16 +239,16 @@ sudo ./bootstrap_hardening.sh \
 **With env file** (for automation):
 
 ```bash
-cat > /etc/bootstrap-hardening.env << 'EOF'
+cat > /etc/server-hardening.env << 'EOF'
 ADMIN_USER=coolifyadmin
 ADMIN_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your-key"
 TUNNEL_MODE=true
 SWAP_SIZE=2G
 TIMEZONE=Australia/Melbourne
 EOF
-chmod 600 /etc/bootstrap-hardening.env
+chmod 600 /etc/server-hardening.env
 
-sudo ./bootstrap_hardening.sh --env-file /etc/bootstrap-hardening.env
+sudo ./base/bootstrap.sh --env-file /etc/server-hardening.env
 ```
 
 Keep this root session open until Gate B and Gate C pass.
@@ -268,7 +269,7 @@ If this succeeds, Gate B passes. The old root SSH access from public IPs is now 
 Run validation from the server and require a zero exit code:
 
 ```bash
-sudo ./validate_hardening.sh
+sudo ./base/validate.sh
 echo $?
 ```
 
@@ -305,7 +306,7 @@ sudo systemctl enable --now docker
 sudo docker run hello-world
 ```
 
-If Docker was absent during Phase 1, `bootstrap_hardening.sh` installs the policy but does not create `/etc/docker/daemon.json` yet. Coolify's installer may then create/update `daemon.json` (for Docker address pools). The automated `deploy.sh`/`setup.sh` workflows reconcile this file immediately after Coolify install to enforce hardening keys while preserving Coolify's settings.
+If Docker was absent during Phase 1, `base/bootstrap.sh` installs the policy but does not create `/etc/docker/daemon.json` yet. Coolify's installer may then create/update `daemon.json` (for Docker address pools). The automated `deploy.sh`/`setup.sh` workflows reconcile this file immediately after Coolify install to enforce hardening keys while preserving Coolify's settings.
 
 **daemon.json Ownership:**
 - **Hardening owns:** `log-driver`, `log-opts`, `live-restore`, `default-ipc-mode`, `storage-driver`, `default-ulimits`
@@ -499,7 +500,7 @@ See [Cloudflare Tunnel docs](https://developers.cloudflare.com/cloudflare-one/co
 ### 5.1 Run Validation Script
 
 ```bash
-sudo ./validate_hardening.sh
+sudo ./base/validate.sh
 ```
 
 All checks should show PASS. Review any FAIL or INFO items.
@@ -507,7 +508,7 @@ All checks should show PASS. Review any FAIL or INFO items.
 ### 5.2 JSON Report
 
 ```bash
-sudo ./validate_hardening.sh --json | python3 -m json.tool
+sudo ./base/validate.sh --json | python3 -m json.tool
 ```
 
 ### 5.3 Smoke Tests
@@ -571,7 +572,7 @@ cat /var/log/server-hardening-report.json
 The script is idempotent. To change settings:
 
 ```bash
-sudo ./bootstrap_hardening.sh \
+sudo ./base/bootstrap.sh \
   --admin-user coolifyadmin \
   --admin-pubkey "ssh-ed25519 ..." \
   --timezone Australia/Melbourne \
@@ -582,7 +583,7 @@ sudo ./bootstrap_hardening.sh \
 ### Checking Status
 
 ```bash
-sudo ./validate_hardening.sh
+sudo ./base/validate.sh
 cat /var/lib/server-hardening/state
 cat /var/log/server-hardening-report.json
 ```

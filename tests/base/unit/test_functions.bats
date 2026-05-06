@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tier 0: Unit tests for pure functions in bootstrap_hardening.sh
+# Tier 0: Unit tests for pure functions in base/bootstrap.sh
 # No Docker, no root, no system access required.
 
 load '../../helpers/helpers'

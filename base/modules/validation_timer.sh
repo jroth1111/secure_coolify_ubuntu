@@ -4,7 +4,7 @@ configure_hardening_validation_timer() {
     return 0
   fi
 
-  # Locate validate_hardening.sh relative to this script, with multiple fallbacks
+  # Locate base/validate.sh relative to this script, with multiple fallbacks
   local script_dir validate_src validate_dest
   if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
     script_dir="$(cd "${BASH_SOURCE[0]%/*}" 2>/dev/null && pwd)" || {

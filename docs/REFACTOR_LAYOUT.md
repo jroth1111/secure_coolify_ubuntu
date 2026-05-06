@@ -6,7 +6,7 @@ Maps old file paths (before refactor) to new paths (after C1–C10).
 |---|---|
 | `bootstrap_hardening.sh` | `base/bootstrap.sh` (orchestration) + `base/modules/*.sh` |
 | `validate_hardening.sh` | `base/validate.sh` (orchestration) + `base/checks/*.sh` |
-| `lib/coolify-common.sh` | `overlays/coolify/coolify-common.sh` (all content) |
+| `lib/coolify-common.sh` | `overlays/coolify/coolify-common.sh` (orchestration) + `overlays/coolify/lib/*.sh` + `overlays/coolify/modules/*.sh` |
 | `configure_coolify_binding.sh` | `overlays/coolify/configure_coolify_binding.sh` |
 | `tests/helpers.bash` | `tests/helpers/helpers.bash` |
 | (inline in bootstrap_hardening.sh) | `lib/common.sh` — log, warn, die, is_true, prompt_*, run_report_* |

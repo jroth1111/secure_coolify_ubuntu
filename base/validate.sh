@@ -13,9 +13,9 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# validate_hardening.sh — Standalone health-check companion for bootstrap_hardening.sh
+# base/validate.sh — Standalone health-check companion for base/bootstrap.sh
 # Re-runnable: prints PASS/FAIL per check, exits 0 if all pass, 1 if any fail.
-# Usage: sudo ./validate_hardening.sh [--json|--health-check]
+# Usage: sudo ./base/validate.sh [--json|--health-check]
 
 STATE_FILE="/var/lib/server-hardening/state"
 STATE_LOCK_FILE="${STATE_FILE}.lock"

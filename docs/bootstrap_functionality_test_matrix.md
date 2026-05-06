@@ -65,8 +65,8 @@ These IDs are the canonical hardening workflow contract IDs used by `docs/workfl
 | Docker presence detection (`detect_docker`) | Implicit in `tests/integration/test_full_run.bats`: `docker-daemon: ...` tests and `docker-user: service is enabled` — Docker presence determines whether DOCKER-USER service starts | Sufficient |
 | Coolify management-port enforcement (`configure_coolify_binding`) | `tests/unit/test_dashboard_binding.bats`: skip when flag false; dry-run mode; emits UFW verification plan for ports 8000/6001/6002; fails without Tailscale IP | Sufficient |
 | Coolify binding watchdog timer (`configure_coolify_binding_watchdog`) | `tests/unit/test_validate_functions.bats`: `coolify_binding_check verifies binding-guard timer is active` — validates timer unit written and enabled | Sufficient |
-| Validator baseline pass output (`validate_hardening.sh`) | `tests/integration/test_validate_script.bats`: `validate: exits 0 after hardening bootstrap`; `validate: JSON output includes expected top-level fields` | Sufficient |
-| Validator failure detection paths (`validate_hardening.sh`) | `tests/integration/test_validate_script.bats`: failure on missing banner + failure on non-persistent journald | Sufficient |
+| Validator baseline pass output (`base/validate.sh`) | `tests/integration/test_validate_script.bats`: `validate: exits 0 after hardening bootstrap`; `validate: JSON output includes expected top-level fields` | Sufficient |
+| Validator failure detection paths (`base/validate.sh`) | `tests/integration/test_validate_script.bats`: failure on missing banner + failure on non-persistent journald | Sufficient |
 | Docker user service wiring check (`docker_user_lifecycle_check`) | `tests/unit/test_validate_functions.bats`: `PartOf=docker.service`; `WantedBy=docker.service` | Sufficient |
 | Unattended-upgrades Docker CE origin check (`unattended_upgrades_check`) | `tests/unit/test_validate_functions.bats`: Docker CE origin present in upgrades config | Sufficient |
 | Coolify binding guard timer check (`coolify_binding_check`) | `tests/unit/test_validate_functions.bats`: binding-guard timer active | Sufficient |

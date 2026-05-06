@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Robust outcome checks for critical validate_hardening.sh security checks.
+# Robust outcome checks for critical base/validate.sh security checks.
 
 load '../../helpers/helpers'
 
